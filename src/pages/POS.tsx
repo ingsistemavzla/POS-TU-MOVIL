@@ -1224,30 +1224,54 @@ export default function POS() {
       const invoiceNumber = activeReservation.invoiceNumber;
 
       // PREPARAR ITEMS DE VENTA - VALIDACIÓN Y CORRECCIÓN DE DATOS
+      console.log('🔍 DEBUG: Iniciando construcción de saleItems. Cart:', cart);
+      console.log('🔍 DEBUG: Products array length:', products.length);
+      
       const saleItems = cart.flatMap(item => {
+        // LOGGING DETALLADO DEL ITEM ORIGINAL
+        console.log('🔍 DEBUG: Procesando item del carrito:', {
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          originalPrice: item.originalPrice,
+          quantity: item.quantity,
+          sku: item.sku,
+          category: item.category
+        });
+        
         // VALIDACIÓN Y CORRECCIÓN DE CANTIDAD
         const cleanQty = Math.max(1, Math.floor(Number(item.quantity) || 1));
         
         // VALIDACIÓN Y CORRECCIÓN DE PRECIO
         // Si el precio es 0 o inválido, usar el precio original del producto
         let cleanPrice = Math.max(0, Number(item.price) || 0);
+        let priceSource = 'item.price';
+        
         if (cleanPrice === 0 && item.originalPrice && item.originalPrice > 0) {
           cleanPrice = item.originalPrice;
+          priceSource = 'item.originalPrice';
+          console.log(`💰 DEBUG: Precio corregido desde originalPrice: ${cleanPrice}`);
         }
         // Si aún es 0, buscar el precio en el array de productos cargados
         if (cleanPrice === 0) {
           const productFromList = products.find(p => p.id === item.id);
           if (productFromList?.sale_price_usd && productFromList.sale_price_usd > 0) {
             cleanPrice = productFromList.sale_price_usd;
+            priceSource = 'products.sale_price_usd';
+            console.log(`💰 DEBUG: Precio corregido desde products array: ${cleanPrice}`);
+          } else {
+            console.warn(`⚠️ DEBUG: Producto no encontrado en array products para ID: ${item.id}`);
           }
         }
         // Si sigue siendo 0, es un error crítico - usar 0 pero loguear
         if (cleanPrice === 0) {
-          console.error('⚠️ ADVERTENCIA: Producto con precio $0.00:', {
+          console.error('❌ ERROR CRÍTICO: Producto con precio $0.00 después de todas las validaciones:', {
             product_id: item.id,
             item_name: item.name,
             item_price: item.price,
-            original_price: item.originalPrice
+            original_price: item.originalPrice,
+            products_array_has_item: products.some(p => p.id === item.id),
+            price_source: priceSource
           });
         }
         
@@ -1258,19 +1282,24 @@ export default function POS() {
         const isGenericName = !cleanName || genericNames.some(generic => 
           cleanName.toLowerCase().includes(generic.toLowerCase())
         );
+        let nameSource = 'item.name';
         
         // Si el nombre es genérico o está vacío, buscar el nombre real del producto
         if (isGenericName || !cleanName) {
           const productFromList = products.find(p => p.id === item.id);
           if (productFromList?.name && productFromList.name.trim()) {
             cleanName = productFromList.name.trim();
+            nameSource = 'products.name';
+            console.log(`📝 DEBUG: Nombre corregido desde products array: "${cleanName}"`);
           } else {
             // Si no se encuentra en la lista, usar un nombre por defecto con SKU
             cleanName = `Producto ${item.sku || item.id}`;
-            console.error('⚠️ ADVERTENCIA: No se pudo obtener nombre del producto:', {
+            nameSource = 'fallback';
+            console.error('❌ ERROR: No se pudo obtener nombre del producto:', {
               product_id: item.id,
               item_name: item.name,
-              sku: item.sku
+              sku: item.sku,
+              products_array_has_item: products.some(p => p.id === item.id)
             });
           }
         }
@@ -1278,29 +1307,38 @@ export default function POS() {
         // VALIDACIÓN DE SKU
         const cleanSku = String(item.sku || 'SKU-000').trim();
         
+        // Construir el objeto final del item
+        const finalItem = {
+          product_id: item.id,
+          qty: item.category === 'phones' && item.imeis && item.imeis.length > 0 ? 1 : cleanQty,
+          price_usd: cleanPrice,
+          product_name: cleanName,
+          product_sku: cleanSku,
+          imei: item.category === 'phones' && item.imeis && item.imeis.length > 0 ? null : (item.imei ? String(item.imei).trim() : null)
+        };
+        
+        // LOGGING DEL ITEM FINAL
+        console.log('✅ DEBUG: Item final construido:', {
+          ...finalItem,
+          price_source: priceSource,
+          name_source: nameSource
+        });
+        
         // Si es un teléfono con múltiples IMEIs, crear un item por cada IMEI
         if (item.category === 'phones' && item.imeis && item.imeis.length > 0) {
           return item.imeis.map(imei => ({
-            product_id: item.id,
+            ...finalItem,
             qty: 1, // Cada teléfono es cantidad 1
-            price_usd: cleanPrice,
-            product_name: cleanName,
-            product_sku: cleanSku,
             imei: String(imei).trim()
           }));
         } else {
           // Para productos normales o teléfonos con un solo IMEI
-          const cleanImei = item.imei ? String(item.imei).trim() : null;
-          return [{
-            product_id: item.id,
-            qty: cleanQty,
-            price_usd: cleanPrice,
-            product_name: cleanName,
-            product_sku: cleanSku,
-            imei: cleanImei
-          }];
+          return [finalItem];
         }
       });
+      
+      // LOGGING FINAL DE TODOS LOS ITEMS
+      console.log('📦 DEBUG: Array final de saleItems que se enviará a process_sale:', JSON.stringify(saleItems, null, 2));
 
       // PREPARAR PAGOS MIXTOS - ULTRA LIMPIO
       const mixedPaymentsData = isMixedPayment ? mixedPayments.map(payment => {
@@ -1340,7 +1378,12 @@ export default function POS() {
         p_mixed_payments: mixedPaymentsData
       };
 
-      console.log('Procesando venta con parámetros ULTRA LIMPIOS:', saleParams);
+      console.log('🚀 DEBUG: Procesando venta con parámetros COMPLETOS:');
+      console.log('📋 DEBUG: p_items (saleItems):', JSON.stringify(saleParams.p_items, null, 2));
+      console.log('📊 DEBUG: Todos los parámetros:', {
+        ...saleParams,
+        p_items: saleParams.p_items // Ya logueado arriba
+      });
 
       // Llamar a la función de procesamiento
       const { data, error } = await supabase.rpc('process_sale', saleParams);
