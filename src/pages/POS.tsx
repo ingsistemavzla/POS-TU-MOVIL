@@ -1223,12 +1223,59 @@ export default function POS() {
       let activeReservation: ReservedInvoice | null = reservedInvoice;
       const invoiceNumber = activeReservation.invoiceNumber;
 
-      // PREPARAR ITEMS DE VENTA - MANEJO ROBUSTO DE CANTIDADES
+      // PREPARAR ITEMS DE VENTA - VALIDACIÓN Y CORRECCIÓN DE DATOS
       const saleItems = cart.flatMap(item => {
-        // MANEJO ROBUSTO DE CANTIDADES
+        // VALIDACIÓN Y CORRECCIÓN DE CANTIDAD
         const cleanQty = Math.max(1, Math.floor(Number(item.quantity) || 1));
-        const cleanPrice = Math.max(0, Number(item.price) || 0);
-        const cleanName = String(item.name || 'Producto sin nombre').trim();
+        
+        // VALIDACIÓN Y CORRECCIÓN DE PRECIO
+        // Si el precio es 0 o inválido, usar el precio original del producto
+        let cleanPrice = Math.max(0, Number(item.price) || 0);
+        if (cleanPrice === 0 && item.originalPrice && item.originalPrice > 0) {
+          cleanPrice = item.originalPrice;
+        }
+        // Si aún es 0, buscar el precio en el array de productos cargados
+        if (cleanPrice === 0) {
+          const productFromList = products.find(p => p.id === item.id);
+          if (productFromList?.sale_price_usd && productFromList.sale_price_usd > 0) {
+            cleanPrice = productFromList.sale_price_usd;
+          }
+        }
+        // Si sigue siendo 0, es un error crítico - usar 0 pero loguear
+        if (cleanPrice === 0) {
+          console.error('⚠️ ADVERTENCIA: Producto con precio $0.00:', {
+            product_id: item.id,
+            item_name: item.name,
+            item_price: item.price,
+            original_price: item.originalPrice
+          });
+        }
+        
+        // VALIDACIÓN Y CORRECCIÓN DE NOMBRE
+        // Verificar que el nombre no sea genérico o vacío
+        let cleanName = String(item.name || '').trim();
+        const genericNames = ['Producto sin nombre', 'S/SKU', 'Producto', 'N/A', ''];
+        const isGenericName = !cleanName || genericNames.some(generic => 
+          cleanName.toLowerCase().includes(generic.toLowerCase())
+        );
+        
+        // Si el nombre es genérico o está vacío, buscar el nombre real del producto
+        if (isGenericName || !cleanName) {
+          const productFromList = products.find(p => p.id === item.id);
+          if (productFromList?.name && productFromList.name.trim()) {
+            cleanName = productFromList.name.trim();
+          } else {
+            // Si no se encuentra en la lista, usar un nombre por defecto con SKU
+            cleanName = `Producto ${item.sku || item.id}`;
+            console.error('⚠️ ADVERTENCIA: No se pudo obtener nombre del producto:', {
+              product_id: item.id,
+              item_name: item.name,
+              sku: item.sku
+            });
+          }
+        }
+        
+        // VALIDACIÓN DE SKU
         const cleanSku = String(item.sku || 'SKU-000').trim();
         
         // Si es un teléfono con múltiples IMEIs, crear un item por cada IMEI
