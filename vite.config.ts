@@ -19,6 +19,24 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Vendor chunks
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'ui-vendor': ['@tanstack/react-query'],
+          'chart-vendor': ['recharts'],
+          // Heavy pages
+          'dashboard': ['./src/pages/Dashboard'],
+          'pos': ['./src/pages/POS'],
+          'reports': ['./src/pages/ReportsNew'],
+          'inventory': ['./src/pages/InventoryPage'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 1000,
+  },
   test: {
     globals: true,
     environment: "node",

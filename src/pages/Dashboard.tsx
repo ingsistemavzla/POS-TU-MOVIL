@@ -25,16 +25,18 @@ import { useKreceStats } from "@/hooks/useKreceStats";
 import { usePaymentMethodsData } from "@/hooks/usePaymentMethodsData";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatCurrency } from "@/utils/currency";
-import { useState } from "react";
-import { PaymentMethodStats } from "@/components/dashboard/PaymentMethodStats";
-import { PaymentMethodSummary } from "@/components/dashboard/PaymentMethodSummary";
-import { StoreSummaryCard } from "@/components/dashboard/StoreSummaryCard";
-import { KpiCard } from "@/components/dashboard/KpiCard";
-import { StoreSummaryTable } from "@/components/dashboard/StoreSummaryTable";
-import { StoreSummaryChart } from "@/components/dashboard/StoreSummaryChart";
-import { PaymentMethodDonutChart } from "@/components/dashboard/PaymentMethodDonutChart";
-import { TopProductsTable } from "@/components/dashboard/TopProductsTable";
-import { CriticalStockCard } from "@/components/dashboard/CriticalStockCard";
+import { useState, Suspense, lazy } from "react";
+
+// Lazy load heavy dashboard components
+const PaymentMethodStats = lazy(() => import("@/components/dashboard/PaymentMethodStats").then(m => ({ default: m.PaymentMethodStats })));
+const PaymentMethodSummary = lazy(() => import("@/components/dashboard/PaymentMethodSummary").then(m => ({ default: m.PaymentMethodSummary })));
+const StoreSummaryCard = lazy(() => import("@/components/dashboard/StoreSummaryCard").then(m => ({ default: m.StoreSummaryCard })));
+const KpiCard = lazy(() => import("@/components/dashboard/KpiCard").then(m => ({ default: m.KpiCard })));
+const StoreSummaryTable = lazy(() => import("@/components/dashboard/StoreSummaryTable").then(m => ({ default: m.StoreSummaryTable })));
+const StoreSummaryChart = lazy(() => import("@/components/dashboard/StoreSummaryChart").then(m => ({ default: m.StoreSummaryChart })));
+const PaymentMethodDonutChart = lazy(() => import("@/components/dashboard/PaymentMethodDonutChart").then(m => ({ default: m.PaymentMethodDonutChart })));
+const TopProductsTable = lazy(() => import("@/components/dashboard/TopProductsTable").then(m => ({ default: m.TopProductsTable })));
+const CriticalStockCard = lazy(() => import("@/components/dashboard/CriticalStockCard").then(m => ({ default: m.CriticalStockCard })));
 
 type PeriodType = 'today' | 'yesterday' | 'thisMonth';
 
@@ -346,7 +348,8 @@ export default function Dashboard() {
       {/* NIVEL 1: KPIs Principales - 4 Cards */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         {/* 1. Total Facturado */}
-        <KpiCard
+        <Suspense fallback={<Card className="p-6 animate-pulse"><div className="h-20 bg-muted rounded"></div></Card>}>
+          <KpiCard
           title="Total Facturado"
           value={periodData?.sales || 0}
           period={`Ventas totales • ${selectedPeriod === 'today' ? 'Hoy' : selectedPeriod === 'yesterday' ? 'Ayer' : 'Este Mes'}`}
@@ -354,10 +357,12 @@ export default function Dashboard() {
           previousPeriod={periodData?.previousPeriodLabel?.toLowerCase() || 'ayer'}
           icon={<Receipt className="w-6 h-6" />}
           borderColor="green"
-        />
+          />
+        </Suspense>
 
         {/* 2. Ingreso Neto */}
-        <KpiCard
+        <Suspense fallback={<Card className="p-6 animate-pulse"><div className="h-20 bg-muted rounded"></div></Card>}>
+          <KpiCard
           title="Ingreso Neto"
           value={paymentData?.totalUSD || 0}
           period={`Ingreso real • ${selectedPeriod === 'today' ? 'Hoy' : selectedPeriod === 'yesterday' ? 'Ayer' : 'Este Mes'}`}
@@ -375,10 +380,12 @@ export default function Dashboard() {
           icon={<DollarSign className="w-6 h-6" />}
           borderColor="green"
           isLoading={paymentData?.loading || previousPaymentData?.loading || false}
-        />
+          />
+        </Suspense>
 
         {/* 3. Financiamiento Krece */}
-        <KpiCard
+        <Suspense fallback={<Card className="p-6 animate-pulse"><div className="h-20 bg-muted rounded"></div></Card>}>
+          <KpiCard
           title="Financiamiento Krece"
           value={kreceStats.totalFinancedAmountUSD || 0}
           period={selectedPeriod === 'today' ? 'Hoy' : selectedPeriod === 'yesterday' ? 'Ayer' : 'Este Mes'}
@@ -392,10 +399,12 @@ export default function Dashboard() {
           icon={<CreditCard className="w-6 h-6" />}
           borderColor="blue"
           isLoading={kreceStats.loading}
-        />
+          />
+        </Suspense>
 
         {/* 4. Ingreso por Krece */}
-        <KpiCard
+        <Suspense fallback={<Card className="p-6 animate-pulse"><div className="h-20 bg-muted rounded"></div></Card>}>
+          <KpiCard
           title="Ingreso por Krece"
           value={kreceStats.totalInitialAmountUSD || 0}
           period={selectedPeriod === 'today' ? 'Hoy' : selectedPeriod === 'yesterday' ? 'Ayer' : 'Este Mes'}
@@ -409,30 +418,39 @@ export default function Dashboard() {
           icon={<TrendingUp className="w-6 h-6" />}
           borderColor="purple"
           isLoading={kreceStats.loading}
-        />
+          />
+        </Suspense>
       </div>
 
       {/* NIVEL 2: Paneles Secundarios */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
         {/* Resumen por Tienda */}
-        <StoreSummaryChart
+        <Suspense fallback={<Card className="p-6 animate-pulse"><div className="h-64 bg-muted rounded"></div></Card>}>
+          <StoreSummaryChart
           stores={filteredData.storesSummary}
           storeMetrics={filteredData.storeMetrics}
           selectedPeriod={selectedPeriod}
-        />
+          />
+        </Suspense>
 
         {/* Ingresos por Método de Pago - Gráfico Dona */}
-        <PaymentMethodDonutChart period={selectedPeriod} />
+        <Suspense fallback={<Card className="p-6 animate-pulse"><div className="h-64 bg-muted rounded"></div></Card>}>
+          <PaymentMethodDonutChart period={selectedPeriod} />
+        </Suspense>
       </div>
 
       {/* NIVEL 3: Panel Inferior */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Top 10 Productos Más Vendidos */}
-        <TopProductsTable products={filteredData.topProducts} />
+        <Suspense fallback={<Card className="p-6 animate-pulse"><div className="h-64 bg-muted rounded"></div></Card>}>
+          <TopProductsTable products={filteredData.topProducts} />
+        </Suspense>
 
         {/* Stock Crítico */}
         {filteredData.criticalStock.length > 0 && (
-          <CriticalStockCard products={filteredData.criticalStock} />
+          <Suspense fallback={<Card className="p-6 animate-pulse"><div className="h-64 bg-muted rounded"></div></Card>}>
+            <CriticalStockCard products={filteredData.criticalStock} />
+          </Suspense>
         )}
       </div>
 
