@@ -1,0 +1,658 @@
+import { useState, useEffect } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { 
+  Receipt,
+  User,
+  Store,
+  CreditCard,
+  Package,
+  Printer,
+  Download,
+  X,
+  Calendar,
+  DollarSign,
+  Trash2
+} from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { formatCurrency } from "@/utils/currency";
+import { useAuth } from "@/contexts/AuthContext";
+import { printInvoice } from "@/utils/printInvoice";
+import { generateInvoicePDF } from "@/utils/invoicePdfGenerator";
+import { useToast } from "@/hooks/use-toast";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
+
+interface SaleDetailModalProps {
+  saleId: string | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSaleDeleted?: () => void;
+}
+
+interface SaleItem {
+  id: string;
+  product_name: string;
+  qty: number;
+  price_usd: number;
+  subtotal_usd: number;
+  product_id: string;
+}
+
+interface SaleDetail {
+  id: string;
+  company_id: string;
+  store_id: string;
+  customer_id: string | null;
+  cashier_id: string;
+  total_usd: number;
+  total_bs: number;
+  bcv_rate_used: number;
+  payment_method: string;
+  status: string;
+  created_at: string;
+  // Store and customer info from joins
+  store_name?: string;
+  customer_name?: string;
+  customer_id_number?: string;
+  cashier_name?: string;
+  items?: SaleItem[];
+}
+
+export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: SaleDetailModalProps) {
+  const { userProfile } = useAuth();
+  const { toast } = useToast();
+  const [sale, setSale] = useState<SaleDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [storeInfo, setStoreInfo] = useState<any>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingSale, setDeletingSale] = useState(false);
+
+  const fetchSaleDetails = async (id: string) => {
+    if (!userProfile?.company_id) {
+      setError("No se pudo identificar la empresa");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      console.log('Fetching sale details for ID:', id);
+
+      // First, fetch the basic sale information
+      const { data: saleData, error: saleError } = await supabase
+        .from('sales')
+        .select('*')
+        .eq('id', id)
+        .eq('company_id', userProfile.company_id)
+        .single();
+
+      if (saleError || !saleData) {
+        console.error('Sale error:', saleError);
+        throw new Error('Venta no encontrada');
+      }
+
+      console.log('Sale data fetched:', saleData);
+
+      // Fetch store information
+      const { data: storeData, error: storeError } = await supabase
+        .from('stores')
+        .select('name')
+        .eq('id', saleData.store_id)
+        .eq('company_id', userProfile.company_id)
+        .single();
+
+      if (storeError) {
+        console.error('Store error:', storeError);
+      }
+
+      // Fetch customer information if exists
+      let customerData = null;
+      if (saleData.customer_id) {
+        const { data: custData, error: custError } = await supabase
+          .from('customers')
+          .select('name, id_number')
+          .eq('id', saleData.customer_id)
+          .eq('company_id', userProfile.company_id)
+          .single();
+
+        if (custError) {
+          console.error('Customer error:', custError);
+        } else {
+          customerData = custData;
+        }
+      }
+
+      // Fetch cashier information
+      const { data: cashierData, error: cashierError } = await supabase
+        .from('users')
+        .select('email')
+        .eq('id', saleData.cashier_id)
+        .single();
+
+      if (cashierError) {
+        console.error('Cashier error:', cashierError);
+      }
+
+      // Fetch sale items
+      const { data: itemsData, error: itemsError } = await supabase
+        .from('sale_items')
+        .select('*')
+        .eq('sale_id', id);
+
+      if (itemsError) {
+        console.error('Items error:', itemsError);
+      }
+
+      // Transform items data
+      const items: SaleItem[] = (itemsData || []).map((item: any) => ({
+        id: item.id,
+        product_name: item.product_name || 'Producto',
+        qty: Number(item.qty) || 0,
+        price_usd: Number(item.price_usd) || 0,
+        subtotal_usd: Number(item.subtotal_usd) || 0,
+        product_id: item.product_id,
+      }));
+
+      // Transform sale data
+      const transformedSale: SaleDetail = {
+        id: saleData.id,
+        company_id: saleData.company_id,
+        store_id: saleData.store_id,
+        customer_id: saleData.customer_id,
+        cashier_id: saleData.cashier_id,
+        total_usd: saleData.total_usd,
+        total_bs: saleData.total_bs,
+        bcv_rate_used: saleData.bcv_rate_used,
+        payment_method: saleData.payment_method,
+        status: saleData.status || 'completed',
+        created_at: saleData.created_at,
+        store_name: storeData?.name || 'Tienda N/A',
+        customer_name: customerData?.name || 'Cliente General',
+        customer_id_number: customerData?.id_number,
+        cashier_name: cashierData?.email || 'Cajero N/A',
+        items: items,
+      };
+
+      console.log('Transformed sale:', transformedSale);
+      setSale(transformedSale);
+
+    } catch (err) {
+      console.error('Error fetching sale details:', err);
+      setError(err instanceof Error ? err.message : 'Error al cargar los detalles de la venta');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch store information for printing
+  const fetchStoreInfo = async (storeId: string) => {
+    try {
+      const { data: storeData, error: storeError } = await supabase
+        .from('stores')
+        .select('business_name, tax_id, fiscal_address, phone_fiscal, email_fiscal')
+        .eq('id', storeId)
+        .eq('company_id', userProfile?.company_id)
+        .single();
+
+      if (storeError) {
+        console.error('Store info error:', storeError);
+      } else {
+        setStoreInfo(storeData);
+      }
+    } catch (error) {
+      console.error('Error fetching store info:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (saleId && open) {
+      fetchSaleDetails(saleId);
+    } else {
+      setSale(null);
+      setStoreInfo(null);
+    }
+  }, [saleId, open]);
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('es-VE', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getPaymentMethodName = (method: string) => {
+    switch (method) {
+      case 'cash_usd': return 'Efectivo USD';
+      case 'cash_bs': return 'Efectivo BS';
+      case 'card': return 'Tarjeta';
+      case 'transfer': return 'Transferencia';
+      case 'binance': return 'Binance';
+      case 'zelle': return 'Zelle';
+      default: return method;
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <Badge variant="default" className="bg-green-100 text-green-800">Completada</Badge>;
+      case 'pending':
+        return <Badge variant="outline" className="bg-yellow-100 text-yellow-800">Pendiente</Badge>;
+      case 'cancelled':
+        return <Badge variant="destructive">Cancelada</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
+  // Handle print invoice
+  const handlePrintInvoice = async () => {
+    if (!sale) return;
+
+    try {
+      // Fetch store info if not already loaded
+      if (!storeInfo) {
+        await fetchStoreInfo(sale.store_id);
+      }
+
+      // Prepare data for printing
+      const printData = {
+        invoice_number: sale.id.slice(0, 8), // Use sale ID as invoice number
+        customer: sale.customer_name || 'Cliente General',
+        customer_id: sale.customer_id_number,
+        items: sale.items?.map(item => ({
+          id: item.id,
+          name: item.product_name,
+          sku: item.product_id.slice(0, 8),
+          price: item.price_usd,
+          quantity: item.qty
+        })) || [],
+        subtotal_usd: sale.items?.reduce((sum, item) => sum + item.subtotal_usd, 0) || 0,
+        tax_amount_usd: (sale.items?.reduce((sum, item) => sum + item.subtotal_usd, 0) || 0) * 0.16,
+        total_usd: sale.total_usd,
+        total_bs: sale.total_bs,
+        bcv_rate: sale.bcv_rate_used,
+        payment_method: sale.payment_method,
+        sale_date: sale.created_at,
+        store_info: storeInfo,
+        cashier_name: sale.cashier_name || 'Cajero N/A'
+      };
+
+      printInvoice(printData, 0.16, '¡Gracias por su compra!');
+      
+      toast({
+        title: "Impresión iniciada",
+        description: "La factura se está enviando a la impresora",
+      });
+    } catch (error) {
+      console.error('Error printing invoice:', error);
+      toast({
+        title: "Error al imprimir",
+        description: "No se pudo imprimir la factura",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle download PDF
+  const handleDownloadPDF = async () => {
+    if (!sale) return;
+
+    try {
+      // Fetch store info if not already loaded
+      if (!storeInfo) {
+        await fetchStoreInfo(sale.store_id);
+      }
+
+      // Prepare data for PDF generation
+      const pdfData = {
+        id: sale.id,
+        invoice_number: sale.id.slice(0, 8),
+        customer_name: sale.customer_name || 'Cliente General',
+        customer_id_number: sale.customer_id_number,
+        store_name: sale.store_name || 'Tienda N/A',
+        cashier_name: sale.cashier_name || 'Cajero N/A',
+        total_usd: sale.total_usd,
+        total_bs: sale.total_bs,
+        bcv_rate_used: sale.bcv_rate_used,
+        payment_method: sale.payment_method,
+        created_at: sale.created_at,
+        items: sale.items || [],
+        store_info: storeInfo
+      };
+
+      generateInvoicePDF(pdfData);
+      
+      toast({
+        title: "PDF generado",
+        description: "La factura se ha descargado correctamente",
+      });
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast({
+        title: "Error al generar PDF",
+        description: "No se pudo generar el PDF de la factura",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle delete sale
+  const handleDeleteSale = () => {
+    if (!sale || !userProfile?.company_id) {
+      toast({
+        title: "Error",
+        description: "No se pudo identificar la empresa o la venta",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!sale || !userProfile?.company_id) return;
+
+    setDeletingSale(true);
+
+    try {
+      const { data: result, error } = await supabase.rpc('delete_sale_and_restore_inventory', {
+        p_sale_id: sale.id
+      });
+
+      if (error) {
+        console.error('Error deleting sale:', error);
+        throw new Error(error.message);
+      }
+
+      if (result && (result as any).success) {
+        toast({
+          title: "Venta eliminada",
+          description: `La venta ha sido eliminada exitosamente. Se repuso el inventario de ${(result as any).items_count} productos.`,
+        });
+        
+        // Close modals and refresh data
+        setShowDeleteModal(false);
+        onOpenChange(false);
+        if (onSaleDeleted) {
+          onSaleDeleted();
+        }
+      } else {
+        throw new Error((result as any)?.error || 'Error desconocido al eliminar la venta');
+      }
+    } catch (error) {
+      console.error('Error deleting sale:', error);
+      toast({
+        title: "Error al eliminar venta",
+        description: error instanceof Error ? error.message : "Error desconocido",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingSale(false);
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setShowDeleteModal(false);
+  };
+
+  if (!open) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center">
+            <Receipt className="w-5 h-5 mr-2" />
+            Detalles de la Venta
+          </DialogTitle>
+          <DialogDescription>
+            {sale ? `Venta #${sale.id.slice(0, 8)}` : 'Cargando detalles...'}
+          </DialogDescription>
+        </DialogHeader>
+
+        {loading && (
+          <div className="flex items-center justify-center py-8">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+              <p className="text-muted-foreground">Cargando detalles de la venta...</p>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="text-center py-8">
+            <X className="w-12 h-12 text-destructive mx-auto mb-4" />
+            <h3 className="text-lg font-semibold mb-2">Error al cargar</h3>
+            <p className="text-muted-foreground">{error}</p>
+            <Button 
+              variant="outline" 
+              className="mt-4"
+              onClick={() => saleId && fetchSaleDetails(saleId)}
+            >
+              Reintentar
+            </Button>
+          </div>
+        )}
+
+        {sale && !loading && !error && (
+          <div className="space-y-6">
+            {/* Sale Info */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center text-lg">
+                    <Receipt className="w-5 h-5 mr-2" />
+                    Información General
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="font-medium">ID de Venta:</span>
+                    <span className="font-mono text-sm">{sale.id.slice(0, 8)}...</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium">Fecha:</span>
+                    <span>{formatDate(sale.created_at)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium">Estado:</span>
+                    {getStatusBadge(sale.status)}
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium">Total USD:</span>
+                    <span className="font-bold text-green-600">{formatCurrency(sale.total_usd)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium">Total BS:</span>
+                    <span className="font-bold">Bs {sale.total_bs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium">Tasa BCV:</span>
+                    <span>Bs {sale.bcv_rate_used.toFixed(2)}</span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center text-lg">
+                    <User className="w-5 h-5 mr-2" />
+                    Cliente y Tienda
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="font-medium">Cliente:</span>
+                    <span>{sale.customer_name}</span>
+                  </div>
+                  {sale.customer_id_number && (
+                    <div className="flex justify-between">
+                      <span className="font-medium">Cédula:</span>
+                      <span>{sale.customer_id_number}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="font-medium">Tienda:</span>
+                    <span>{sale.store_name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium">Cajero:</span>
+                    <span>{sale.cashier_name}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Payment Info */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center text-lg">
+                  <CreditCard className="w-5 h-5 mr-2" />
+                  Información de Pago
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-3">
+                    <div className="flex justify-between">
+                      <span className="font-medium">Método de Pago:</span>
+                      <Badge variant="outline">
+                        {getPaymentMethodName(sale.payment_method)}
+                      </Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium">Total USD:</span>
+                      <span className="font-bold">{formatCurrency(sale.total_usd)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium">Total BS:</span>
+                      <span className="font-bold">Bs {sale.total_bs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex justify-between">
+                      <span className="font-medium">Tasa BCV:</span>
+                      <span>Bs {sale.bcv_rate_used.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium">Fecha de Venta:</span>
+                      <span>{formatDate(sale.created_at)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-medium">Estado:</span>
+                      {getStatusBadge(sale.status)}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Items */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center text-lg">
+                  <Package className="w-5 h-5 mr-2" />
+                  Productos ({sale.items?.length || 0} items)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {sale.items && sale.items.length > 0 ? (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Producto</TableHead>
+                          <TableHead className="text-right">Cantidad</TableHead>
+                          <TableHead className="text-right">Precio Unit.</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sale.items.map((item) => (
+                          <TableRow key={item.id}>
+                            <TableCell>
+                              <div className="font-medium">{item.product_name}</div>
+                            </TableCell>
+                            <TableCell className="text-right">{item.qty}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(item.price_usd)}</TableCell>
+                            <TableCell className="text-right font-medium">
+                              {formatCurrency(item.subtotal_usd)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No hay productos registrados para esta venta
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Actions */}
+            <div className="flex justify-end space-x-2 pt-4">
+              <Button 
+                variant="outline" 
+                onClick={handleDownloadPDF}
+                disabled={!sale || loading}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Descargar PDF
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={handleDeleteSale}
+                disabled={!sale || loading}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Eliminar Venta
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+
+      {/* Confirm Delete Modal */}
+      <ConfirmDeleteModal
+        open={showDeleteModal}
+        onOpenChange={setShowDeleteModal}
+        onConfirm={handleConfirmDelete}
+        onCancel={handleCancelDelete}
+        saleData={sale ? {
+          id: sale.id,
+          invoice_number: sale.id.slice(0, 8),
+          customer_name: sale.customer_name,
+          items_count: sale.items?.length
+        } : undefined}
+        loading={deletingSale}
+      />
+    </Dialog>
+  );
+}
+

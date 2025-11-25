@@ -1,0 +1,86 @@
+REPORTE TÉCNICO – MÓDULOS INVENTARIO Y VENTAS
+
+Contexto general
+Se detectaron ajustes necesarios en Inventario, Ventas y Reportes para asegurar datos consistentes, numeración correlativa de facturas y reportes imprimibles. Las últimas actualizaciones cubren estos requisitos sin modificar Supabase.
+
+Objetivos cumplidos
+1. Stock visible en Productos
+   - Problema: la tabla no mostraba existencias vigentes.
+   - Solución: se añadió total_stock y stockByStore combinando products + inventario.
+   - Vista: ProductsPage → columna de stock por tienda.
+
+2. Filtros de Inventario igualados a Productos
+   - Problema: criterios desalineados.
+   - Solución: mismos filtros de búsqueda, categoría y tienda; lógica compartida.
+   - Vista: barra de filtros en Inventario y Productos.
+
+3. Filtro por tienda en Productos
+   - Problema: no era posible segmentar por sucursal.
+   - Solución: Select de tiendas con datos Supabase, filtrando stockByStore.
+   - Vista: selector “Sucursal” en ProductsPage.
+
+4. Filtros en Ventas (fecha/tienda/categoría)
+   - Problema: sin filtros aplicables.
+   - Solución: useSalesData aplica .gte/.lte/.eq y consultas auxiliares por categoría.
+   - Vista: panel de filtros y controles rápidos en SalesPage.
+
+5. Categorías ordenadas como “Tipo de Producto”
+   - Problema: clasificación confusa.
+   - Solución: InventoryStatsCards muestra PRODUCT_CATEGORIES con íconos y orden predefinido.
+   - Vista: sección “Valor por Categorías” en Inventario.
+
+6. Ventas ordenadas cronológicamente
+   - Problema: lista mezclada.
+   - Solución: sortedSales por created_at descendente después de transformar datos.
+   - Vista: tabla de ventas y reportes.
+
+7. PDF diario de ventas (limpio e imprimible)
+   - Problema: sólo CSV genérico.
+   - Solución: generateSalesReportPdf crea PDF A4 con encabezado, filtros, tabla y totales.
+   - Vista: botón “PDF” en SalesPage abre modal y vista previa.
+
+8. Reporte por tienda
+   - Problema: no existía descarga filtrada por store_id.
+   - Solución: opción “Reporte por tienda” bloquea la sucursal y genera el PDF correspondiente.
+   - Vista: mismo diálogo en SalesPage cuando hay tienda seleccionada.
+
+9. Dashboard de Inventario correcto
+   - Problema: valores globales sin respetar la tienda filtrada.
+   - Solución: calculateFilteredStats y getCategoryStats aplican storeFilter, InventoryStatsCards consume esos datos.
+   - Vista: cards superiores y categorías del dashboard de Inventario.
+
+10. Numeración correlativa de facturas
+   - Problema: números aleatorios (Math.random).
+   - Solución: formato FAC-DDMMMYYYY-#### con reservas, verificación contra Supabase, cache local y sincronización offline.
+   - Vista: POS al completar una venta y SaleCompletionModal muestra el número correlativo.
+
+11. Detalle de hora y productos en el PDF
+   - Problema: reportes sin hora exacta ni desglose.
+   - Solución: columnas Fecha/Hora y subtables de ítems con subtotal y total por venta.
+   - Vista: previsualización del PDF.
+
+Validación y pruebas
+- Inventario y Ventas tienen tests unitarios (`src/lib/inventory/stats.test.ts`, `src/lib/sales/stats.test.ts`) respaldados por fixtures (`src/tests/fixtures/inventory.ts`, `src/tests/fixtures/sales.ts`).
+- Reportes PDF probados en `src/lib/reports/salesReport.test.ts` con fixture dedicado.
+- Vitest muestra ocasional warning “Timeout starting forks runner” (sin fallas); monitorear.
+
+Pendientes/recomendaciones
+- Ajustar orden/jerarquía de categorías si se requiere un criterio explícito adicional.
+- Extender pruebas para escenarios offline/concurrencia del POS y sincronización de facturas.
+- Revisar vulnerabilidades reportadas por npm audit cuando sea conveniente.
+
+Ubicación de cambios clave
+- Inventario: `src/pages/InventoryPage.tsx`, `src/components/inventory/InventoryStatsCards.tsx`, `src/lib/inventory/*`.
+- Productos: `src/pages/ProductsPage.tsx`.
+- Ventas: `src/pages/SalesPage.tsx`, `src/hooks/useSalesData.ts`.
+- Reportes: `src/lib/reports/salesReport.ts`, `src/tests/fixtures/salesReport.ts`, `src/lib/reports/salesReport.test.ts`.
+- Facturación: `src/utils/invoiceGenerator.ts`, `src/pages/POS.tsx`.
+
+Estado actual
+- Tests de negocio pasan (salvo warning de Vitest).
+- Build listo (`npm run build`).
+- Commits publicados en main; deploy de Vercel disparado.
+
+Resumen
+Los 11 objetivos fueron abordados: datos consistentes en Inventario/Ventas, filtros unificados, facturación correlativa controlada desde frontend, y reportes PDF detallados con vista previa y filtros por día/tienda.
+

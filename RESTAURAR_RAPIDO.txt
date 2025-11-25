@@ -1,0 +1,103 @@
+╔════════════════════════════════════════════════════════════════╗
+║           🚀 RESTAURACIÓN RÁPIDA - COMANDOS CLAVE             ║
+╚════════════════════════════════════════════════════════════════╝
+
+📌 PUNTO DE RESTAURACIÓN: punto-restauracion-20251106-174431
+   (Última actualización: 6 Nov 2025 - 17:44 - Sistema funcionando perfectamente)
+
+═══════════════════════════════════════════════════════════════════
+  MÉTODO 1: RESTAURACIÓN AUTOMÁTICA (RECOMENDADO)
+═══════════════════════════════════════════════════════════════════
+
+  Windows PowerShell:
+    .\restaurar.ps1 -Respaldo
+
+  Esto hará:
+    ✓ Crear un respaldo automático
+    ✓ Restaurar al punto inicial
+    ✓ Mantener tus cambios guardados
+
+═══════════════════════════════════════════════════════════════════
+  MÉTODO 2: RESTAURACIÓN MANUAL (3 PASOS)
+═══════════════════════════════════════════════════════════════════
+
+  PASO 1: Crear respaldo (OPCIONAL pero recomendado)
+    git branch respaldo-antes-restaurar
+
+  PASO 2: Restaurar
+    git reset --hard punto-restauracion-20251106-174431
+
+  PASO 3: Limpiar archivos extra
+    git clean -fd
+
+═══════════════════════════════════════════════════════════════════
+  MÉTODO 3: RESTAURACIÓN RÁPIDA (Sin respaldo)
+═══════════════════════════════════════════════════════════════════
+
+  ⚠️  ADVERTENCIA: Esto elimina TODOS los cambios
+
+    git checkout desarrollo
+    git reset --hard punto-restauracion-20251106-174431
+    git clean -fd
+
+═══════════════════════════════════════════════════════════════════
+  CASOS ESPECÍFICOS
+═══════════════════════════════════════════════════════════════════
+
+  📄 Restaurar UN SOLO archivo:
+    git checkout punto-restauracion-20251106-174431 -- src/pages/POS.tsx
+
+  🔍 Ver qué cambió:
+    git diff punto-restauracion-20251106-174431
+
+  📋 Ver archivos cambiados:
+    git diff --name-only punto-restauracion-20251106-174431
+
+  📊 Ver estado actual:
+    git status
+
+═══════════════════════════════════════════════════════════════════
+  VERIFICACIÓN
+═══════════════════════════════════════════════════════════════════
+
+  ✅ Verificar que el tag existe:
+    git tag -l "punto-restauracion-*"
+
+  ✅ Verificar rama actual:
+    git branch
+
+  ✅ Ver historial:
+    git log --oneline -5
+
+═══════════════════════════════════════════════════════════════════
+  RECUPERAR RESPALDO
+═══════════════════════════════════════════════════════════════════
+
+  Ver ramas de respaldo:
+    git branch -a | grep respaldo
+
+  Cambiar a un respaldo:
+    git checkout respaldo-antes-restaurar-[fecha]
+
+═══════════════════════════════════════════════════════════════════
+  🆘 EMERGENCIА
+═══════════════════════════════════════════════════════════════════
+
+  Si algo salió mal, ver historial completo:
+    git reflog
+
+  Volver a un commit específico:
+    git checkout [hash-del-commit]
+
+═══════════════════════════════════════════════════════════════════
+
+💡 TIP: Siempre crea un respaldo antes de restaurar si tienes
+   cambios importantes que no quieres perder.
+
+📚 Para más detalles, consulta: COMO_RESTAURAR.md
+
+
+
+
+
+

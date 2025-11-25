@@ -1,0 +1,13 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Top horizontal shape - bright green inverted U/M -->
+  <path d="M5 4C5 3.44772 5.44772 3 6 3H26C26.5523 3 27 3.44772 27 4V9C27 9.55228 26.5523 10 26 10H6C5.44772 10 5 9.55228 5 9V4Z" fill="#00FF88"/>
+  
+  <!-- Bottom horizontal shape - white regular U/M -->
+  <path d="M5 22C5 21.4477 5.44772 21 6 21H26C26.5523 21 27 21.4477 27 22V27C27 27.5523 26.5523 28 26 28H6C5.44772 28 5 27.5523 5 27V22Z" fill="white"/>
+  
+  <!-- Left curved vertical element - darker green -->
+  <path d="M5 9C5 9.55228 5.44772 10 6 10H8C8.55228 10 9 9.55228 9 9V22C9 21.4477 8.55228 21 8 21H6C5.44772 21 5 21.4477 5 22V9Z" fill="#00CC66"/>
+  
+  <!-- Right curved vertical element - darker green -->
+  <path d="M23 9C23 9.55228 23.4477 10 24 10H26C26.5523 10 27 9.55228 27 9V22C27 21.4477 26.5523 21 26 21H24C23.4477 21 23 21.4477 23 22V9Z" fill="#00CC66"/>
+</svg>
