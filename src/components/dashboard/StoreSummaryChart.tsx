@@ -26,7 +26,8 @@ interface StoreSummaryChartProps {
   selectedPeriod: 'today' | 'yesterday' | 'thisMonth';
 }
 
-const COLORS = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444'];
+// Paleta Eco-Tech: Verde principal con variaciones sutiles
+const COLORS = ['hsl(var(--primary))', '#34d399', '#10b981', '#059669', '#047857'];
 
 export function StoreSummaryChart({
   stores,
@@ -84,23 +85,23 @@ export function StoreSummaryChart({
   // Si no hay tiendas, mostrar estructura vacía pero visible
   if (stores.length === 0) {
     return (
-      <Card className="p-6 bg-[#1a1a1a] border border-[#333]">
+      <Card className="p-6">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+          <h3 className="text-lg font-semibold text-main-text flex items-center gap-2">
             <Building2 className="w-5 h-5" />
             Resumen por Tienda
           </h3>
-          <Button variant="outline" size="sm" className="border-[#333] hover:bg-[#2a2a2a] text-white">
+          <Button variant="outline" size="sm">
             Ver Todo
           </Button>
         </div>
         <div className="w-full" style={{ height: '280px' }}>
-          <div className="flex items-center justify-center h-full text-muted-foreground border border-[#333] rounded-lg">
+          <div className="flex items-center justify-center h-full text-gray-500">
             <p>No hay tiendas disponibles</p>
           </div>
         </div>
-        <div className="space-y-0 border-t border-[#333] pt-4 mt-4">
-          <div className="grid grid-cols-4 gap-4 p-3 bg-[#252525] rounded-lg text-sm font-medium text-muted-foreground">
+        <div className="space-y-0 border-t border-gray-100 pt-4 mt-4">
+          <div className="grid grid-cols-4 gap-4 p-3 bg-gray-50/50 rounded-t-lg text-xs font-medium text-gray-500 uppercase">
             <div className="flex items-center gap-2">
               <Store className="w-4 h-4" />
               Tienda
@@ -115,13 +116,13 @@ export function StoreSummaryChart({
   }
 
   return (
-    <Card className="p-6 bg-[#1a1a1a] border border-[#333] flex flex-col h-full">
+    <Card className="p-6 flex flex-col h-full">
       <div className="flex items-center justify-between mb-6 flex-shrink-0">
-        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+        <h3 className="text-lg font-semibold text-legacy-text flex items-center gap-2">
           <Building2 className="w-5 h-5" />
           Resumen por Tienda
         </h3>
-        <Button variant="outline" size="sm" className="border-[#333] hover:bg-[#2a2a2a] text-white">
+        <Button variant="outline" size="sm">
           Ver Todo
         </Button>
       </div>
@@ -135,30 +136,31 @@ export function StoreSummaryChart({
               data={chartData}
               margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis 
                 type="number" 
-                stroke="#888" 
-                tick={{ fill: '#fff', fontSize: 12 }}
+                stroke="hsl(var(--muted-foreground))" 
+                tick={{ fill: 'hsl(var(--foreground))', fontSize: 12 }}
                 domain={[0, 'dataMax']}
               />
               <YAxis
                 dataKey="name"
                 type="category"
                 width={140}
-                stroke="#888"
-                tick={{ fill: '#fff', fontSize: 11 }}
+                stroke="hsl(var(--muted-foreground))"
+                tick={{ fill: 'hsl(var(--foreground))', fontSize: 11 }}
                 tickLine={false}
               />
               <Tooltip
                 formatter={(value: number) => formatCurrency(value)}
                 contentStyle={{
-                  backgroundColor: 'rgba(0, 0, 0, 0.9)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  backgroundColor: 'hsl(var(--card))',
+                  borderColor: 'hsl(var(--border))',
                   borderRadius: '8px',
-                  color: '#fff'
+                  color: 'hsl(var(--foreground))'
                 }}
-                labelStyle={{ color: '#10b981' }}
+                itemStyle={{ color: 'hsl(var(--foreground))' }}
+                labelStyle={{ color: 'hsl(var(--primary))' }}
               />
               <Bar dataKey="sales" radius={[0, 4, 4, 0]} barSize={30}>
                 {chartData.map((entry, index) => (
@@ -170,8 +172,8 @@ export function StoreSummaryChart({
         </div>
 
         {/* Tabla de Detalles */}
-        <div className="flex-shrink-0 space-y-0 border-t border-[#333] pt-4">
-          <div className="grid grid-cols-4 gap-4 p-3 bg-[#252525] rounded-t-lg border-b border-[#333] text-sm font-medium text-muted-foreground">
+        <div className="flex-shrink-0 space-y-0 border-t border-gray-100 pt-4">
+          <div className="grid grid-cols-4 gap-4 p-3 bg-gray-50/50 rounded-t-lg border-b border-gray-100 text-xs font-medium text-gray-500 uppercase">
             <div className="flex items-center gap-2">
               <Store className="w-4 h-4" />
               Tienda
@@ -189,11 +191,11 @@ export function StoreSummaryChart({
             return (
               <div
                 key={store.id}
-                className={`grid grid-cols-4 gap-4 p-3 hover:bg-[#2a2a2a] transition-colors ${
-                  isLast ? 'rounded-b-lg' : 'border-b border-[#333]'
+                className={`grid grid-cols-4 gap-4 p-3 hover:bg-gray-50 transition-colors ${
+                  isLast ? 'rounded-b-lg' : 'border-b border-gray-100'
                 }`}
               >
-                <div className="font-medium text-white flex items-center gap-2">
+                <div className="font-medium text-main-text flex items-center gap-2">
                   <div
                     className="w-2 h-8 rounded"
                     style={{ backgroundColor: COLORS[index % COLORS.length] }}
@@ -218,7 +220,7 @@ export function StoreSummaryChart({
                       : (store.netIncome || storeData.averageOrder * storeData.orders)
                   )}
                 </div>
-                <div className="text-right text-muted-foreground">
+                <div className="text-right text-gray-600">
                   {storeData.orders}
                 </div>
               </div>

@@ -1,14 +1,15 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { InventoryProvider } from "@/contexts/InventoryContext";
 import { StoreProvider } from "@/contexts/StoreContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { PasswordSetupGuard } from "@/components/auth/PasswordSetupGuard";
+import { ShoppingCart } from "lucide-react";
+import { LoadingScreen } from "@/components/ui/LoadingScreen";
 // Lazy load layout and auth pages
 const MainLayout = lazy(() => import("./components/layout/MainLayout"));
 const AuthPage = lazy(() => import("./pages/AuthPage"));
@@ -18,8 +19,9 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 // Lazy load heavy pages for code splitting
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const POS = lazy(() => import("./pages/POS"));
-const InventoryPage = lazy(() => import("./pages/InventoryPage").then(m => ({ default: m.InventoryPage })));
-const ProductsPage = lazy(() => import("./pages/ProductsPage").then(m => ({ default: m.ProductsPage })));
+const AlmacenPage = lazy(() => import("./pages/AlmacenPage").then(m => ({ default: m.AlmacenPage })));
+const ArticulosPage = lazy(() => import("./pages/ArticulosPage").then(m => ({ default: m.ArticulosPage })));
+const EstadisticasPage = lazy(() => import("./pages/EstadisticasPage").then(m => ({ default: m.EstadisticasPage })));
 const StoresPage = lazy(() => import("./pages/StoresPage").then(m => ({ default: m.StoresPage })));
 const CustomersPage = lazy(() => import("./pages/CustomersPage"));
 const SalesPage = lazy(() => import("./pages/SalesPage"));
@@ -28,30 +30,110 @@ const Reports = lazy(() => import("./pages/ReportsNew"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const ChatPage = lazy(() => import("./pages/ChatPage"));
 
+const StoreDashboardPage = lazy(() => import("./pages/StoreDashboardPage"));
+const MasterAuditDashboardPage = lazy(() => import("./pages/MasterAuditDashboardPage"));
+const CashierValidationPage = lazy(() => import("./pages/CashierValidationPage"));
+const DeletedProductsPage = lazy(() => import("./pages/DeletedProductsPage").then(m => ({ default: m.DeletedProductsPage })));
+
 const queryClient = new QueryClient();
+
+// Loading fallback component - Eco-Pulse
+const LoadingFallback = () => (
+  <LoadingScreen message="Cargando aplicación..." />
+);
+
+// Componente de validación de sesión para rutas específicas por rol
+const RoleValidationRoute = ({ 
+  requiredRole, 
+  redirectTo 
+}: { 
+  requiredRole: 'admin' | 'manager' | 'cashier';
+  redirectTo: string;
+}) => {
+  const { user, userProfile, loading } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!loading) {
+      if (!user || !userProfile) {
+        navigate('/', { replace: true });
+        return;
+      }
+
+      if (userProfile.role !== requiredRole) {
+        navigate('/', { replace: true });
+        return;
+      }
+
+      // Rol correcto, redirigir al destino
+      navigate(redirectTo, { replace: true });
+    }
+  }, [user, userProfile, loading, requiredRole, redirectTo, navigate]);
+
+  return <LoadingFallback />;
+};
 
 // Component to handle role-based redirection
 const RoleBasedRedirect = () => {
   const { userProfile } = useAuth();
   
-  if (userProfile?.role === 'cashier') {
-    return <Navigate to="/products" replace />;
+  // Si no hay perfil, mostrar login
+  if (!userProfile) {
+    return <Navigate to="/" replace />;
   }
   
+  // MASTER_ADMIN redirige a panel de auditoría
+  if (userProfile.role === 'master_admin') {
+    return <Navigate to="/master-audit" replace />;
+  }
+  
+  // ADMIN redirige a dashboard
+  if (userProfile.role === 'admin') {
+    return <Navigate to="/dashboard" replace />;
+  }
+  
+  // MANAGER redirige a estadísticas
+  if (userProfile.role === 'manager') {
+    return <Navigate to="/estadisticas" replace />;
+  }
+  
+  // CAJERO redirige a POS
+  if (userProfile.role === 'cashier') {
+    return <Navigate to="/pos" replace />;
+  }
+  
+  // Por defecto, dashboard
   return (
     <ProtectedRoute requiredRole="manager">
-      <Suspense fallback={
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Cargando...</p>
-          </div>
-        </div>
-      }>
+      <Suspense fallback={<LoadingFallback />}>
         <Dashboard />
       </Suspense>
     </ProtectedRoute>
   );
+};
+
+// Guard para bloquear MASTER_ADMIN del POS
+const POSAccessGuard = ({ children }: { children: React.ReactNode }) => {
+  const { userProfile } = useAuth();
+  
+  // MASTER_ADMIN NO puede acceder al POS - redirigir a panel de auditoría
+  if (userProfile?.role === 'master_admin') {
+    return <Navigate to="/master-audit" replace />;
+  }
+  
+  return <>{children}</>;
+};
+
+// Guard para redirigir CAJEROS a /pos si intentan acceder a rutas no permitidas
+const CashierRouteGuard = ({ children }: { children: React.ReactNode }) => {
+  const { userProfile } = useAuth();
+  
+  // CAJERO solo puede acceder a /pos y /almacen - redirigir a /pos si intenta otra ruta
+  if (userProfile?.role === 'cashier') {
+    return <Navigate to="/pos" replace />;
+  }
+  
+  return <>{children}</>;
 };
 
 // Protected App Routes Component
@@ -59,40 +141,25 @@ const AppRoutes = () => {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Cargando...</p>
-        </div>
-      </div>
-    );
+    return <LoadingFallback />;
   }
 
+  // Si no hay usuario, mostrar login o redirigir según la ruta
   if (!user) {
     return (
-      <Suspense fallback={
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Cargando...</p>
-          </div>
-        </div>
-      }>
-        <AuthPage />
-      </Suspense>
+      <Routes>
+        <Route path="/" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <AuthPage />
+          </Suspense>
+        } />
+        <Route path="/admin" element={<Navigate to="/" replace />} />
+        <Route path="/manager" element={<Navigate to="/" replace />} />
+        <Route path="/cashier" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     );
   }
-
-  // Loading fallback component
-  const LoadingFallback = () => (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-        <p className="text-muted-foreground">Cargando...</p>
-      </div>
-    </div>
-  );
 
   return (
     <Routes>
@@ -105,6 +172,29 @@ const AppRoutes = () => {
         } 
       />
       <Route path="/auth" element={<Navigate to="/" replace />} />
+      
+      {/* Rutas de validación por rol */}
+      <Route 
+        path="/admin" 
+        element={
+          <RoleValidationRoute requiredRole="admin" redirectTo="/dashboard" />
+        } 
+      />
+      <Route 
+        path="/manager" 
+        element={
+          <RoleValidationRoute requiredRole="manager" redirectTo="/estadisticas" />
+        } 
+      />
+      <Route 
+        path="/cashier" 
+        element={
+          <Suspense fallback={<LoadingFallback />}>
+            <CashierValidationPage />
+          </Suspense>
+        } 
+      />
+      
       <Route path="/" element={
         <ProtectedRoute>
           <PasswordSetupGuard>
@@ -126,97 +216,159 @@ const AppRoutes = () => {
         <Route 
           path="pos" 
           element={
-            <Suspense fallback={<LoadingFallback />}>
-              <POS />
-            </Suspense>
+            <POSAccessGuard>
+              <Suspense fallback={<LoadingFallback />}>
+                <POS />
+              </Suspense>
+            </POSAccessGuard>
           } 
         />
         <Route 
-          path="inventory" 
+          path="master-audit" 
           element={
-            <ProtectedRoute requiredRole="manager">
+            <ProtectedRoute requiredRole="master_admin">
               <Suspense fallback={<LoadingFallback />}>
-                <InventoryPage />
+                <MasterAuditDashboardPage />
               </Suspense>
             </ProtectedRoute>
           } 
         />
         <Route 
-          path="products" 
+          path="store/:storeId" 
           element={
-            <Suspense fallback={<LoadingFallback />}>
-              <ProductsPage />
-            </Suspense>
+            <ProtectedRoute requiredRole="master_admin">
+              <Suspense fallback={<LoadingFallback />}>
+                <StoreDashboardPage />
+              </Suspense>
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="almacen" 
+          element={
+            <ProtectedRoute requiredRole="cashier">
+              <Suspense fallback={<LoadingFallback />}>
+                <AlmacenPage />
+              </Suspense>
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="articulos" 
+          element={
+            <CashierRouteGuard>
+              <ProtectedRoute requiredRole="manager">
+                <Suspense fallback={<LoadingFallback />}>
+                  <ArticulosPage />
+                </Suspense>
+              </ProtectedRoute>
+            </CashierRouteGuard>
+          } 
+        />
+        <Route 
+          path="deleted-products" 
+          element={
+            <ProtectedRoute requiredRole="master_admin">
+              <Suspense fallback={<LoadingFallback />}>
+                <DeletedProductsPage />
+              </Suspense>
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="estadisticas" 
+          element={
+            <CashierRouteGuard>
+              <ProtectedRoute requiredRole="manager">
+                <Suspense fallback={<LoadingFallback />}>
+                  <EstadisticasPage />
+                </Suspense>
+              </ProtectedRoute>
+            </CashierRouteGuard>
           } 
         />
         <Route 
           path="sales" 
           element={
-            <ProtectedRoute requiredRole="manager">
-              <Suspense fallback={<LoadingFallback />}>
-                <SalesPage />
-              </Suspense>
-            </ProtectedRoute>
+            <CashierRouteGuard>
+              <ProtectedRoute requiredRole="manager">
+                <Suspense fallback={<LoadingFallback />}>
+                  <SalesPage />
+                </Suspense>
+              </ProtectedRoute>
+            </CashierRouteGuard>
           } 
         />
         <Route 
           path="customers" 
           element={
-            <ProtectedRoute requiredRole="manager">
-              <Suspense fallback={<LoadingFallback />}>
-                <CustomersPage />
-              </Suspense>
-            </ProtectedRoute>
+            <CashierRouteGuard>
+              <ProtectedRoute requiredRole="manager">
+                <Suspense fallback={<LoadingFallback />}>
+                  <CustomersPage />
+                </Suspense>
+              </ProtectedRoute>
+            </CashierRouteGuard>
           } 
         />
         <Route 
           path="stores" 
           element={
-            <ProtectedRoute requiredRole="admin">
-              <Suspense fallback={<LoadingFallback />}>
-                <StoresPage />
-              </Suspense>
-            </ProtectedRoute>
+            <CashierRouteGuard>
+              <ProtectedRoute requiredRole="admin">
+                <Suspense fallback={<LoadingFallback />}>
+                  <StoresPage />
+                </Suspense>
+              </ProtectedRoute>
+            </CashierRouteGuard>
           } 
         />
         <Route 
           path="users" 
           element={
-            <ProtectedRoute requiredRole="admin">
-              <Suspense fallback={<LoadingFallback />}>
-                <Users />
-              </Suspense>
-            </ProtectedRoute>
+            <CashierRouteGuard>
+              <ProtectedRoute requiredRole="admin">
+                <Suspense fallback={<LoadingFallback />}>
+                  <Users />
+                </Suspense>
+              </ProtectedRoute>
+            </CashierRouteGuard>
           } 
         />
         <Route 
           path="reports" 
           element={
-            <ProtectedRoute requiredRole="admin">
-              <Suspense fallback={<LoadingFallback />}>
-                <Reports />
-              </Suspense>
-            </ProtectedRoute>
+            <CashierRouteGuard>
+              <ProtectedRoute requiredRole="manager">
+                <Suspense fallback={<LoadingFallback />}>
+                  <Reports />
+                </Suspense>
+              </ProtectedRoute>
+            </CashierRouteGuard>
           } 
         />
         <Route 
           path="settings" 
           element={
-            <ProtectedRoute requiredRole="admin">
-              <Suspense fallback={<LoadingFallback />}>
-                <SettingsPage />
-              </Suspense>
-            </ProtectedRoute>
+            <CashierRouteGuard>
+              <ProtectedRoute requiredRole="admin">
+                <Suspense fallback={<LoadingFallback />}>
+                  <SettingsPage />
+                </Suspense>
+              </ProtectedRoute>
+            </CashierRouteGuard>
           } 
         />
         <Route 
           path="chat" 
           element={
-            <ProtectedRoute requiredRole="manager">
-              <Suspense fallback={<LoadingFallback />}>
-                <ChatPage />
-              </Suspense>
-            </ProtectedRoute>
+            <CashierRouteGuard>
+              <ProtectedRoute requiredRole="manager">
+                <Suspense fallback={<LoadingFallback />}>
+                  <ChatPage />
+                </Suspense>
+              </ProtectedRoute>
+            </CashierRouteGuard>
           } 
         />
       </Route>
@@ -236,15 +388,13 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
       <StoreProvider>
-        <InventoryProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Sonner />
-            <BrowserRouter>
-              <AppRoutes />
-            </BrowserRouter>
-          </TooltipProvider>
-        </InventoryProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <AppRoutes />
+          </BrowserRouter>
+        </TooltipProvider>
       </StoreProvider>
     </AuthProvider>
   </QueryClientProvider>

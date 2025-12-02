@@ -96,10 +96,10 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
     try {
       console.log('Fetching sale details for ID:', id);
 
-      // First, fetch the basic sale information
+      // First, fetch the basic sale information - OPTIMIZADO: Select Minimal
       const { data: saleData, error: saleError } = await supabase
         .from('sales')
-        .select('*')
+        .select('id, company_id, store_id, customer_id, cashier_id, total_usd, total_bs, bcv_rate_used, payment_method, status, created_at')
         .eq('id', id)
         .eq('company_id', userProfile.company_id)
         .single();
@@ -151,10 +151,10 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
         console.error('Cashier error:', cashierError);
       }
 
-      // Fetch sale items
+      // Fetch sale items - OPTIMIZADO: Select Minimal
       const { data: itemsData, error: itemsError } = await supabase
         .from('sale_items')
-        .select('*')
+        .select('id, product_id, product_name, qty, price_usd, subtotal_usd')
         .eq('sale_id', id);
 
       if (itemsError) {
@@ -162,7 +162,7 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
       }
 
       // Transform items data
-      const items: SaleItem[] = (itemsData || []).map((item: any) => ({
+      const rawItems: SaleItem[] = (itemsData || []).map((item: any) => ({
         id: item.id,
         product_name: item.product_name || 'Producto',
         qty: Number(item.qty) || 0,
@@ -170,6 +170,28 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
         subtotal_usd: Number(item.subtotal_usd) || 0,
         product_id: item.product_id,
       }));
+
+      // CONSOLIDACIÓN: Agrupar items por product_id y price_usd
+      // Esto combina múltiples líneas de items serializados (ej: teléfonos con IMEIs)
+      const groupedItemsMap = new Map<string, SaleItem>();
+      
+      rawItems.forEach((item) => {
+        // Crear clave única por producto y precio
+        const key = `${item.product_id}-${item.price_usd}`;
+        
+        if (groupedItemsMap.has(key)) {
+          // Sumar cantidad y subtotal al item existente
+          const existing = groupedItemsMap.get(key)!;
+          existing.qty += item.qty;
+          existing.subtotal_usd += item.subtotal_usd;
+        } else {
+          // Crear nuevo grupo con copia del item
+          groupedItemsMap.set(key, { ...item });
+        }
+      });
+
+      // Convertir el Map a array
+      const items: SaleItem[] = Array.from(groupedItemsMap.values());
 
       // Transform sale data
       const transformedSale: SaleDetail = {
@@ -576,7 +598,10 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
               <CardHeader>
                 <CardTitle className="flex items-center text-lg">
                   <Package className="w-5 h-5 mr-2" />
-                  Productos ({sale.items?.length || 0} items)
+                  Productos ({sale.items?.length || 0} {sale.items?.length === 1 ? 'producto' : 'productos'})
+                  <span className="text-sm font-normal text-muted-foreground ml-2">
+                    ({sale.items?.reduce((sum, item) => sum + item.qty, 0) || 0} unidades)
+                  </span>
                 </CardTitle>
               </CardHeader>
               <CardContent>

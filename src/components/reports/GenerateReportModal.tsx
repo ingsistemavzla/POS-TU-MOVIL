@@ -297,7 +297,6 @@ export function GenerateReportModal({
           <Button
             onClick={handleGenerate}
             disabled={loading || !dateFrom || !dateTo}
-            className="bg-green-600 hover:bg-green-700"
           >
             {loading ? "Generando..." : "Generar Reporte"}
           </Button>

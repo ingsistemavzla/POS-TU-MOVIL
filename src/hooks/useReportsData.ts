@@ -63,7 +63,7 @@ export function useReportsData(period: PeriodType = 'today', customRange?: DateR
         created_at,
         stores!inner(id, name)
       `)
-      .eq('company_id', userProfile.company_id)
+      // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
       .gte('created_at', startDate.toISOString())
       .lt('created_at', endDate.toISOString());
 
@@ -323,6 +323,7 @@ export function useReportsData(period: PeriodType = 'today', customRange?: DateR
     if (!userProfile?.company_id) throw new Error('No company ID available');
     
     // Fetch inventory data with product and store information
+    // ⚠️ FILTRO CRÍTICO: Solo productos activos para reportes precisos
     const { data: inventoryData, error: inventoryError } = await (supabase as any)
       .from('inventories')
       .select(`
@@ -336,7 +337,8 @@ export function useReportsData(period: PeriodType = 'today', customRange?: DateR
           name,
           sku,
           cost_usd,
-          company_id
+          company_id,
+          active
         ),
         stores!inner(
           id,
@@ -344,6 +346,7 @@ export function useReportsData(period: PeriodType = 'today', customRange?: DateR
         )
       `)
       .eq('products.company_id', userProfile.company_id)
+      .eq('products.active', true)  // ⚠️ Solo productos activos
       .limit(50);
 
     if (inventoryError) throw inventoryError;
@@ -471,7 +474,7 @@ export function useReportsData(period: PeriodType = 'today', customRange?: DateR
           user_id,
           users!inner(name, role)
         `)
-        .eq('company_id', userProfile.company_id)
+        // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
         .gte('created_at', startDate.toISOString())
         .lt('created_at', endDate.toISOString())
         .limit(50);
@@ -535,7 +538,7 @@ export function useReportsData(period: PeriodType = 'today', customRange?: DateR
           store_id,
           stores!inner(name)
         `)
-        .eq('company_id', userProfile.company_id)
+        // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
         .gte('created_at', startDate.toISOString())
         .lt('created_at', endDate.toISOString())
         .limit(50);
@@ -587,10 +590,11 @@ export function useReportsData(period: PeriodType = 'today', customRange?: DateR
     if (!userProfile?.company_id) return [];
     
     try {
+      // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
       const { data: stores, error } = await (supabase as any)
         .from('stores')
         .select('id, name, active')
-        .eq('company_id', userProfile.company_id)
+        // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
         .eq('active', true)
         .order('name');
       

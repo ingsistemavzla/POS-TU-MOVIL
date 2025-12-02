@@ -111,7 +111,8 @@ export function ScheduledReportsCard() {
       await actions.deleteScheduledReport(reportId);
       toast({
         title: "Reporte eliminado",
-        description: "El reporte automático ha sido eliminado."
+        description: "El reporte automático ha sido eliminado.",
+        variant: "success",
       });
     } catch (error) {
       toast({

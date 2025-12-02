@@ -42,7 +42,6 @@ interface Store {
 interface StoreInventory {
   store_id: string;
   qty: number;
-  min_qty: number;
 }
 
 import { PRODUCT_CATEGORIES } from '@/constants/categories';
@@ -97,7 +96,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
           toast({
             title: "⚠️ ALERTA: Stock Negativo Detectado",
             description: `El stock en ${store?.name || 'tienda desconocida'} es negativo (${negativeStock.qty}). Se mostrará como 0 hasta corregir.`,
-            variant: "destructive",
+            variant: "warning",
             duration: 10000,
           });
         }
@@ -107,7 +106,6 @@ export const ProductForm: React.FC<ProductFormProps> = ({
       setStoreInventories(stores.map(store => ({
         store_id: store.id,
         qty: 0,
-        min_qty: 5,
       })));
     }
   }, [product, stores]);
@@ -116,7 +114,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
     try {
       const { data, error } = await supabase
         .from('inventories')
-        .select('store_id, qty, min_qty')
+        .select('store_id, qty')
         .eq('product_id', productId);
 
       if (error) {
@@ -138,14 +136,13 @@ export const ProductForm: React.FC<ProductFormProps> = ({
             toast({
               title: "⚠️ Stock Negativo Corregido",
               description: `El stock en ${store.name} era negativo (${rawQty}). Se ha mostrado como 0.`,
-              variant: "destructive",
+              variant: "warning",
               duration: 8000,
             });
           }
           return {
             store_id: store.id,
             qty: fix.correctedQty,
-            min_qty: inv?.min_qty || 5,
             _wasNegative: true,
             _originalQty: rawQty
           };
@@ -154,7 +151,6 @@ export const ProductForm: React.FC<ProductFormProps> = ({
         return {
           store_id: store.id,
           qty: rawQty,
-          min_qty: inv?.min_qty || 5,
         };
       });
       
@@ -167,19 +163,40 @@ export const ProductForm: React.FC<ProductFormProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.name.trim() || !formData.sku.trim()) {
+    // Validación de campos requeridos
+    if (!formData.name.trim()) {
       toast({
         title: "Error",
-        description: "El nombre y SKU del producto son requeridos",
+        description: "El nombre del producto es requerido",
         variant: "destructive",
       });
       return;
     }
 
-    if (formData.cost_usd <= 0 || formData.sale_price_usd <= 0) {
+    if (!formData.sku.trim()) {
       toast({
         title: "Error",
-        description: "El costo y precio de venta deben ser mayores a 0",
+        description: "El SKU del producto es requerido",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validación de costo
+    if (formData.cost_usd <= 0 || isNaN(formData.cost_usd)) {
+      toast({
+        title: "Error",
+        description: "El costo (USD) debe ser mayor a 0",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validación de precio de venta
+    if (formData.sale_price_usd <= 0 || isNaN(formData.sale_price_usd)) {
+      toast({
+        title: "Error",
+        description: "El precio de venta (USD) debe ser mayor a 0",
         variant: "destructive",
       });
       return;
@@ -219,7 +236,6 @@ export const ProductForm: React.FC<ProductFormProps> = ({
             p_product_id: product.id,
             p_store_id: inventory.store_id,
             p_qty: inventory.qty,
-            p_min_qty: inventory.min_qty,
           });
 
           if (error) {
@@ -228,14 +244,17 @@ export const ProductForm: React.FC<ProductFormProps> = ({
         }
       } else {
         // Create new product with inventories
-        const { data: result, error } = await (supabase as any).rpc('create_product_with_inventory', {
+        const { data: result, error } = await (supabase as any).rpc('create_product_v3', {
           p_sku: formData.sku.trim(),
           p_barcode: formData.barcode.trim() || null,
           p_name: formData.name.trim(),
           p_category: formData.category.trim() || null,
           p_cost_usd: formData.cost_usd,
           p_sale_price_usd: formData.sale_price_usd,
-          p_store_inventories: storeInventories,
+          p_store_inventories: storeInventories.map(inv => ({
+            store_id: inv.store_id,
+            qty: inv.qty
+          })),
         });
 
         if (error) {
@@ -304,15 +323,15 @@ export const ProductForm: React.FC<ProductFormProps> = ({
     }));
   };
 
-  const handleInventoryChange = (storeId: string, field: 'qty' | 'min_qty', value: number) => {
+  const handleInventoryChange = (storeId: string, value: number) => {
     // CRÍTICO: Validar que qty nunca sea negativo usando utilidades de validación
-    const validation = validateStockQuantity(value, field === 'qty' ? 'Cantidad' : 'Stock Mínimo');
+    const validation = validateStockQuantity(value, 'Cantidad');
     
     if (!validation.isValid) {
       // Mostrar alerta si intentan ingresar valor negativo
       toast({
         title: "⚠️ Valor Inválido",
-        description: validation.error || `No se puede ingresar un valor negativo para ${field === 'qty' ? 'cantidad' : 'stock mínimo'}.`,
+        description: validation.error || 'No se puede ingresar un valor negativo para cantidad.',
         variant: "destructive",
       });
       
@@ -320,7 +339,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
       const safeValue = validation.suggestedQty ?? 0;
       setStoreInventories(prev => prev.map(inv => 
         inv.store_id === storeId 
-          ? { ...inv, [field]: safeValue }
+          ? { ...inv, qty: safeValue }
           : inv
       ));
       return;
@@ -329,7 +348,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
     // Si es válido, actualizar normalmente
     setStoreInventories(prev => prev.map(inv => 
       inv.store_id === storeId 
-        ? { ...inv, [field]: value }
+        ? { ...inv, qty: value }
         : inv
     ));
   };
@@ -341,15 +360,29 @@ export const ProductForm: React.FC<ProductFormProps> = ({
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className="text-xl">
             {product ? 'Editar Producto' : 'Nuevo Producto'}
           </DialogTitle>
         </DialogHeader>
         
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-2 gap-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Fila 1: Nombre (ancho completo) */}
+          <div className="space-y-2">
+            <Label htmlFor="name">Nombre del Producto *</Label>
+            <Input
+              id="name"
+              value={formData.name}
+              onChange={(e) => handleInputChange('name', e.target.value)}
+              placeholder="Nombre del producto"
+              required
+              className="text-lg"
+            />
+          </div>
+
+          {/* Fila 2: SKU, Código de Barras, Categoría (3 columnas) */}
+          <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="sku">SKU *</Label>
               <Input
@@ -370,39 +403,29 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                 placeholder="Código de barras"
               />
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="category">Categoría</Label>
+              <Select
+                value={formData.category}
+                onValueChange={(value) => handleInputChange('category', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar categoría" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRODUCT_CATEGORIES.map((category) => (
+                    <SelectItem key={category.value} value={category.value}>
+                      {category.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="name">Nombre *</Label>
-            <Input
-              id="name"
-              value={formData.name}
-              onChange={(e) => handleInputChange('name', e.target.value)}
-              placeholder="Nombre del producto"
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="category">Categoría</Label>
-            <Select
-              value={formData.category}
-              onValueChange={(value) => handleInputChange('category', value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar categoría" />
-              </SelectTrigger>
-              <SelectContent>
-                {PRODUCT_CATEGORIES.map((category) => (
-                  <SelectItem key={category.value} value={category.value}>
-                    {category.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
+          {/* Fila 3: Precios y Estado (3 columnas) */}
+          <div className="grid grid-cols-3 gap-4 items-end">
             <div className="space-y-2">
               <Label htmlFor="cost_usd">Costo (USD) *</Label>
               <Input
@@ -430,71 +453,61 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                 required
               />
             </div>
-          </div>
 
-          {formData.cost_usd > 0 && (
-            <div className="text-sm text-muted-foreground">
-              Margen de ganancia: <span className="font-medium">{calculateMargin().toFixed(1)}%</span>
+            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+              <div>
+                <Label htmlFor="active" className="cursor-pointer">Producto activo</Label>
+                {formData.cost_usd > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Margen: <span className="font-semibold text-accent-primary">{calculateMargin().toFixed(1)}%</span>
+                  </p>
+                )}
+              </div>
+              <Switch
+                id="active"
+                checked={formData.active}
+                onCheckedChange={(checked) => handleInputChange('active', checked)}
+              />
             </div>
-          )}
-
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="active"
-              checked={formData.active}
-              onCheckedChange={(checked) => handleInputChange('active', checked)}
-            />
-            <Label htmlFor="active">Producto activo</Label>
           </div>
 
+          {/* Inventario por Tienda (grid horizontal) */}
           {stores.length > 0 && (
             <Card>
-              <CardHeader>
+              <CardHeader className="py-3">
                 <CardTitle className="text-base">Inventario por Tienda</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {storeInventories.map((inventory) => {
-                  const store = stores.find(s => s.id === inventory.store_id);
-                  if (!store) return null;
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {storeInventories.map((inventory) => {
+                    const store = stores.find(s => s.id === inventory.store_id);
+                    if (!store) return null;
 
-                  return (
-                    <div key={store.id} className="grid grid-cols-3 gap-4 items-center">
-                      <div className="font-medium">{store.name}</div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Cantidad</Label>
+                    return (
+                      <div key={store.id} className="flex items-center gap-2 p-2 bg-muted/30 rounded-lg">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">{store.name}</p>
+                        </div>
                         <Input
                           type="number"
                           min="0"
-                          value={Math.max(0, inventory.qty)} // Asegurar que nunca muestre negativo
+                          value={Math.max(0, inventory.qty)}
                           onChange={(e) => {
                             const val = parseInt(e.target.value) || 0;
-                            handleInventoryChange(store.id, 'qty', Math.max(0, val)); // Validar antes de actualizar
+                            handleInventoryChange(store.id, Math.max(0, val));
                           }}
-                          className="h-8"
+                          className="h-8 w-20 text-center"
                         />
                       </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Stock Mínimo</Label>
-                        <Input
-                          type="number"
-                          min="0"
-                          value={inventory.min_qty}
-                          onChange={(e) => handleInventoryChange(
-                            store.id, 
-                            'min_qty', 
-                            parseInt(e.target.value) || 0
-                          )}
-                          className="h-8"
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </CardContent>
             </Card>
           )}
 
-          <div className="flex justify-end space-x-2 pt-4">
+          {/* Botones de acción */}
+          <div className="flex justify-end gap-3 pt-2 border-t">
             <Button
               type="button"
               variant="outline"
@@ -503,8 +516,8 @@ export const ProductForm: React.FC<ProductFormProps> = ({
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? 'Guardando...' : (product ? 'Actualizar' : 'Crear')}
+            <Button type="submit" disabled={loading} className="min-w-[120px]">
+              {loading ? 'Guardando...' : (product ? 'Actualizar' : 'Crear Producto')}
             </Button>
           </div>
         </form>

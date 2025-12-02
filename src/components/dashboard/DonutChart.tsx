@@ -46,7 +46,7 @@ export function DonutChart({ data, total, height = 300 }: DonutChartProps) {
             }}
             outerRadius={80}
             innerRadius={50}
-            fill="#8884d8"
+            fill="#30D96B"
             dataKey="value"
           >
             {chartData.map((entry, index) => (
@@ -56,11 +56,12 @@ export function DonutChart({ data, total, height = 300 }: DonutChartProps) {
           <Tooltip
             formatter={(value: number) => formatCurrency(value)}
             contentStyle={{
-              backgroundColor: 'rgba(0, 0, 0, 0.8)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
+              backgroundColor: '#fff',
+              borderColor: '#e5e7eb',
               borderRadius: '8px',
-              color: '#fff'
+              color: '#000'
             }}
+            itemStyle={{ color: '#000' }}
           />
           {data && data.length > 0 && (
             <Legend
@@ -74,7 +75,7 @@ export function DonutChart({ data, total, height = 300 }: DonutChartProps) {
             y="50%"
             textAnchor="middle"
             dominantBaseline="middle"
-            fill="#10b981"
+            fill="#30D96B"
             fontSize="24"
             fontWeight="bold"
           >

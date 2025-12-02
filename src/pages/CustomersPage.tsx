@@ -162,10 +162,10 @@ export default function CustomersPage() {
     
     setLoading(true);
     try {
-      // Fetch customers with their sales statistics
+      // Fetch customers - OPTIMIZADO: Select Minimal
       const { data: customersData, error: customersError } = await supabase
         .from('customers')
-        .select('*')
+        .select('id, name, id_number, email, phone, address, created_at')
         .eq('company_id', companyId)
         .order('created_at', { ascending: false });
 
@@ -250,6 +250,7 @@ export default function CustomersPage() {
         toast({
           title: "Cliente actualizado",
           description: "El cliente se actualizó correctamente",
+          variant: "success",
         });
       } else {
         // Create new customer
@@ -263,6 +264,7 @@ export default function CustomersPage() {
         if (error) throw error;
 
         toast({
+          variant: "success",
           title: "Cliente creado",
           description: "El cliente se creó correctamente",
         });
@@ -294,6 +296,7 @@ export default function CustomersPage() {
       if (error) throw error;
 
       toast({
+        variant: "success",
         title: "Cliente eliminado",
         description: "El cliente se eliminó correctamente",
       });
@@ -539,24 +542,29 @@ export default function CustomersPage() {
                   >
                     <Eye className="w-4 h-4" />
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => openEditForm(customer)}
-                    title="Editar"
-                    className="h-8 w-8 xs:h-9 xs:w-9 p-0 touch-manipulation"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setDeletingCustomer(customer)}
-                    title="Eliminar"
-                    className="h-8 w-8 xs:h-9 xs:w-9 p-0 touch-manipulation text-red-600 hover:text-red-700 hover:bg-red-50"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                  {/* 🛡️ Conditional Rendering: Solo admins pueden editar/eliminar clientes */}
+                  {(userProfile?.role === 'master_admin' || userProfile?.role === 'admin') && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => openEditForm(customer)}
+                        title="Editar"
+                        className="h-8 w-8 xs:h-9 xs:w-9 p-0 touch-manipulation"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setDeletingCustomer(customer)}
+                        title="Eliminar"
+                        className="h-8 w-8 xs:h-9 xs:w-9 p-0 touch-manipulation text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
 

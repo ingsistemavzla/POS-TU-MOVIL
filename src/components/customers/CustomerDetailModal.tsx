@@ -248,6 +248,7 @@ export default function CustomerDetailModal({
       toast({
         title: "Cliente actualizado",
         description: "La información del cliente se actualizó correctamente",
+        variant: "success",
       });
 
       setIsEditing(false);

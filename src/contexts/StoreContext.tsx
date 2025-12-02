@@ -47,8 +47,8 @@ export const StoreProvider: React.FC<StoreProviderProps> = ({ children }) => {
 
         let stores: Store[] = [];
 
-        if (userProfile.role === 'cashier') {
-          // Los cajeros solo ven su tienda asignada
+        if (userProfile.role === 'cashier' || userProfile.role === 'manager') {
+          // Los cajeros y gerentes solo ven su tienda asignada
           if (userProfile.assigned_store_id) {
             const { data: store, error: storeError } = await supabase
               .from('stores')
@@ -61,7 +61,7 @@ export const StoreProvider: React.FC<StoreProviderProps> = ({ children }) => {
             stores = store ? [store] : [];
           }
         } else {
-          // Administradores y gerentes ven todas las tiendas
+          // Solo administradores ven todas las tiendas
           const { data: allStores, error: allStoresError } = await supabase
             .from('stores')
             .select('id, name, business_name, tax_id, fiscal_address, phone_fiscal, email_fiscal')
@@ -81,8 +81,8 @@ export const StoreProvider: React.FC<StoreProviderProps> = ({ children }) => {
           if (userProfile.role === 'admin' && !selectedStore) {
             setSelectedStoreState(stores[0]);
           }
-          // Si es cajero, usar su tienda asignada
-          else if (userProfile.role === 'cashier' && stores.length > 0) {
+          // Si es cajero o gerente, usar su tienda asignada automáticamente
+          else if ((userProfile.role === 'cashier' || userProfile.role === 'manager') && stores.length > 0) {
             setSelectedStoreState(stores[0]);
           }
           // Si hay una tienda seleccionada previamente que aún existe, mantenerla

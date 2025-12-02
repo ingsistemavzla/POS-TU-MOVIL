@@ -28,3 +28,13 @@ dist-ssr
 .env.local
 .env.production
 .env.development
+
+# Scripts SQL sensibles (con credenciales)
+SCRIPT_CAMBIO_CREDENCIALES*.sql
+DIAGNOSTICO_USUARIO*.sql
+*_CREDENCIALES*.sql
+
+# Archivos temporales
+*.backup
+*.bak
+*.timestamp-*

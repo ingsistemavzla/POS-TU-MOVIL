@@ -196,7 +196,7 @@ export function PaymentMethodSummary({ period }: PaymentMethodSummaryProps) {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="p-4 border rounded-lg">
+            <div key={i} className="p-4 rounded-sm shadow-sm shadow-green-500/30">
               <div className="space-y-2">
                 <div className="h-4 bg-muted rounded animate-pulse w-20"></div>
                 <div className="h-6 bg-muted rounded animate-pulse w-16"></div>

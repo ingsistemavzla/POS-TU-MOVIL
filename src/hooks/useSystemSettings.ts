@@ -31,9 +31,10 @@ export function useSystemSettings() {
     }
 
     try {
+      // ✅ OPTIMIZACIÓN: Seleccionar solo las columnas necesarias en lugar de select('*')
       const { data, error } = await supabase
         .from('system_settings')
-        .select('*')
+        .select('id, company_id, tax_rate, currency, timezone, language, auto_backup, notifications_enabled, receipt_footer, barcode_prefix, low_stock_threshold, created_at, updated_at')
         .eq('company_id', userProfile.company_id)
         .single();
 

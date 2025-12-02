@@ -56,9 +56,10 @@ export class ScheduledReportsManager {
    * Obtiene todas las tareas programadas de una empresa
    */
   static async getScheduledReports(company_id: string): Promise<ScheduledReport[]> {
+    // OPTIMIZADO: Select Minimal
     const { data, error } = await supabase
       .from('scheduled_reports')
-      .select('*')
+      .select('id, company_id, report_type, schedule_time, schedule_days, recipients, is_active, created_at')
       .eq('company_id', company_id)
       .eq('is_active', true);
 
@@ -74,10 +75,10 @@ export class ScheduledReportsManager {
     const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
     const currentDay = now.toLocaleDateString('en-US', { weekday: 'lowercase' });
 
-    // Obtener todas las tareas programadas activas
+    // Obtener todas las tareas programadas activas - OPTIMIZADO
     const { data: scheduledReports, error } = await supabase
       .from('scheduled_reports')
-      .select('*')
+      .select('id, company_id, report_type, schedule_time, schedule_days, recipients, is_active')
       .eq('is_active', true)
       .eq('schedule_time', currentTime);
 
@@ -210,9 +211,10 @@ export class ScheduledReportsManager {
    * Obtiene el historial de reportes generados
    */
   static async getGeneratedReports(company_id: string, limit: number = 50): Promise<GeneratedReport[]> {
+    // OPTIMIZADO: Select Minimal
     const { data, error } = await supabase
       .from('generated_reports')
-      .select('*')
+      .select('id, company_id, report_type, file_url, generated_at')
       .eq('company_id', company_id)
       .order('generated_at', { ascending: false })
       .limit(limit);
@@ -225,9 +227,10 @@ export class ScheduledReportsManager {
    * Descarga un reporte generado previamente
    */
   static async downloadGeneratedReport(reportId: string): Promise<void> {
+    // OPTIMIZADO: Select Minimal - solo file_url necesaria
     const { data: report, error } = await supabase
       .from('generated_reports')
-      .select('*')
+      .select('id, file_url, report_type')
       .eq('id', reportId)
       .single();
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
  
 import { 
   Search, 
@@ -30,7 +38,10 @@ import {
   Zap,
   Coins,
   Store,
-  Loader2
+  Loader2,
+  ChevronLeft,
+  ChevronRight,
+  AlertCircle
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
@@ -39,6 +50,7 @@ import { useStore } from "@/contexts/StoreContext";
 import CustomerSelector from "@/components/pos/CustomerSelector";
 import { SaleCompletionModal } from "@/components/pos/SaleCompletionModal";
 import { IMEIModal } from "@/components/pos/IMEIModal";
+import { Label } from "@/components/ui/label";
 import { printInvoice } from "@/utils/printInvoice";
 import { getBcvRate } from "@/utils/bcvRate";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
@@ -207,7 +219,7 @@ export default function POS() {
   const searchDebounceRef = useRef<number | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [scanMode, setScanMode] = useState(true); // escanear automático por defecto
+  const [scanMode, setScanMode] = useState(false); // búsqueda por texto por defecto
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>("");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isKreceEnabled, setIsKreceEnabled] = useState(false);
@@ -227,10 +239,14 @@ export default function POS() {
   }>>([]);
   
   const companyId = userProfile?.company_id ?? null;
-  // For cashiers, always use their assigned store (no selection allowed)
-  const resolvedStoreId = userProfile?.role === 'cashier' 
-    ? (userProfile as any)?.assigned_store_id ?? selectedStore?.id ?? null
-    : selectedStore?.id ?? (userProfile as any)?.assigned_store_id ?? null;
+  // For cashiers and managers, always use their assigned store (no selection allowed)
+  // GERENTE tiene mismas restricciones de tienda que CAJERO
+  const isRestrictedToStore = userProfile?.role === 'cashier' || userProfile?.role === 'manager';
+  // Eliminado fallback innecesario: Roles Fijos DEBEN tener assigned_store_id
+  // Si no lo tienen, el backend rechazará la venta (correcto)
+  const resolvedStoreId = isRestrictedToStore
+    ? (userProfile as any)?.assigned_store_id ?? null
+    : selectedStore?.id ?? null;
   // Estado inicial: secuencia global continua (no se reinicia por día)
   const invoiceTrackerRef = useRef<InvoiceTrackerState>({
     lastSeq: DEFAULT_INVOICE_SEQUENCE_START,
@@ -239,6 +255,7 @@ export default function POS() {
   const lastSyncRef = useRef<string>(''); // Para evitar sincronizaciones innecesarias
   const pendingOfflineSalesRef = useRef<any[]>([]);
   const syncingOfflineSalesRef = useRef(false);
+  const prevStoreIdRef = useRef<string | null>(null); // Para detectar cambios de tienda (solo Admin)
 
   useEffect(() => {
     pendingOfflineSalesRef.current = loadOfflineSales();
@@ -252,6 +269,8 @@ export default function POS() {
 
   // Unit price is edited directly on each line via input
   const [priceInputs, setPriceInputs] = useState<Record<string, string>>({});
+  const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
+  const [quantityErrors, setQuantityErrors] = useState<Record<string, string>>({});
   const [bcvRate, setBcvRate] = useState(41.73);
   const [isEditingBcvRate, setIsEditingBcvRate] = useState(false);
   const [bcvRateInput, setBcvRateInput] = useState("41.73");
@@ -259,6 +278,25 @@ export default function POS() {
   const [showSaleModal, setShowSaleModal] = useState(false);
   const [completedSaleData, setCompletedSaleData] = useState<any>(null);
   const [isProcessingSale, setIsProcessingSale] = useState(false);
+  const [showPreValidationModal, setShowPreValidationModal] = useState(false);
+  const [isSaleConfirmedAndCompleted, setIsSaleConfirmedAndCompleted] = useState(false);
+  // Sistema de Wizard - Pasos obligatorios (PANELES INLINE - SIN MODALES)
+  // 1 = Tienda, 2 = Cliente, 3 = Productos/Carrito, 4 = Pago, 5 = Resumen Final
+  const [currentStep, setCurrentStep] = useState(1);
+  const [hasSelectedStoreInSession, setHasSelectedStoreInSession] = useState(false);
+  
+  // Estado para el formulario de cliente inline
+  const [idSearchTerm, setIdSearchTerm] = useState('');
+  const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
+  const [customerNotFound, setCustomerNotFound] = useState(false);
+  const [showRegistrationForm, setShowRegistrationForm] = useState(false);
+  const [newCustomer, setNewCustomer] = useState({
+    name: '',
+    id_number: '',
+    phone: '',
+    email: '',
+    address: ''
+  });
   
   // IMEI Modal states
   const [showIMEIModal, setShowIMEIModal] = useState(false);
@@ -266,6 +304,19 @@ export default function POS() {
   
   // Toast para notificaciones
   const { toast } = useToast();
+
+  // Efecto para validar el flujo del Wizard (SIN MODALES - PANELES INLINE)
+  useEffect(() => {
+    if (storeLoading) return;
+    if (isSaleConfirmedAndCompleted) return;
+    
+    // Validaciones automáticas de paso
+    if (currentStep > 1 && (!hasSelectedStoreInSession || !selectedStore)) {
+      setCurrentStep(1);
+    } else if (currentStep > 2 && !selectedCustomer) {
+      setCurrentStep(2);
+    }
+  }, [currentStep, hasSelectedStoreInSession, selectedStore, selectedCustomer, storeLoading, isSaleConfirmedAndCompleted]);
 
   // Limpieza automática (una sola vez) del correlativo local antiguo al abrir el POS
   useEffect(() => {
@@ -297,6 +348,27 @@ export default function POS() {
       loadProductStock(products);
     }
   }, [selectedStore, products]);
+
+  // Limpiar carrito y productos al cambiar de tienda (solo para Admin)
+  // Esto previene mezclar inventarios de diferentes tiendas
+  useEffect(() => {
+    // Solo aplicar si es Admin y hay una tienda seleccionada
+    if (userProfile?.role === 'admin' && selectedStore) {
+      // Si cambió la tienda (no es la primera vez)
+      if (prevStoreIdRef.current !== null && prevStoreIdRef.current !== selectedStore.id) {
+        // Limpiar carrito para evitar mezclar inventarios
+        setCart([]);
+        // Limpiar productos de búsqueda anterior
+        setProducts([]);
+        setProductStock({});
+        // Limpiar búsqueda
+        setSearchTerm("");
+        setHasSearched(false);
+      }
+      // Actualizar la referencia
+      prevStoreIdRef.current = selectedStore.id;
+    }
+  }, [selectedStore?.id, userProfile?.role]);
 
   // Mantener el foco en el input cuando el modo escaneo está activo
   useEffect(() => {
@@ -344,8 +416,9 @@ export default function POS() {
     
     try {
       // Usar la tienda seleccionada del contexto
-      // For cashiers, always use assigned store; for others, use selected store
-      const storeId = userProfile?.role === 'cashier' 
+      // For cashiers and managers, always use assigned store; for admin, use selected store
+      const isRestrictedUser = userProfile?.role === 'cashier' || userProfile?.role === 'manager';
+      const storeId = isRestrictedUser
         ? (userProfile as any)?.assigned_store_id ?? selectedStore?.id
         : selectedStore?.id;
       
@@ -359,13 +432,14 @@ export default function POS() {
       }
       
       // Get inventory for all products in this store
+      // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
       const productIds = productsList.map(p => p.id);
       const { data, error } = await (supabase as any)
         .from('inventories')
         .select('product_id, qty')
         .in('product_id', productIds)
-        .eq('store_id', storeId)
-        .eq('company_id', userProfile.company_id);
+        .eq('store_id', storeId) // ✅ KEEP: UI filter for selected store
+        // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
       
       if (error) {
         console.error('Error loading product stock:', error);
@@ -413,12 +487,13 @@ export default function POS() {
     try {
       
       // Get inventory for this product in this store
+      // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
       const { data, error } = await (supabase as any)
         .from('inventories')
         .select('qty')
         .eq('product_id', productId)
-        .eq('store_id', storeId)
-        .eq('company_id', userProfile.company_id)
+        .eq('store_id', storeId) // ✅ KEEP: UI filter for selected store
+        // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
         .single();
       
       if (error || !data) return 0;
@@ -431,47 +506,59 @@ export default function POS() {
   };
 
   const addToCart = async (product: Product) => {
-    // Check stock before adding to cart
-    const availableStock = await getProductStock(product.id);
+    // Get available stock - PRIORITY: Use cached productStock first
+    let availableStock = productStock[product.id] ?? 0;
+    
+    if (availableStock === 0 || productStock[product.id] === undefined) {
+      availableStock = await getProductStock(product.id);
+      // Update cache for future use
+      if (availableStock > 0) {
+        setProductStock(prev => ({ ...prev, [product.id]: availableStock }));
+      }
+    }
     
     if (availableStock <= 0) {
-      alert(`❌ No hay stock disponible para: ${product.name}`);
+      toast({
+        variant: "warning",
+        title: "Sin stock disponible",
+        description: `No hay stock disponible para: ${product.name}`,
+      });
       return;
     }
     
-    // Si es un teléfono, mostrar modal para solicitar IMEI
-    if (product.category === 'phones') {
-      const existingItem = cart.find(item => item.id === product.id);
-      
-      if (existingItem) {
-        // Para teléfonos existentes, agregar otro IMEI
-        setPendingProduct(product);
-        setShowIMEIModal(true);
-        return;
-      }
-      
-      // Mostrar modal para solicitar IMEI del primer teléfono
-      setPendingProduct(product);
-      setShowIMEIModal(true);
-      return;
-    }
-    
-    // Lógica original para productos que no son teléfonos
+    // Lógica para todos los productos (incluyendo teléfonos)
+    // Los IMEIs se capturan INLINE en el carrito, no en un modal separado
     const existingItem = cart.find(item => item.id === product.id);
     
     if (existingItem) {
       const newQuantity = existingItem.quantity + 1;
       
+      // Si intenta agregar más cantidad de la disponible, mostrar error y NO actualizar
       if (newQuantity > availableStock) {
-        alert(`❌ Stock insuficiente. Solo hay ${availableStock} unidades disponibles de: ${product.name}`);
-        return;
+        alert(`❌ No hay suficiente stock. Solo hay ${availableStock} unidades disponibles de: ${product.name}`);
+        return; // NO actualiza la cantidad
       }
       
-      setCart(cart.map(item => 
-        item.id === product.id 
-          ? { ...item, quantity: newQuantity }
-          : item
-      ));
+      // Si es válido, actualizar la cantidad
+      // Para teléfonos, también expandir el array de IMEIs
+      // IMPORTANTE: Usar forma funcional de setCart para evitar problemas de estado stale
+      setCart(prevCart => prevCart.map(item => {
+        if (item.id === product.id) {
+          const updatedItem = { ...item, quantity: newQuantity };
+          console.log(`🛒 addToCart: Actualizando ${item.name} - cantidad anterior: ${item.quantity}, nueva: ${newQuantity}`);
+          // Si es teléfono, asegurar que el array de IMEIs tenga el tamaño correcto
+          if (item.category === 'phones') {
+            const currentImeis = item.imeis || [];
+            const newImeis = [...currentImeis];
+            while (newImeis.length < newQuantity) {
+              newImeis.push('');
+            }
+            updatedItem.imeis = newImeis;
+          }
+          return updatedItem;
+        }
+        return item;
+      }));
     } else {
       const price = product.sale_price_usd ?? 0;
       const newItem: CartItem = {
@@ -482,30 +569,76 @@ export default function POS() {
         quantity: 1,
         sku: product.sku,
         barcode: product.barcode,
-        category: product.category
+        category: product.category,
+        // Inicializar array de IMEIs vacío para teléfonos (se llenarán inline)
+        imeis: product.category === 'phones' ? [''] : undefined
       };
-      setCart([...cart, newItem]);
+      console.log(`🛒 addToCart: Agregando nuevo producto ${product.name} - cantidad: 1`);
+      // IMPORTANTE: Usar forma funcional de setCart para evitar problemas de estado stale
+      setCart(prevCart => [...prevCart, newItem]);
       setPriceInputs(prev => ({ ...prev, [product.id]: price.toFixed(2) }));
     }
   };
 
   // Funciones para manejar el modal IMEI
-  const handleIMEIConfirm = (imei: string) => {
+  const handleIMEIConfirm = async (imei: string) => {
     if (pendingProduct) {
+      // Get available stock - PRIORITY: Use cached productStock first
+      let availableStock = productStock[pendingProduct.id] ?? 0;
+      
+      if (availableStock === 0 || productStock[pendingProduct.id] === undefined) {
+        availableStock = await getProductStock(pendingProduct.id);
+        // Update cache for future use
+        if (availableStock > 0) {
+          setProductStock(prev => ({ ...prev, [pendingProduct.id]: availableStock }));
+        }
+      }
+      
       const existingItem = cart.find(item => item.id === pendingProduct.id);
       
       if (existingItem) {
-        // Si ya existe el producto, agregar el IMEI al array
+        // Si ya existe el producto, verificar stock antes de agregar otro IMEI
+        const newQuantity = existingItem.quantity + 1;
+        
+        // CRITICAL: Use Math.min to RESTRICT - quantity NEVER exceeds availableStock
+        const limitedQuantity = Math.min(newQuantity, availableStock);
+        
+        if (limitedQuantity < newQuantity) {
+          toast({
+            title: "Stock máximo alcanzado",
+            description: `Solo hay ${availableStock} unidades disponibles de: ${pendingProduct.name}`,
+            variant: "destructive",
+          });
+          // Cerrar modal y limpiar estado
+          setShowIMEIModal(false);
+          setPendingProduct(null);
+          return;
+        }
+        
+        // Si ya existe el producto, agregar el IMEI al array con cantidad limitada
         const updatedItem = {
           ...existingItem,
-          quantity: existingItem.quantity + 1,
+          quantity: limitedQuantity,
           imeis: existingItem.imeis ? [...existingItem.imeis, imei] : [existingItem.imei || '', imei].filter(Boolean)
         };
         
+        // CRITICAL: Update cart with RESTRICTED value (guaranteed: limitedQuantity <= availableStock)
         setCart(cart.map(item => 
           item.id === pendingProduct.id ? updatedItem : item
         ));
       } else {
+        // Si es el primer teléfono, verificar que haya stock disponible
+        if (availableStock <= 0) {
+          toast({
+            variant: "warning",
+            title: "Sin stock disponible",
+            description: `No hay stock disponible para: ${pendingProduct.name}`,
+          });
+          setShowIMEIModal(false);
+          setPendingProduct(null);
+          return;
+        }
+        
         // Si es el primer teléfono, crear nuevo item
         const price = pendingProduct.sale_price_usd ?? 0;
         const newItem: CartItem = {
@@ -590,6 +723,14 @@ export default function POS() {
       const { [id]: _, ...rest } = prev;
       return rest;
     });
+    setQuantityInputs(prev => {
+      const { [id]: _, ...rest } = prev;
+      return rest;
+    });
+    setQuantityErrors(prev => {
+      const { [id]: _, ...rest } = prev;
+      return rest;
+    });
   };
 
   const updateQuantity = async (id: string, change: number) => {
@@ -600,33 +741,225 @@ export default function POS() {
     
     if (newQuantity <= 0) {
       setCart(cart.filter(item => item.quantity > 0));
+      setQuantityInputs(prev => {
+        const { [id]: _, ...rest } = prev;
+        return rest;
+      });
+      setQuantityErrors(prev => {
+        const { [id]: _, ...rest } = prev;
+        return rest;
+      });
       return;
     }
     
-    // Si es un teléfono y se está incrementando la cantidad, solicitar IMEI
-    if (item.category === 'phones' && change > 0) {
-      // Buscar el producto original para obtener la información completa
-      const product = products.find(p => p.id === id);
-      if (product) {
-        setPendingProduct(product);
-        setShowIMEIModal(true);
-        return;
+    // NO abrir modal de IMEI - Los inputs de IMEI son INLINE en el carrito
+    // La validación de IMEIs se hace antes de procesar la venta
+    
+    // Get available stock - PRIORITY: Use cached productStock first (faster, more reliable)
+    let availableStock = productStock[id] ?? 0;
+    
+    // If not in cache, fetch it
+    if (availableStock === 0 || productStock[id] === undefined) {
+      availableStock = await getProductStock(id);
+      // Update cache for future use
+      if (availableStock > 0) {
+        setProductStock(prev => ({ ...prev, [id]: availableStock }));
       }
     }
     
-    // Check stock before updating quantity
-    const availableStock = await getProductStock(id);
-    
-    if (newQuantity > availableStock) {
-      alert(`❌ Stock insuficiente. Solo hay ${availableStock} unidades disponibles de: ${item.name}`);
-      return;
+    // Si intenta incrementar más allá del stock disponible, mostrar error y NO actualizar
+    if (change > 0 && newQuantity > availableStock) {
+      alert(`❌ No hay suficiente stock. Solo hay ${availableStock} unidades disponibles de: ${item.name}`);
+      return; // NO actualiza la cantidad
     }
     
-    setCart(cart.map(item => 
-      item.id === id 
-        ? { ...item, quantity: newQuantity }
-        : item
+    // Si es válido, actualizar la cantidad
+    // Para teléfonos, también ajustar el array de IMEIs
+    // IMPORTANTE: Usar forma funcional de setCart para evitar problemas de estado stale
+    setCart(prevCart => prevCart.map(cartItem => {
+      if (cartItem.id === id) {
+        const updatedItem = { ...cartItem, quantity: newQuantity };
+        console.log(`🛒 updateQuantity: Actualizando ${cartItem.name} - cantidad anterior: ${cartItem.quantity}, nueva: ${newQuantity}`);
+        // Si es teléfono, ajustar el array de IMEIs según la nueva cantidad
+        if (cartItem.category === 'phones') {
+          const currentImeis = cartItem.imeis || [];
+          const newImeis = [...currentImeis];
+          // Expandir si se incrementa
+          while (newImeis.length < newQuantity) {
+            newImeis.push('');
+          }
+          // Recortar si se decrementa
+          if (newImeis.length > newQuantity) {
+            newImeis.length = newQuantity;
+          }
+          updatedItem.imeis = newImeis;
+        }
+        return updatedItem;
+      }
+      return cartItem;
+    }));
+    
+    // Clear any error for this item
+    setQuantityErrors(prev => {
+      const { [id]: _, ...rest } = prev;
+      return rest;
+    });
+  };
+
+  // Función para actualizar IMEI de un producto en el carrito (inline)
+  const updateIMEI = (productId: string, imeiIndex: number, imeiValue: string) => {
+    setCart(prev => prev.map(item => {
+      if (item.id === productId) {
+        const currentImeis = item.imeis || [];
+        const newImeis = [...currentImeis];
+        // Asegurar que el array tenga el tamaño correcto
+        while (newImeis.length <= imeiIndex) {
+          newImeis.push('');
+        }
+        newImeis[imeiIndex] = imeiValue.trim();
+        return { ...item, imeis: newImeis };
+      }
+      return item;
+    }));
+  };
+
+  // Handle direct quantity input change with instant validation
+  const handleQuantityChange = async (id: string, value: string) => {
+    const item = cart.find(item => item.id === id);
+    if (!item) return;
+
+    // If empty, allow typing and clear any errors
+    if (value === '') {
+      setQuantityInputs(prev => ({ ...prev, [id]: value }));
+      setQuantityErrors(prev => {
+        const { [id]: _, ...rest } = prev;
+        return rest;
+      });
+      return;
+    }
+
+    // Parse the input value
+    const parsedValue = parseInt(value, 10);
+    
+    // If invalid (NaN or negative), clear error and allow typing
+    if (isNaN(parsedValue) || parsedValue < 0) {
+      setQuantityInputs(prev => ({ ...prev, [id]: value }));
+      setQuantityErrors(prev => {
+        const { [id]: _, ...rest } = prev;
+        return rest;
+      });
+      return;
+    }
+
+    // Get available stock - PRIORITY: Use cached productStock first (faster, more reliable)
+    // Fallback to async getProductStock if not in cache
+    let availableStock = productStock[id] ?? 0;
+    
+    // If not in cache, fetch it
+    if (availableStock === 0 || productStock[id] === undefined) {
+      availableStock = await getProductStock(id);
+      // Update cache for future use
+      if (availableStock > 0) {
+        setProductStock(prev => ({ ...prev, [id]: availableStock }));
+      }
+    }
+    
+    // Si intenta escribir un número mayor al stock, mostrar error y revertir al valor actual
+    if (parsedValue > availableStock) {
+      alert(`❌ No hay suficiente stock. Solo hay ${availableStock} unidades disponibles de: ${item.name}`);
+      // Revertir al valor actual del carrito
+      setQuantityInputs(prev => {
+        const { [id]: _, ...rest } = prev;
+        return rest;
+      });
+      setQuantityErrors(prev => ({
+        ...prev,
+        [id]: `Stock máximo: ${availableStock} unidades`
+      }));
+      return; // NO actualiza el input
+    }
+
+    // Si es válido, actualizar el input
+    setQuantityInputs(prev => ({ ...prev, [id]: value }));
+    
+    // Clear error if valid
+    setQuantityErrors(prev => {
+      const { [id]: _, ...rest } = prev;
+      return rest;
+    });
+  };
+
+  // Commit quantity change (on blur or enter)
+  const commitQuantity = async (item: CartItem) => {
+    const inputValue = quantityInputs[item.id];
+    
+    // If no input value, keep current quantity
+    if (inputValue === undefined || inputValue === '') {
+      setQuantityInputs(prev => {
+        const { [item.id]: _, ...rest } = prev;
+        return rest;
+      });
+      return;
+    }
+
+    const parsedValue = parseInt(inputValue, 10);
+    
+    // If invalid, revert to current quantity
+    if (isNaN(parsedValue) || parsedValue < 1) {
+      setQuantityInputs(prev => {
+        const { [item.id]: _, ...rest } = prev;
+        return rest;
+      });
+      setQuantityErrors(prev => {
+        const { [item.id]: _, ...rest } = prev;
+        return rest;
+      });
+      return;
+    }
+
+    // Get available stock - PRIORITY: Use cached productStock first
+    let availableStock = productStock[item.id] ?? 0;
+    
+    // If not in cache, fetch it
+    if (availableStock === 0 || productStock[item.id] === undefined) {
+      availableStock = await getProductStock(item.id);
+      // Update cache for future use
+      if (availableStock > 0) {
+        setProductStock(prev => ({ ...prev, [item.id]: availableStock }));
+      }
+    }
+    
+    // Si intenta confirmar un valor mayor al stock, mostrar error y NO actualizar
+    if (parsedValue > availableStock) {
+      alert(`❌ No hay suficiente stock. Solo hay ${availableStock} unidades disponibles de: ${item.name}`);
+      // Revertir al valor actual del carrito
+      setQuantityInputs(prev => {
+        const { [item.id]: _, ...rest } = prev;
+        return rest;
+      });
+      setQuantityErrors(prev => ({
+        ...prev,
+        [item.id]: `Stock máximo: ${availableStock} unidades`
+      }));
+      return; // NO actualiza la cantidad
+    }
+
+    // Si es válido, actualizar la cantidad
+    setCart(cart.map(cartItem => 
+      cartItem.id === item.id 
+        ? { ...cartItem, quantity: parsedValue }
+        : cartItem
     ));
+    
+    // Clear input state
+    setQuantityInputs(prev => {
+      const { [item.id]: _, ...rest } = prev;
+      return rest;
+    });
+    setQuantityErrors(prev => {
+      const { [item.id]: _, ...rest } = prev;
+      return rest;
+    });
   };
 
   const subtotalUSD = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -665,6 +998,85 @@ export default function POS() {
     // If customer is null, it means it was cleared. We default to 'Cliente General' implicitly.
     // If a customer is selected, we use their data.
     setSelectedCustomer(customer);
+    // El botón "Continuar" en el modal se encargará de avanzar al siguiente paso
+  };
+
+  // Buscar cliente por cédula (para panel inline)
+  const searchCustomerById = async (idNumber: string) => {
+    if (!userProfile?.company_id || idNumber.trim().length < 3) return;
+    
+    setIsSearchingCustomer(true);
+    setCustomerNotFound(false);
+    
+    try {
+      // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
+      const { data, error } = await supabase
+        .from('customers')
+        .select('id, name, id_number, email, phone, address')
+        // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
+        .eq('id_number', idNumber.trim())
+        .maybeSingle();
+      
+      if (error) throw error;
+      
+      if (data) {
+        setSelectedCustomer(data);
+        setCustomerNotFound(false);
+        setShowRegistrationForm(false);
+      } else {
+        setCustomerNotFound(true);
+        setNewCustomer(prev => ({ ...prev, id_number: idNumber.trim() }));
+      }
+    } catch (error) {
+      console.error('Error searching customer:', error);
+      toast({
+        title: "Error",
+        description: "Error al buscar el cliente",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSearchingCustomer(false);
+    }
+  };
+  
+  // Crear nuevo cliente (para panel inline)
+  const createNewCustomer = async () => {
+    if (!userProfile?.company_id || !newCustomer.name.trim()) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .insert({
+          company_id: userProfile.company_id,
+          name: newCustomer.name.trim(),
+          id_number: newCustomer.id_number.trim(),
+          email: newCustomer.email.trim() || null,
+          phone: newCustomer.phone.trim() || null,
+          address: newCustomer.address.trim() || null,
+        })
+        .select('id, name, id_number, email, phone, address')
+        .single();
+      
+      if (error) throw error;
+      
+      setSelectedCustomer(data);
+      setShowRegistrationForm(false);
+      setCustomerNotFound(false);
+      setNewCustomer({ name: '', id_number: '', phone: '', email: '', address: '' });
+      
+      toast({
+        variant: "success",
+        title: "Cliente registrado",
+        description: `${data.name} ha sido registrado exitosamente`,
+      });
+    } catch (error) {
+      console.error('Error creating customer:', error);
+      toast({
+        title: "Error",
+        description: "Error al registrar el cliente",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleBcvRateUpdate = (newRate: string) => {
@@ -967,8 +1379,8 @@ export default function POS() {
             price_usd
           )
         `)
-        .eq('company_id', userProfile.company_id)
-        .eq('store_id', resolvedStoreId)
+        // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
+        .eq('store_id', resolvedStoreId) // ✅ KEEP: UI filter for selected store
         .gte('created_at', fiveMinutesAgo)
         .order('created_at', { ascending: false })
         .limit(10);
@@ -1048,6 +1460,90 @@ export default function POS() {
     }
   };
 
+  // Función para preparar datos de pre-validación
+  const preparePreValidationData = () => {
+    const cartSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const currentPaymentMethod = (isKreceEnabled || isCasheaEnabled)
+      ? (isKreceEnabled ? kreceInitialPaymentMethod : casheaInitialPaymentMethod)
+      : selectedPaymentMethod;
+    
+    return {
+      customer: selectedCustomer?.name || 'Cliente General',
+      customer_id: selectedCustomer?.id_number || null,
+      items: cart.map(item => ({
+        name: item.name,
+        sku: item.sku,
+        quantity: item.quantity,
+        price: item.price,
+        total: item.price * item.quantity,
+        imei: item.imei,
+        imeis: item.imeis
+      })),
+      subtotal_usd: cartSubtotal,
+      tax_usd: cartSubtotal * taxRate,
+      total_usd: cartSubtotal + (cartSubtotal * taxRate),
+      total_bs: (cartSubtotal + (cartSubtotal * taxRate)) * bcvRate,
+      bcv_rate: bcvRate,
+      payment_method: currentPaymentMethod,
+      store_name: selectedStore?.name || 'No asignada',
+      is_krece_enabled: isKreceEnabled || isCasheaEnabled,
+      krece_initial_amount: isKreceEnabled ? kreceInitialAmount : (isCasheaEnabled ? casheaInitialAmount : 0),
+      krece_financed_amount: isKreceEnabled ? (cartSubtotal - kreceInitialAmount) : (isCasheaEnabled ? (cartSubtotal - casheaInitialAmount) : 0),
+      is_mixed_payment: isMixedPayment,
+      mixed_payments: mixedPayments
+    };
+  };
+
+  // Función para abrir modal de pre-validación
+  const handleOpenPreValidation = () => {
+    // Validaciones básicas antes de abrir el modal
+    if (cart.length === 0) {
+      toast({
+        title: "Carrito vacío",
+        description: "Agrega productos al carrito antes de procesar la venta.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!userProfile) {
+      toast({
+        title: "Error de autenticación",
+        description: "No hay usuario autenticado. Por favor, inicia sesión nuevamente.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!isMixedPayment) {
+      const isFinancingActive = isKreceEnabled || isCasheaEnabled;
+      const currentPaymentMethod = isFinancingActive
+        ? (isKreceEnabled ? kreceInitialPaymentMethod : casheaInitialPaymentMethod)
+        : selectedPaymentMethod;
+
+      if (!currentPaymentMethod) {
+        toast({
+          title: "Método de pago requerido",
+          description: "Debe seleccionar un método de pago antes de procesar la venta.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    if (isMixedPayment && mixedPayments.length === 0) {
+      toast({
+        title: "Pagos mixtos requeridos",
+        description: "Debe agregar al menos un método de pago mixto.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Avanzar al Step 5 (Resumen) en lugar de abrir modal directamente
+    setCurrentStep(5);
+  };
+
   const processSale = async () => {
     // Prevenir procesamiento múltiple simultáneo
     if (isProcessingSale) {
@@ -1104,9 +1600,9 @@ export default function POS() {
       const availableStock = await getProductStock(item.id);
       if (item.quantity > availableStock) {
         toast({
+          variant: "warning",
           title: "Stock insuficiente",
           description: `No hay suficiente stock para: ${item.name}. Disponible: ${availableStock}`,
-          variant: "destructive",
         });
         return;
       }
@@ -1119,7 +1615,7 @@ export default function POS() {
         title: "⚠️ Posible venta duplicada",
         description: `Se detectó una venta similar realizada recientemente (Factura: ${duplicateCheck.duplicateSale?.invoice_number || 'N/A'}). Verifica los datos de facturación antes de continuar.`,
         variant: "destructive",
-        duration: 10000, // 10 segundos para que el usuario lo vea
+        duration: 10000,
       });
       return;
     }
@@ -1131,7 +1627,7 @@ export default function POS() {
     let invoiceCommitted = false;
 
     try {
-      // Validar que hay una tienda disponible (resolvedStoreId ya está definido arriba)
+      // Validar que hay una tienda disponible
       if (!resolvedStoreId) {
         toast({
           title: "Tienda requerida",
@@ -1142,10 +1638,19 @@ export default function POS() {
         return;
       }
       
-      // For cashiers, always use assigned store; for others, use selected store
-      const storeId = userProfile?.role === 'cashier' 
-        ? (userProfile as any)?.assigned_store_id ?? selectedStore?.id
-        : selectedStore?.id;
+      const isRestrictedUser = userProfile?.role === 'cashier' || userProfile?.role === 'manager';
+      
+      if (isRestrictedUser && !(userProfile as any)?.assigned_store_id) {
+        toast({
+          title: "Error de configuración",
+          description: "No tienes una tienda asignada. Contacta al administrador.",
+          variant: "destructive",
+        });
+        setIsProcessingSale(false);
+        return;
+      }
+      
+      const storeId = resolvedStoreId;
       
       if (!storeId) {
         toast({
@@ -1153,20 +1658,19 @@ export default function POS() {
           description: "No se ha seleccionado una tienda",
           variant: "destructive"
         });
+        setIsProcessingSale(false);
         return;
       }
 
-      // Calcular totales SIN IVA (ya que el IVA se calcula en el backend)
+      // Calcular totales
       const cartSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      const totalUSD = cartSubtotal; // El IVA se calcula en el backend
+      const totalUSD = cartSubtotal;
 
       // Validar pagos mixtos
       if (isMixedPayment) {
         const mixedTotal = mixedPayments.reduce((sum, payment) => sum + payment.amount, 0);
         
         if (isKreceEnabled || isCasheaEnabled) {
-          // Con KRece o Cashea: los pagos mixtos deben coincidir con la inicial
-          // Asegurar que solo uno esté activo (exclusión mutua)
           const financingInitialAmount = isKreceEnabled ? kreceInitialAmount : 
                                          isCasheaEnabled ? casheaInitialAmount : 0;
           const financingType = isKreceEnabled ? 'KRece' : 
@@ -1182,7 +1686,6 @@ export default function POS() {
             return;
           }
         } else {
-          // Sin financiamiento: los pagos mixtos deben coincidir con el total de la venta (comportamiento original)
           if (Math.abs(mixedTotal - totalUSD) > 0.01) {
             toast({
               title: "Error en pagos mixtos",
@@ -1195,6 +1698,7 @@ export default function POS() {
         }
       }
 
+      // Reservar número de factura
       try {
         reservedInvoice = await reserveInvoiceNumber();
       } catch (invoiceError) {
@@ -1223,124 +1727,62 @@ export default function POS() {
       let activeReservation: ReservedInvoice | null = reservedInvoice;
       const invoiceNumber = activeReservation.invoiceNumber;
 
-      // PREPARAR ITEMS DE VENTA - VALIDACIÓN Y CORRECCIÓN DE DATOS
-      console.log('🔍 DEBUG: Iniciando construcción de saleItems. Cart:', cart);
-      console.log('🔍 DEBUG: Products array length:', products.length);
-      
+      // PREPARAR ITEMS DE VENTA
       const saleItems = cart.flatMap(item => {
-        // LOGGING DETALLADO DEL ITEM ORIGINAL
-        console.log('🔍 DEBUG: Procesando item del carrito:', {
-          id: item.id,
-          name: item.name,
-          price: item.price,
-          originalPrice: item.originalPrice,
-          quantity: item.quantity,
-          sku: item.sku,
-          category: item.category
-        });
-        
-        // VALIDACIÓN Y CORRECCIÓN DE CANTIDAD
-        const cleanQty = Math.max(1, Math.floor(Number(item.quantity) || 1));
-        
-        // VALIDACIÓN Y CORRECCIÓN DE PRECIO
-        // Si el precio es 0 o inválido, usar el precio original del producto
+        // Validación y corrección de precio
         let cleanPrice = Math.max(0, Number(item.price) || 0);
-        let priceSource = 'item.price';
         
         if (cleanPrice === 0 && item.originalPrice && item.originalPrice > 0) {
           cleanPrice = item.originalPrice;
-          priceSource = 'item.originalPrice';
-          console.log(`💰 DEBUG: Precio corregido desde originalPrice: ${cleanPrice}`);
         }
-        // Si aún es 0, buscar el precio en el array de productos cargados
+        
         if (cleanPrice === 0) {
           const productFromList = products.find(p => p.id === item.id);
           if (productFromList?.sale_price_usd && productFromList.sale_price_usd > 0) {
             cleanPrice = productFromList.sale_price_usd;
-            priceSource = 'products.sale_price_usd';
-            console.log(`💰 DEBUG: Precio corregido desde products array: ${cleanPrice}`);
-          } else {
-            console.warn(`⚠️ DEBUG: Producto no encontrado en array products para ID: ${item.id}`);
           }
         }
-        // Si sigue siendo 0, es un error crítico - usar 0 pero loguear
-        if (cleanPrice === 0) {
-          console.error('❌ ERROR CRÍTICO: Producto con precio $0.00 después de todas las validaciones:', {
-            product_id: item.id,
-            item_name: item.name,
-            item_price: item.price,
-            original_price: item.originalPrice,
-            products_array_has_item: products.some(p => p.id === item.id),
-            price_source: priceSource
-          });
-        }
         
-        // VALIDACIÓN Y CORRECCIÓN DE NOMBRE
-        // Verificar que el nombre no sea genérico o vacío
+        // Validación y corrección de nombre
         let cleanName = String(item.name || '').trim();
         const genericNames = ['Producto sin nombre', 'S/SKU', 'Producto', 'N/A', ''];
         const isGenericName = !cleanName || genericNames.some(generic => 
           cleanName.toLowerCase().includes(generic.toLowerCase())
         );
-        let nameSource = 'item.name';
         
-        // Si el nombre es genérico o está vacío, buscar el nombre real del producto
         if (isGenericName || !cleanName) {
           const productFromList = products.find(p => p.id === item.id);
           if (productFromList?.name && productFromList.name.trim()) {
             cleanName = productFromList.name.trim();
-            nameSource = 'products.name';
-            console.log(`📝 DEBUG: Nombre corregido desde products array: "${cleanName}"`);
           } else {
-            // Si no se encuentra en la lista, usar un nombre por defecto con SKU
             cleanName = `Producto ${item.sku || item.id}`;
-            nameSource = 'fallback';
-            console.error('❌ ERROR: No se pudo obtener nombre del producto:', {
-              product_id: item.id,
-              item_name: item.name,
-              sku: item.sku,
-              products_array_has_item: products.some(p => p.id === item.id)
-            });
           }
         }
         
-        // VALIDACIÓN DE SKU
         const cleanSku = String(item.sku || 'SKU-000').trim();
         
-        // Construir el objeto final del item
         const finalItem = {
           product_id: item.id,
-          qty: item.category === 'phones' && item.imeis && item.imeis.length > 0 ? 1 : cleanQty,
+          qty: item.quantity,
           price_usd: cleanPrice,
           product_name: cleanName,
           product_sku: cleanSku,
           imei: item.category === 'phones' && item.imeis && item.imeis.length > 0 ? null : (item.imei ? String(item.imei).trim() : null)
         };
         
-        // LOGGING DEL ITEM FINAL
-        console.log('✅ DEBUG: Item final construido:', {
-          ...finalItem,
-          price_source: priceSource,
-          name_source: nameSource
-        });
-        
         // Si es un teléfono con múltiples IMEIs, crear un item por cada IMEI
         if (item.category === 'phones' && item.imeis && item.imeis.length > 0) {
           return item.imeis.map(imei => ({
             ...finalItem,
-            qty: 1, // Cada teléfono es cantidad 1
+            qty: 1,
             imei: String(imei).trim()
           }));
         } else {
-          // Para productos normales o teléfonos con un solo IMEI
           return [finalItem];
         }
       });
-      
-      // LOGGING FINAL DE TODOS LOS ITEMS
-      console.log('📦 DEBUG: Array final de saleItems que se enviará a process_sale:', JSON.stringify(saleItems, null, 2));
 
-      // PREPARAR PAGOS MIXTOS - ULTRA LIMPIO
+      // PREPARAR PAGOS MIXTOS
       const mixedPaymentsData = isMixedPayment ? mixedPayments.map(payment => {
         const cleanMethod = String(payment.method || 'unknown').trim();
         const cleanAmount = Math.max(0, Number(payment.amount) || 0);
@@ -1351,7 +1793,7 @@ export default function POS() {
         };
       }) : [];
 
-      // PARÁMETROS ULTRA LIMPIOS - AJUSTADOS PARA COINCIDIR CON LA FUNCIÓN DE SUPABASE
+      // PARÁMETROS PARA RPC
       const saleParams = {
         p_company_id: userProfile.company_id,
         p_store_id: storeId,
@@ -1362,30 +1804,21 @@ export default function POS() {
         p_bcv_rate: Number(bcvRate) || 41.73,
         p_customer_id_number: selectedCustomer?.id_number ? String(selectedCustomer.id_number).trim() : null,
         p_items: saleItems,
-        // Guardar tipo de financiamiento en notes para distinguir entre KRECE y Cashea sin modificar BD
         p_notes: (isKreceEnabled || isCasheaEnabled) ? (isKreceEnabled ? 'financing_type:krece' : 'financing_type:cashea') : null,
-        p_tax_rate: Number(getTaxRate()) / 100, // Convertir porcentaje a decimal (ej: 16% -> 0.16)
-        // Usar los mismos campos de KRECE para Cashea (reutilizando estructura existente)
+        p_tax_rate: Number(getTaxRate()) / 100,
         p_krece_enabled: Boolean(isKreceEnabled || isCasheaEnabled),
         p_krece_initial_amount_usd: Number(isKreceEnabled ? kreceInitialAmount : (isCasheaEnabled ? casheaInitialAmount : 0)) || 0,
-        // Cuando ninguno está activo, será 0 (comportamiento original)
         p_krece_financed_amount_usd: isKreceEnabled ? Number(cartSubtotal - kreceInitialAmount) || 0 :
                                      isCasheaEnabled ? Number(cartSubtotal - casheaInitialAmount) || 0 : 0,
-        // Cuando ninguno está activo, será 0 (comportamiento original)
         p_krece_initial_percentage: isKreceEnabled && cartSubtotal > 0 ? Number((kreceInitialAmount / cartSubtotal) * 100) || 0 :
                                     isCasheaEnabled && cartSubtotal > 0 ? Number((casheaInitialAmount / cartSubtotal) * 100) || 0 : 0,
         p_is_mixed_payment: Boolean(isMixedPayment),
         p_mixed_payments: mixedPaymentsData
       };
 
-      console.log('🚀 DEBUG: Procesando venta con parámetros COMPLETOS:');
-      console.log('📋 DEBUG: p_items (saleItems):', JSON.stringify(saleParams.p_items, null, 2));
-      console.log('📊 DEBUG: Todos los parámetros:', {
-        ...saleParams,
-        p_items: saleParams.p_items // Ya logueado arriba
-      });
-
-      // Llamar a la función de procesamiento
+      // ====================================================================================
+      // 🎯 PUNTO CRÍTICO: LLAMADA AL RPC process_sale
+      // ====================================================================================
       const { data, error } = await supabase.rpc('process_sale', saleParams);
 
       if (error) {
@@ -1397,7 +1830,7 @@ export default function POS() {
             invoiceCommitted = true;
             const updatedQueue = storeOfflineSale({
               invoice_number: activeReservation.invoiceNumber,
-              sequence: activeReservation.sequence, // Usar sequence en vez de dateKey
+              sequence: activeReservation.sequence,
               saleParams,
               cartSnapshot: cart,
               customer: selectedCustomer,
@@ -1411,23 +1844,23 @@ export default function POS() {
             alert(
               `La venta se almacenó temporalmente por falla de red. Factura reservada ${activeReservation.invoiceNumber}.`
             );
+          } else {
+            revertInvoiceState(activeReservation.previousState);
+            toast({
+              title: "Error al procesar venta",
+              description: error.message || "Ocurrió un error inesperado. Por favor, intenta nuevamente.",
+              variant: "destructive",
+            });
+          }
         } else {
-          revertInvoiceState(activeReservation.previousState);
           toast({
             title: "Error al procesar venta",
             description: error.message || "Ocurrió un error inesperado. Por favor, intenta nuevamente.",
             variant: "destructive",
           });
         }
-      } else {
-        toast({
-          title: "Error al procesar venta",
-          description: error.message || "Ocurrió un error inesperado. Por favor, intenta nuevamente.",
-          variant: "destructive",
-        });
-      }
-      setIsProcessingSale(false);
-      return;
+        setIsProcessingSale(false);
+        return;
       }
 
       if (!data) {
@@ -1443,12 +1876,40 @@ export default function POS() {
         return;
       }
 
+      // ====================================================================================
+      // 🚨 AUDITORÍA CRÍTICA: LOGS DE DEBUGGING PARA IDENTIFICAR RESPUESTA DEL RPC
+      // ====================================================================================
+      console.log('🚨 AUDITORÍA CRÍTICA: RESPUESTA DE RPC (data) =>', data);
+      console.log('🚨 AUDITORÍA CRÍTICA: TIPO DE RESPUESTA DE RPC =>', typeof data);
+      console.log('🚨 AUDITORÍA CRÍTICA: ES ARRAY? =>', Array.isArray(data));
+      console.log('🚨 AUDITORÍA CRÍTICA: ES OBJETO? =>', typeof data === 'object' && data !== null);
+      if (typeof data === 'object' && data !== null) {
+        console.log('🚨 AUDITORÍA CRÍTICA: KEYS DEL OBJETO =>', Object.keys(data));
+        console.log('🚨 AUDITORÍA CRÍTICA: VALOR DE data.id =>', (data as any)?.id);
+        console.log('🚨 AUDITORÍA CRÍTICA: JSON STRINGIFY =>', JSON.stringify(data, null, 2));
+      }
+      if (Array.isArray(data)) {
+        console.log('🚨 AUDITORÍA CRÍTICA: LONGITUD DEL ARRAY =>', data.length);
+        console.log('🚨 AUDITORÍA CRÍTICA: PRIMER ELEMENTO =>', data[0]);
+        if (data[0]) {
+          console.log('🚨 AUDITORÍA CRÍTICA: PRIMER ELEMENTO.id =>', (data[0] as any)?.id);
+        }
+      }
+      // ====================================================================================
+
+      // 🚨 CORRECCIÓN CRÍTICA: Priorizar 'sale_id' ya que el RPC retorna ese nombre
       const saleId =
         typeof data === 'string'
-          ? data
-          : Array.isArray(data)
-          ? (data[0] as any)?.id
-          : (data as any)?.id;
+          ? data // Caso 1: Si retorna un string directo (ej. el ID)
+          : (data as any)?.sale_id // Caso 2: El nombre real que retorna el RPC
+          ? (data as any).sale_id
+          : Array.isArray(data) && (data[0] as any)?.sale_id
+          ? (data[0] as any).sale_id // Caso 3: Array, buscando en el primer elemento
+          : (data as any)?.id // Fallback: Si el backend cambia y vuelve a usar 'id'
+          ? (data as any).id
+          : Array.isArray(data) && (data[0] as any)?.id
+          ? (data[0] as any).id // Fallback: Array con 'id'
+          : null; // Si todo falla, asignar null
 
       if (!saleId) {
         if (activeReservation) {
@@ -1464,62 +1925,120 @@ export default function POS() {
         return;
       }
 
+      // ====================================================================================
+      // ✅ AISLAMIENTO DEL ÉXITO PERSISTIDO - PRIORIDAD ABSOLUTA
+      // ====================================================================================
+      // La venta fue procesada exitosamente. Declarar éxito INMEDIATAMENTE antes de
+      // cualquier operación secundaria que pueda fallar.
+      // ====================================================================================
+
+      // Guardar snapshot del carrito para el modal (antes de limpiar)
+      const cartSnapshot = [...cart];
+      const customerSnapshot = selectedCustomer;
+
+      // Limpiar formulario INMEDIATAMENTE (la venta ya está persistida)
+      setCart([]);
+      setSelectedCustomer(null);
+      setSelectedPaymentMethod("");
+      setIsKreceEnabled(false);
+      setKreceInitialAmount(0);
+      setIsCasheaEnabled(false);
+      setCasheaInitialAmount(0);
+      setIsMixedPayment(false);
+      setMixedPayments([]);
+      
+      // Establecer estado de venta completada
+      setIsSaleConfirmedAndCompleted(true);
+      
+      // Mostrar toast de éxito INMEDIATAMENTE
+      toast({
+        variant: "success",
+        title: "Venta completada",
+        description: `Venta procesada exitosamente. Asignando número de factura...`,
+        duration: 3000,
+      });
+
+      // ====================================================================================
+      // 🔒 BLINDAJE DE OPERACIONES SECUNDARIAS
+      // ====================================================================================
+      // Todas las operaciones asíncronas posteriores están envueltas en try/catch internos
+      // para que NO interrumpan el flujo de éxito ya declarado.
+      // ====================================================================================
+
+      let finalInvoiceNumber = invoiceNumber;
+      let storeInfo: any = {};
+
+      // ====================================================================================
+      // OPERACIÓN SECUNDARIA 1: Asignación de Factura Correlativa
+      // ====================================================================================
       if (activeReservation) {
-        const applyInvoiceToSale = async (reservation: ReservedInvoice) => {
-          const payload: Database['public']['Tables']['sales']['Update'] = {
-            invoice_number: reservation.invoiceNumber,
+        try {
+          const applyInvoiceToSale = async (reservation: ReservedInvoice) => {
+            const payload: Database['public']['Tables']['sales']['Update'] = {
+              invoice_number: reservation.invoiceNumber,
+            };
+            const { error: updateError } = await supabase
+              .from('sales')
+              .update(payload as any)
+              .eq('id', saleId);
+            return updateError;
           };
-          const { error: updateError } = await supabase
-            .from('sales')
-            .update(payload as any)
-            .eq('id', saleId);
-          return updateError;
-        };
 
-        let updateError = await applyInvoiceToSale(activeReservation);
-
-        if (updateError) {
-          console.warn(
-            'No se pudo asignar la factura reservada. Intentando nuevamente con otro correlativo.',
-            updateError
-          );
-          revertInvoiceState(activeReservation.previousState);
-
-          try {
-            activeReservation = await reserveInvoiceNumber();
-          } catch (retryError) {
-            console.error('Fallo generando un nuevo correlativo tras el error:', retryError);
-            toast({
-              title: "Error asignando factura",
-              description: "No se pudo asignar un número de factura correlativo. Intenta nuevamente.",
-              variant: "destructive",
-            });
-            setIsProcessingSale(false);
-            return;
-          }
-
-          updateError = await applyInvoiceToSale(activeReservation);
+          let updateError = await applyInvoiceToSale(activeReservation);
 
           if (updateError) {
+            console.warn('No se pudo asignar la factura reservada. Intentando nuevamente con otro correlativo.', updateError);
             revertInvoiceState(activeReservation.previousState);
-            console.error('No se pudo asignar un número de factura tras reintento:', updateError);
-            toast({
-              title: "Error crítico",
-              description: "No se pudo asignar un número de factura. Contacta al administrador.",
-              variant: "destructive",
-            });
-            setIsProcessingSale(false);
-            return;
-          }
-        }
 
-        commitInvoiceState(invoiceTrackerRef.current);
-        invoiceCommitted = true;
-        reservedInvoice = activeReservation;
+            try {
+              activeReservation = await reserveInvoiceNumber();
+              if (activeReservation) {
+                updateError = await applyInvoiceToSale(activeReservation);
+                
+                if (updateError) {
+                  console.error('No se pudo asignar un número de factura tras reintento:', updateError);
+                  // NO hacer return aquí - solo mostrar advertencia
+                  toast({
+                    title: "⚠️ Advertencia",
+                    description: "La venta fue procesada exitosamente, pero no se pudo asignar un número de factura correlativo. Contacta al administrador.",
+                    variant: "warning",
+                    duration: 5000,
+                  });
+                } else {
+                  commitInvoiceState(invoiceTrackerRef.current);
+                  invoiceCommitted = true;
+                  reservedInvoice = activeReservation;
+                  finalInvoiceNumber = activeReservation.invoiceNumber;
+                }
+              }
+            } catch (retryError) {
+              console.error('Fallo generando un nuevo correlativo tras el error:', retryError);
+              toast({
+                title: "⚠️ Advertencia",
+                description: "La venta fue procesada exitosamente, pero no se pudo asignar un número de factura correlativo. Contacta al administrador.",
+                variant: "warning",
+                duration: 5000,
+              });
+            }
+          } else {
+            commitInvoiceState(invoiceTrackerRef.current);
+            invoiceCommitted = true;
+            finalInvoiceNumber = activeReservation.invoiceNumber;
+          }
+        } catch (invoiceError) {
+          console.warn('Error en asignación de factura (no crítico):', invoiceError);
+          toast({
+            title: "⚠️ Advertencia",
+            description: "La venta fue procesada exitosamente, pero hubo un problema al asignar el número de factura. Contacta al administrador si es necesario.",
+            variant: "warning",
+            duration: 5000,
+          });
+        }
       }
 
-      let finalInvoiceNumber = activeReservation?.invoiceNumber ?? invoiceNumber;
-
+      // ====================================================================================
+      // OPERACIÓN SECUNDARIA 2: Verificación de Factura Almacenada
+      // ====================================================================================
       try {
         const saleRowResponse = await supabase
           .from('sales')
@@ -1536,63 +2055,58 @@ export default function POS() {
           }
         }
       } catch (fetchError) {
-        console.warn('No se pudo verificar la factura almacenada:', fetchError);
+        console.warn('No se pudo verificar la factura almacenada (no crítico):', fetchError);
+        // No mostrar toast - ya tenemos el número de factura de la reserva
       }
 
-      // Obtener información de la tienda seleccionada dinámicamente
-      let storeInfo = {};
-      console.log('Verificando información de la tienda seleccionada:', {
-        selectedStore: selectedStore,
-        userProfile: userProfile,
-        company_id: userProfile?.company_id
-      });
-      
-      if (selectedStore) {
-        // Usar la tienda seleccionada dinámicamente con información fiscal completa
-        storeInfo = {
-          name: selectedStore.name,
-          business_name: selectedStore.business_name,
-          tax_id: selectedStore.tax_id,
-          fiscal_address: selectedStore.fiscal_address,
-          phone_fiscal: selectedStore.phone_fiscal,
-          email_fiscal: selectedStore.email_fiscal
-        };
-        console.log('Información fiscal de la tienda seleccionada obtenida:', storeInfo);
-      } else {
-        console.warn('No hay tienda seleccionada, usando información del usuario asignado');
-        
-        // Fallback: usar la tienda asignada al usuario
-        if ((userProfile as any)?.assigned_store_id) {
-          try {
-            console.log('Obteniendo información de la tienda asignada con ID:', (userProfile as any).assigned_store_id);
-            
-            const { data: storeData, error: storeError } = await supabase
-              .from('stores')
-              .select('*')
-              .eq('id', (userProfile as any).assigned_store_id)
-              .single();
-            
-            if (!storeError && storeData) {
-              storeInfo = {
-                name: (storeData as any).name,
-                business_name: (storeData as any).business_name,
-                tax_id: (storeData as any).tax_id,
-                fiscal_address: (storeData as any).fiscal_address,
-                phone_fiscal: (storeData as any).phone_fiscal,
-                email_fiscal: (storeData as any).email_fiscal
-              };
-              console.log('Información de la tienda asignada obtenida:', storeInfo);
-            }
-          } catch (error) {
-            console.error('Error obteniendo información de la tienda asignada:', error);
+      // ====================================================================================
+      // OPERACIÓN SECUNDARIA 3: Obtención de Datos de Tienda (Información Fiscal)
+      // ====================================================================================
+      try {
+        if (selectedStore) {
+          // Usar la tienda seleccionada con información fiscal completa
+          storeInfo = {
+            name: selectedStore.name,
+            business_name: selectedStore.business_name,
+            tax_id: selectedStore.tax_id,
+            fiscal_address: selectedStore.fiscal_address,
+            phone_fiscal: selectedStore.phone_fiscal,
+            email_fiscal: selectedStore.email_fiscal
+          };
+        } else if ((userProfile as any)?.assigned_store_id) {
+          // Fallback: usar la tienda asignada al usuario
+          const { data: storeData, error: storeError } = await supabase
+            .from('stores')
+            .select('id, name, business_name, tax_id, fiscal_address, phone_fiscal, email_fiscal')
+            .eq('id', (userProfile as any).assigned_store_id)
+            .single();
+          
+          if (!storeError && storeData) {
+            storeInfo = {
+              name: (storeData as any).name,
+              business_name: (storeData as any).business_name,
+              tax_id: (storeData as any).tax_id,
+              fiscal_address: (storeData as any).fiscal_address,
+              phone_fiscal: (storeData as any).phone_fiscal,
+              email_fiscal: (storeData as any).email_fiscal
+            };
           }
         }
+      } catch (storeError) {
+        console.warn('Error obteniendo información de la tienda (no crítico):', storeError);
+        // Usar objeto vacío como fallback - no interrumpe el flujo
+        storeInfo = {};
       }
 
-      // Preparar items para la factura (separar teléfonos con múltiples IMEIs)
-      const invoiceItems = cart.flatMap(item => {
+      // ====================================================================================
+      // FLUJO FINAL DE PRESENTACIÓN
+      // ====================================================================================
+      // Preparar datos para el modal usando información obtenida con resiliencia
+      // ====================================================================================
+
+      // Preparar items para la factura (usar snapshot del carrito)
+      const invoiceItems = cartSnapshot.flatMap(item => {
         if (item.category === 'phones' && item.imeis && item.imeis.length > 0) {
-          // Para teléfonos con múltiples IMEIs, crear un item por cada IMEI
           return item.imeis.map(imei => ({
             id: item.id,
             name: item.name,
@@ -1601,7 +2115,6 @@ export default function POS() {
             imei: imei
           }));
         } else {
-          // Para productos normales o teléfonos con un solo IMEI
           return [{
             id: item.id,
             name: item.name,
@@ -1616,11 +2129,11 @@ export default function POS() {
       const saleData = {
         sale_id: saleId,
         invoice_number: finalInvoiceNumber,
-        customer: selectedCustomer?.name || 'Cliente General',
-        customer_id: selectedCustomer?.id_number || null,
-        items: invoiceItems, // Usar los items procesados con IMEIs separados
+        customer: customerSnapshot?.name || 'Cliente General',
+        customer_id: customerSnapshot?.id_number || null,
+        items: invoiceItems,
         subtotal_usd: cartSubtotal,
-        tax_amount_usd: 0, // El IVA se calcula en el backend
+        tax_amount_usd: 0,
         total_usd: totalUSD,
         total_bs: totalUSD * bcvRate,
         bcv_rate: bcvRate,
@@ -1631,7 +2144,6 @@ export default function POS() {
         store_info: storeInfo,
         cashier_name: userProfile.name || 'Sistema',
         krece_enabled: isKreceEnabled || isCasheaEnabled,
-        // Cuando ninguno está activo, será 0 (comportamiento original)
         krece_initial_amount: isKreceEnabled ? kreceInitialAmount : 
                               isCasheaEnabled ? casheaInitialAmount : 0,
         krece_financed_amount: isKreceEnabled ? (cartSubtotal - kreceInitialAmount) :
@@ -1641,40 +2153,24 @@ export default function POS() {
         financing_type: isKreceEnabled ? 'krece' : (isCasheaEnabled ? 'cashea' : null)
       };
 
-      console.log('Datos de venta preparados:', saleData);
-
-      // Mostrar toast de confirmación
-      toast({
-        title: "✅ Venta completada",
-        description: `Factura ${finalInvoiceNumber} generada exitosamente.`,
-        duration: 3000,
-      });
-
-      // Mostrar modal de completado (se cierra automáticamente después de 5 segundos)
+      // Mostrar modal de completado
       setCompletedSaleData(saleData);
       setShowSaleModal(true);
       
-      // Limpiar formulario
-      setCart([]);
-      setSelectedCustomer(null);
-      setSelectedPaymentMethod("");
-      setIsKreceEnabled(false);
-      setKreceInitialAmount(0);
-      setIsCasheaEnabled(false);
-      setCasheaInitialAmount(0);
-      setIsMixedPayment(false);
-      setMixedPayments([]);
-      
-      // El modal se cierra automáticamente después de 5 segundos
+      // Finalizar procesamiento
       setIsProcessingSale(false);
       
       console.log('Venta procesada exitosamente:', data);
       
     } catch (error) {
-      console.error('Error al procesar la venta:', error);
+      // Este catch solo debe capturar errores del RPC principal o errores inesperados
+      // NO debe capturar errores de operaciones secundarias (ya están blindadas)
+      console.error('Error crítico al procesar la venta:', error);
+      
       if (reservedInvoice && !invoiceCommitted) {
         revertInvoiceState(reservedInvoice.previousState);
       }
+      
       toast({
         title: "Error al procesar venta",
         description: (error as Error).message || "Ocurrió un error inesperado. Por favor, intenta nuevamente.",
@@ -1761,7 +2257,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
       <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
         <Card className="p-6 max-w-md text-center">
           <div className="flex flex-col items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-yellow-500/20 flex items-center justify-center">
+            <div className="w-16 h-16 rounded-sm bg-yellow-500/20 flex items-center justify-center shadow-md shadow-yellow-500/50 border-none">
               <Store className="w-8 h-8 text-yellow-600" />
             </div>
             <div>
@@ -1785,7 +2281,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
       <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
         <Card className="p-6 max-w-md text-center">
           <div className="flex flex-col items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-orange-500/20 flex items-center justify-center">
+            <div className="w-16 h-16 rounded-sm bg-orange-500/20 flex items-center justify-center shadow-md shadow-orange-500/50 border-none">
               <Store className="w-8 h-8 text-orange-600" />
             </div>
             <div>
@@ -1803,67 +2299,372 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header con título y badge de versión */}
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight">Punto de Venta</h1>
-        <Badge
-          variant="secondary"
-          className="text-[10px] xs:text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 bg-green-400 text-black"
-        >
-          v3-filtread
-        </Badge>
+    <div className="h-screen flex flex-col overflow-hidden bg-background">
+      {/* ===== HEADER PRINCIPAL (Igual al Modal) ===== */}
+      <div className="flex-shrink-0 border-b p-4">
+        <div className="flex items-center justify-between">
+          {/* Título */}
+          <div className="flex items-center gap-3">
+            <ShoppingCart className="w-7 h-7 text-primary" />
+            <h1 className="text-2xl font-bold">Punto de Venta</h1>
+          </div>
+          
+          {/* Tasa BCV */}
+          <div className="flex items-center gap-2 bg-primary/10 px-4 py-2 rounded-full">
+            <DollarSign className="w-4 h-4 text-primary" />
+            <span className="text-sm text-muted-foreground">Tasa BCV:</span>
+            <span className="font-bold text-primary">Bs {bcvRate.toFixed(2)}</span>
+          </div>
+        </div>
+        
+        {/* Step Indicator */}
+        <div className="flex items-center justify-center gap-2 mt-4">
+          {[
+            { num: 1, label: 'Tienda', icon: Store },
+            { num: 2, label: 'Cliente', icon: User },
+            { num: 3, label: 'Productos', icon: ShoppingCart },
+            { num: 4, label: 'Pago', icon: CreditCard },
+            { num: 5, label: 'Resumen', icon: Check },
+          ].map((step, index) => {
+            const Icon = step.icon;
+            const isActive = currentStep === step.num;
+            const isCompleted = currentStep > step.num;
+            const canNavigate = step.num < currentStep;
+            
+            return (
+              <React.Fragment key={step.num}>
+                <button
+                  onClick={() => canNavigate && setCurrentStep(step.num)}
+                  disabled={!canNavigate}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full transition-all text-sm ${
+                    isActive 
+                      ? 'bg-primary text-primary-foreground shadow-md' 
+                      : isCompleted 
+                        ? 'bg-accent-hover/20 text-accent-primary hover:bg-accent-hover/30 cursor-pointer' 
+                        : 'bg-muted text-muted-foreground cursor-not-allowed'
+                  }`}
+                >
+                  {isCompleted ? <Check className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
+                  <span className="hidden sm:inline">{step.label}</span>
+                </button>
+                {index < 4 && (
+                  <div className={`w-6 h-0.5 ${currentStep > step.num ? 'bg-accent-primary' : 'bg-muted'}`} />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+        
+        {/* Info Bar: Tienda + Cliente (visible después de seleccionar) */}
+        {currentStep > 1 && selectedStore && (
+          <div className="flex items-center gap-4 mt-3 p-3 bg-primary/5 rounded-lg border border-primary/20">
+            <div className="flex items-center gap-2">
+              <Store className="w-4 h-4 text-primary" />
+              <span className="font-semibold text-sm">{selectedStore.name}</span>
+            </div>
+            {selectedCustomer && (
+              <>
+                <div className="w-px h-6 bg-border" />
+                <div className="flex items-center gap-2">
+                  <User className="w-4 h-4 text-primary" />
+                  <span className="font-semibold text-sm">{selectedCustomer.name}</span>
+                  <Badge variant="outline" className="text-xs">{selectedCustomer.id_number}</Badge>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
-
-      {/* Store Selector - Solo para administradores (super usuarios) */}
-      {userProfile?.role === 'admin' && (
-        <Card className="p-4 glass-card">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Store className="w-5 h-5 text-primary" />
-              <span className="text-sm font-medium text-foreground">Tienda de Operación:</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Select 
-                value={selectedStore?.id || ''} 
-                onValueChange={(storeId) => {
-                  const store = availableStores.find(s => s.id === storeId);
-                  setSelectedStore(store || null);
-                }}
-                disabled={storeLoading}
-              >
-                <SelectTrigger className="w-[200px] h-9">
-                  <SelectValue placeholder="Seleccionar tienda" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableStores.map((store) => (
-                    <SelectItem key={store.id} value={store.id}>
-                      {store.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </Card>
-      )}
       
-      {/* Display assigned store for cashiers (read-only) */}
-      {userProfile?.role === 'cashier' && selectedStore && (
-        <Card className="p-4 glass-card">
-          <div className="flex items-center space-x-2">
-            <Store className="w-5 h-5 text-primary" />
-            <span className="text-sm font-medium text-foreground">Tienda asignada:</span>
-            <span className="text-sm text-muted-foreground">{selectedStore.name}</span>
+      {/* ===== CONTENIDO PRINCIPAL (Scrollable) ===== */}
+      <div className="flex-1 overflow-y-auto p-4">
+
+      {/* ========== STEP 1: Selección de Tienda (PANEL INLINE) ========== */}
+      {currentStep === 1 && (
+        <Card className="p-6 glass-card border border-green-500/30 animate-fade-in">
+          <div className="max-w-2xl mx-auto text-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
+              <Store className="w-8 h-8 text-primary" />
+            </div>
+            <h2 className="text-2xl font-bold mb-2">Tienda de Operación</h2>
+            <p className="text-muted-foreground mb-6">
+              {isRestrictedToStore 
+                ? `Operando desde: ${selectedStore?.name || 'Tu tienda asignada'}`
+                : 'Elige la sucursal desde donde realizarás la venta'
+              }
+            </p>
+            
+            {storeLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              </div>
+            ) : availableStores.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Store className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                <p>No hay tiendas disponibles</p>
+              </div>
+            ) : isRestrictedToStore ? (
+              // Para managers y cajeros: mostrar solo su tienda asignada (sin selector)
+              <div className="py-8">
+                <Card className="p-6 bg-primary/5 border border-primary/20">
+                  <div className="flex items-center justify-center gap-3">
+                    <Store className="w-8 h-8 text-primary" />
+                    <div>
+                      <p className="text-lg font-bold">{selectedStore?.name}</p>
+                      <p className="text-sm text-muted-foreground">Tienda asignada</p>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+            ) : (
+              // Para admins: mostrar selector de tiendas
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {availableStores.map((store) => (
+                  <Button
+                    key={store.id}
+                    variant={selectedStore?.id === store.id ? "default" : "outline"}
+                    className={`h-auto p-4 justify-start ${
+                      selectedStore?.id === store.id 
+                        ? 'bg-primary glow-primary' 
+                        : 'hover:bg-primary/10 hover:border-primary'
+                    }`}
+                    onClick={() => {
+                      setSelectedStore(store);
+                      setHasSelectedStoreInSession(true);
+                    }}
+                  >
+                    <Store className="w-5 h-5 mr-3" />
+                    <span className="font-semibold">{store.name}</span>
+                  </Button>
+                ))}
+              </div>
+            )}
+            
+            <div className="mt-6 flex justify-center">
+              <Button
+                onClick={() => {
+                  // Si es manager/cashier, asegurar que la tienda esté seleccionada
+                  if (isRestrictedToStore && selectedStore) {
+                    setHasSelectedStoreInSession(true);
+                  }
+                  setCurrentStep(2);
+                }}
+                disabled={!selectedStore || (!isRestrictedToStore && !hasSelectedStoreInSession)}
+                className="bg-primary glow-primary px-8"
+              >
+                Continuar
+                <ChevronRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
           </div>
         </Card>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[calc(100vh-8rem)] animate-fade-in">
-      {/* Left Column: Products Search */}
-      <div className="lg:col-span-1 flex flex-col gap-4">
-        {/* Search Bar */}
-        <Card className="p-4 glass-card shrink-0">
+      {/* ========== STEP 2: Identificación de Cliente (PANEL INLINE) ========== */}
+      {currentStep === 2 && (
+        <Card className="p-6 glass-card border border-green-500/30 animate-fade-in">
+          <div className="max-w-2xl mx-auto">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
+                <User className="w-8 h-8 text-primary" />
+              </div>
+              <h2 className="text-2xl font-bold mb-2">Identifica al Cliente</h2>
+              <p className="text-muted-foreground">
+                Busca por Cédula o RIF para validar el cliente
+              </p>
+            </div>
+            
+            {/* Si ya hay cliente seleccionado, mostrar info */}
+            {selectedCustomer ? (
+              <Card className="p-4 bg-accent-hover/10 border border-accent-primary/30 mb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-accent-primary/20 flex items-center justify-center">
+                      <Check className="w-5 h-5 text-accent-primary" />
+                    </div>
+                    <div>
+                      <p className="font-semibold">{selectedCustomer.name}</p>
+                      <p className="text-sm text-muted-foreground">{selectedCustomer.id_number}</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedCustomer(null);
+                      setIdSearchTerm('');
+                      setCustomerNotFound(false);
+                      setShowRegistrationForm(false);
+                    }}
+                  >
+                    Cambiar Cliente
+                  </Button>
+                </div>
+              </Card>
+            ) : (
+              <>
+                {/* Buscador de cliente */}
+                <div className="space-y-4">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        type="text"
+                        placeholder="Ingresa la Cédula o RIF..."
+                        value={idSearchTerm}
+                        onChange={(e) => setIdSearchTerm(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && idSearchTerm.trim().length >= 3) {
+                            searchCustomerById(idSearchTerm);
+                          }
+                        }}
+                        className="pl-10 h-12 text-lg"
+                      />
+                    </div>
+                    <Button
+                      onClick={() => searchCustomerById(idSearchTerm)}
+                      disabled={idSearchTerm.trim().length < 3 || isSearchingCustomer}
+                      className="h-12 px-6"
+                    >
+                      {isSearchingCustomer ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Search className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
+                  
+                  {idSearchTerm.trim().length > 0 && idSearchTerm.trim().length < 3 && (
+                    <p className="text-xs text-muted-foreground">Ingresa al menos 3 caracteres para buscar</p>
+                  )}
+                </div>
+                
+                {/* Cliente no encontrado - Mostrar registro */}
+                {customerNotFound && !showRegistrationForm && (
+                  <Card className="mt-4 p-4 bg-amber-500/10 border border-amber-500/30">
+                    <div className="flex items-center gap-3 mb-3">
+                      <AlertCircle className="w-5 h-5 text-amber-600" />
+                      <p className="font-medium">Cliente no registrado</p>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      La cédula <span className="font-mono font-bold">{idSearchTerm}</span> no está en el sistema.
+                    </p>
+                    <Button
+                      onClick={() => setShowRegistrationForm(true)}
+                      className="w-full bg-amber-600 hover:bg-amber-700"
+                    >
+                      Registrar Nuevo Cliente
+                    </Button>
+                  </Card>
+                )}
+                
+                {/* Formulario de registro inline */}
+                {showRegistrationForm && (
+                  <Card className="mt-4 p-4 bg-zinc-900/80 border border-green-500/30 animate-in slide-in-from-top">
+                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                      <User className="w-5 h-5 text-green-500" />
+                      Registrar Nuevo Cliente
+                    </h3>
+                    <div className="space-y-4">
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Cédula / RIF</Label>
+                        <Input
+                          value={newCustomer.id_number}
+                          disabled
+                          className="font-mono bg-muted/50"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Nombre Completo *</Label>
+                        <Input
+                          placeholder="Ej: Juan Pérez"
+                          value={newCustomer.name}
+                          onChange={(e) => setNewCustomer(prev => ({ ...prev, name: e.target.value }))}
+                          autoFocus
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label className="text-sm text-muted-foreground">Teléfono (opcional)</Label>
+                          <Input
+                            placeholder="04XX-XXXXXXX"
+                            value={newCustomer.phone}
+                            onChange={(e) => setNewCustomer(prev => ({ ...prev, phone: e.target.value }))}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-sm text-muted-foreground">Email (opcional)</Label>
+                          <Input
+                            type="email"
+                            placeholder="correo@ejemplo.com"
+                            value={newCustomer.email}
+                            onChange={(e) => setNewCustomer(prev => ({ ...prev, email: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <Label className="text-sm text-muted-foreground">Dirección (opcional)</Label>
+                        <Input
+                          placeholder="Dirección del cliente"
+                          value={newCustomer.address}
+                          onChange={(e) => setNewCustomer(prev => ({ ...prev, address: e.target.value }))}
+                        />
+                      </div>
+                      <div className="flex gap-2 pt-2">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setShowRegistrationForm(false);
+                            setNewCustomer({ name: '', id_number: '', phone: '', email: '', address: '' });
+                          }}
+                          className="flex-1"
+                        >
+                          Cancelar
+                        </Button>
+                        <Button
+                          onClick={createNewCustomer}
+                          disabled={!newCustomer.name.trim()}
+                          className="flex-1"
+                        >
+                          Registrar y Continuar
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                )}
+              </>
+            )}
+            
+            {/* Botones de navegación */}
+            <div className="mt-6 flex justify-between">
+              <Button
+                variant="outline"
+                onClick={() => setCurrentStep(1)}
+              >
+                <ChevronLeft className="w-4 h-4 mr-2" />
+                Anterior
+              </Button>
+              <Button
+                onClick={() => setCurrentStep(3)}
+                disabled={!selectedCustomer}
+                className="bg-primary glow-primary"
+              >
+                Continuar
+                <ChevronRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* ========== STEP 3: Productos/Carrito (2 COLUMNAS COMO EL MODAL) ========== */}
+      {currentStep === 3 && (
+        <div className="flex flex-col h-full animate-fade-in">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 overflow-hidden">
+            {/* Columna Izquierda: Búsqueda de Productos */}
+            <div className="flex flex-col gap-3 overflow-hidden">
+            {/* Search Bar */}
+            <Card className="p-4 glass-card shrink-0">
           <div className="flex items-center gap-3">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -1900,7 +2701,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                     }
                   }
                 }}
-                className="pl-10 pr-4 h-12 text-lg glass-card border-primary/20 focus:border-primary focus:glow-primary"
+                className="pl-10 pr-4 h-12 text-lg glass-card border border-green-500/30 shadow-md shadow-green-500/40 focus:shadow-lg focus:shadow-green-500/50 focus:glow-primary"
               />
             </div>
             <Button 
@@ -1913,12 +2714,12 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
               <Scan className="w-4 h-4" />
             </Button>
           </div>
-          {!scanMode && <div className="mt-3 text-sm text-muted-foreground">Escriba para buscar…</div>}
-        </Card>
+            {!scanMode && <div className="mt-3 text-sm text-muted-foreground">Escriba para buscar…</div>}
+          </Card>
 
-        {/* Products toolbar */}
-        <div className="flex items-center justify-between shrink-0">
-          <div className="text-sm text-muted-foreground">
+          {/* Products toolbar */}
+          <div className="flex items-center justify-between shrink-0">
+            <div className="text-sm text-muted-foreground">
             {isSearching ? 'Buscando...' : `${filteredProducts.length} productos`}
           </div>
           <div className="flex items-center gap-2">
@@ -1937,12 +2738,12 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
             </Select>
             <Button variant={productView==='cards'? 'default':'outline'} size="sm" onClick={() => setProductView('cards')}>Cards</Button>
             <Button variant={productView==='list'? 'default':'outline'} size="sm" onClick={() => setProductView('list')}>Lista</Button>
+            </div>
           </div>
-        </div>
 
-        {/* Products View (Scrollable) */}
-        <div className="flex flex-col gap-3 overflow-y-auto pr-2 flex-grow">
-          {!hasSearched ? (
+          {/* Products View (Scrollable) */}
+          <div className="flex flex-col gap-3 overflow-y-auto pr-2" style={{ maxHeight: 'calc(60vh - 8rem)' }}>
+            {!hasSearched ? (
             <div className="col-span-full text-center py-8">
               <Search className="w-16 h-16 mx-auto mb-4 text-muted-foreground/30" />
               <p className="text-muted-foreground">Escriba para buscar o escanee un código</p>
@@ -1962,7 +2763,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
               filteredProducts.map((product) => (
                 <Card key={product.id} className="p-4 glass-card hover-glow cursor-pointer" onClick={() => addToCart(product).catch(console.error)}>
                   <div className="flex items-center gap-4 min-h-[56px]">
-                    <div className="w-12 h-12 rounded-md bg-gradient-glow flex items-center justify-center shrink-0">
+                    <div className="w-12 h-12 rounded-sm bg-gradient-glow flex items-center justify-center shrink-0">
                       <ShoppingCart className="w-5 h-5 text-primary" />
                     </div>
                     <div className="flex-1 min-w-0 pr-2">
@@ -1983,7 +2784,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
               ))
             ) : (
               filteredProducts.map((product) => (
-                <div key={product.id} className="grid grid-cols-12 items-center gap-3 p-4 rounded-lg glass-card hover-glow cursor-pointer min-h-[56px]" onClick={() => addToCart(product).catch(console.error)}>
+                <div key={product.id} className="grid grid-cols-12 items-center gap-3 p-4 rounded-sm glass-card border border-green-500/30 shadow-md shadow-green-500/40 hover:shadow-lg hover:shadow-green-500/50 cursor-pointer min-h-[56px]" onClick={() => addToCart(product).catch(console.error)}>
                   <div className="col-span-5 truncate text-sm pr-2">{product.name}</div>
                   <div className="col-span-2 font-mono text-xs text-muted-foreground truncate pr-2">{product.sku}</div>
                   <div className="col-span-2 text-xs text-muted-foreground truncate pr-2">{product.barcode ?? '-'}</div>
@@ -1997,136 +2798,199 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                 </div>
               ))
             )
-          )}
-        </div>
-      </div>
-
-      {/* Middle Column: Cart */}
-      <div className="lg:col-span-1 flex flex-col gap-4 h-[calc(100vh-8rem)]">
-        <Card className="p-4 glass-card flex-grow flex flex-col">
-          <div className="flex items-center justify-between mb-4 shrink-0">
-            <h3 className="text-lg font-semibold">Carrito</h3>
-            <Badge variant="secondary">{cart.length} items</Badge>
-          </div>
-          <div className="space-y-3 overflow-y-auto flex-grow pr-2 -mr-2">
-            {cart.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground flex flex-col items-center justify-center h-full">
-                <ShoppingCart className="w-12 h-12 mb-3 opacity-30" />
-                <p>Carrito vacío</p>
-              </div>
-            ) : (
-              cart.map((item, index) => (
-                <div key={item.id}>
-                  <div className="py-3 px-3 rounded-lg hover:bg-muted/50 transition-colors">
-                    {/* Row 1: Product + Unit price input + Remove */}
-                    <div className="grid grid-cols-12 items-center gap-3">
-                      <div className="col-span-7 flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-lg bg-muted/50 flex items-center justify-center shrink-0">
-                          <ShoppingCart className="w-5 h-5 text-muted-foreground" />
-                        </div>
-                        <p className="text-base font-medium truncate">{item.name}</p>
-                      </div>
-                      <div className="col-span-4 flex items-center justify-end">
-                        <Input
-                          type="text"
-                          inputMode="decimal"
-                          value={priceInputs[item.id] ?? (Number.isFinite(item.price) ? item.price.toFixed(2) : "0.00")}
-                          onChange={(e) => handleUnitPriceChange(item.id, e.target.value)}
-                          onFocus={(e) => e.currentTarget.select()}
-                          onBlur={() => commitUnitPrice(item)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.currentTarget.blur();
-                            }
-                            if (e.key === 'Escape') {
-                              // Revert to current committed price
-                              setPriceInputs(prev => ({ ...prev, [item.id]: item.price.toFixed(2) }));
-                              e.currentTarget.blur();
-                            }
-                          }}
-                          className="h-9 w-24 text-sm font-semibold text-right glass-card bg-background/90 border-primary/50 focus:border-primary focus:glow-primary"
-                        />
-                      </div>
-                      <div className="col-span-1 flex items-center justify-end">
-                        <Button size="icon" variant="ghost" className="w-9 h-9 rounded-full hover:bg-destructive/10" onClick={() => removeFromCart(item.id)}>
-                          <Trash2 className="w-5 h-5 text-destructive/80" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Row 2: IMEI Information (for phones) */}
-                    {item.category === 'phones' && (item.imeis && item.imeis.length > 0) && (
-                      <div className="mt-2 px-3">
-                        <div className="text-xs text-muted-foreground mb-1">IMEIs registrados:</div>
-                        <div className="flex flex-wrap gap-1">
-                          {item.imeis.map((imei, imeiIndex) => (
-                            <Badge key={imeiIndex} variant="secondary" className="text-xs font-mono">
-                              {imei}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Row 3: Quantity + Line total */}
-                    <div className="grid grid-cols-12 items-center gap-3 mt-2">
-                      <div className="col-span-6 flex items-center gap-2">
-                        <Button size="icon" variant="ghost" className="w-8 h-8 rounded-full text-muted-foreground hover:bg-muted" onClick={() => updateQuantity(item.id, -1).catch(console.error)}>
-                          <Minus className="w-5 h-5" />
-                        </Button>
-                        <span className="text-base font-bold w-12 text-center">{item.quantity}</span>
-                        <Button size="icon" variant="ghost" className="w-8 h-8 rounded-full text-muted-foreground hover:bg-muted" onClick={() => updateQuantity(item.id, 1).catch(console.error)}>
-                          <Plus className="w-5 h-5" />
-                        </Button>
-                      </div>
-                      <div className="col-span-6 text-right">
-                        <div className="text-xs text-muted-foreground">Total ítem</div>
-                        <div className="text-lg font-extrabold tracking-tight">${(item.price * item.quantity).toFixed(2)}</div>
-                      </div>
-                    </div>
-                  </div>
-                  {index < cart.length - 1 && <hr className="border-border/20" />}
-                </div>
-              ))
             )}
           </div>
-          {cart.length > 1 && (
-            <div className="mt-2 pt-2 border-t border-border/30 flex justify-end">
-              <div className="text-sm font-semibold">
-                Total: <span className="text-success">${subtotalUSD.toFixed(2)}</span>
-              </div>
-            </div>
-          )}
-        </Card>
-      </div>
 
-      {/* Right Column: Checkout */}
-      <div className="lg:col-span-1 flex flex-col gap-3 h-[calc(100vh-8rem)] sticky top-16">
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <Card className="p-3 glass-card"><CustomerSelector selectedCustomer={selectedCustomer} onCustomerSelect={handleCustomerSelect} /></Card>
-            <Card className="p-3 glass-card flex flex-col justify-between">
-              <h3 className="text-xs font-semibold">Tasa BCV</h3>
-              <div className="flex items-center justify-between mt-1">
-                {isEditingBcvRate ? (
-                  <div className="flex items-center gap-1">
-                    <Input type="number" value={bcvRateInput} onChange={(e) => setBcvRateInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleBcvRateUpdate(bcvRateInput); if (e.key === 'Escape') setIsEditingBcvRate(false);}} className="h-8 w-24 text-sm glass-card" autoFocus />
-                    <Button size="icon" variant="ghost" onClick={() => handleBcvRateUpdate(bcvRateInput)} className="w-7 h-7"><Check className="w-4 h-4 text-primary"/></Button>
-                  </div>
-                ) : (
-                  <p className="text-lg font-bold text-primary">Bs {bcvRate.toFixed(2)}</p>
-                )}
-                <Button size="icon" variant="ghost" onClick={() => setIsEditingBcvRate(!isEditingBcvRate)} className="w-7 h-7">
-                  {isEditingBcvRate ? <X className="w-4 h-4" /> : <Edit className="w-4 h-4" />}
-                </Button>
-              </div>
-            </Card>
           </div>
 
-          {/* KRece Financing Section */}
-          <Card className="p-3 glass-card">
-            <div className="flex items-center justify-between mb-2">
-                              <h3 className="text-sm font-semibold flex items-center gap-2">
+          {/* Columna Derecha: Carrito */}
+          <div className="flex flex-col gap-3 overflow-hidden">
+            <Card className="glass-card flex flex-col flex-1 overflow-hidden">
+              <div className="flex items-center justify-between p-3 border-b border-green-500/30">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <ShoppingCart className="w-5 h-5" />
+                  Carrito
+                </h3>
+                <Badge variant="secondary">{cart.length} {cart.length === 1 ? 'producto' : 'productos'}</Badge>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-3">
+                {cart.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground flex flex-col items-center justify-center h-full">
+                    <ShoppingCart className="w-16 h-16 mb-4 opacity-30" />
+                    <p className="text-lg">Carrito vacío</p>
+                    <p className="text-sm">Busca productos a la izquierda para agregarlos</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {cart.map((item) => (
+                      <Card key={item.id} className="p-3 border border-green-500/20">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm truncate">{item.name}</p>
+                            <p className="text-xs text-muted-foreground">{item.sku}</p>
+                          </div>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="w-7 h-7 text-destructive hover:bg-destructive/10"
+                            onClick={() => removeFromCart(item.id)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                        
+                        <div className="flex items-center justify-between mt-3 pt-2 border-t border-dashed">
+                          {/* Precio */}
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-muted-foreground">$</span>
+                            <Input
+                              type="number"
+                              value={priceInputs[item.id] ?? item.price.toFixed(2)}
+                              onChange={(e) => handleUnitPriceChange(item.id, e.target.value)}
+                              onBlur={() => commitUnitPrice(item)}
+                              className="w-20 h-8 text-sm text-right"
+                              step="0.01"
+                            />
+                          </div>
+                          
+                          {/* Cantidad */}
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              className="w-7 h-7"
+                              onClick={() => updateQuantity(item.id, -1).catch(console.error)}
+                              disabled={item.quantity <= 1}
+                            >
+                              <Minus className="w-3 h-3" />
+                            </Button>
+                            <span className="w-8 text-center font-semibold">{item.quantity}</span>
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              className="w-7 h-7"
+                              onClick={() => updateQuantity(item.id, 1).catch(console.error)}
+                            >
+                              <Plus className="w-3 h-3" />
+                            </Button>
+                          </div>
+                          
+                          {/* Subtotal */}
+                          <div className="text-right">
+                            <p className="font-bold text-green-600">${(item.price * item.quantity).toFixed(2)}</p>
+                          </div>
+                        </div>
+                        
+                        {/* IMEI Inputs Inline para teléfonos */}
+                        {item.category === 'phones' && item.quantity > 0 && (
+                          <div className="mt-3 pt-3 border-t border-dashed border-muted-foreground/30 space-y-2">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <Smartphone className="w-3 h-3" />
+                              <span>Registrar IMEI por unidad ({item.imeis?.filter(i => i?.trim() && i.trim().length >= 15).length || 0}/{item.quantity})</span>
+                              {(item.imeis?.filter(i => i?.trim() && i.trim().length >= 15).length || 0) === item.quantity && (
+                                <Check className="w-3 h-3 text-green-500" />
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              {Array.from({ length: item.quantity }, (_, index) => {
+                                const imeiValue = item.imeis?.[index] || '';
+                                const isValidLength = imeiValue.trim().length >= 15 && imeiValue.trim().length <= 17;
+                                const hasValue = imeiValue.trim().length > 0;
+                                const isInvalidLength = hasValue && !isValidLength;
+                                
+                                return (
+                                  <div key={index} className="flex items-center gap-2">
+                                    <span className="text-xs text-muted-foreground w-12 flex-shrink-0">
+                                      Equipo {index + 1}:
+                                    </span>
+                                    <Input
+                                      type="text"
+                                      placeholder="Escanear o ingresar IMEI (15-17 dígitos)"
+                                      value={imeiValue}
+                                      onChange={(e) => updateIMEI(item.id, index, e.target.value)}
+                                      className={`h-8 text-xs font-mono flex-1
+                                        bg-background dark:bg-zinc-900
+                                        ${isValidLength 
+                                          ? 'border-green-500 dark:border-green-600 text-green-700 dark:text-green-400' 
+                                          : isInvalidLength 
+                                            ? 'border-red-500 dark:border-red-600 text-red-700 dark:text-red-400' 
+                                            : 'border-amber-400 dark:border-amber-600'
+                                        }`}
+                                    />
+                                    {isValidLength && <Check className="w-4 h-4 text-green-500 flex-shrink-0" />}
+                                    {isInvalidLength && <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {/* Mensaje de validación */}
+                            {(() => {
+                              const validImeis = item.imeis?.filter(i => i?.trim() && i.trim().length >= 15 && i.trim().length <= 17).length || 0;
+                              const missingImeis = item.quantity - validImeis;
+                              if (missingImeis > 0) {
+                                return (
+                                  <div className="flex items-center gap-1 text-xs text-amber-500">
+                                    <AlertCircle className="w-3 h-3" />
+                                    <span>Faltan {missingImeis} IMEI(s) por registrar</span>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
+                          </div>
+                        )}
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              {/* Subtotal del carrito */}
+              {cart.length > 0 && (
+                <div className="p-3 border-t border-green-500/30 bg-muted/30">
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium">Subtotal:</span>
+                    <span className="text-xl font-bold text-green-600">${subtotalUSD.toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
+            </Card>
+          </div>
+          </div>
+          
+          {/* Footer con navegación */}
+          <div className="flex justify-between items-center pt-4 border-t mt-4">
+            <Button variant="outline" onClick={() => setCurrentStep(2)}>
+              <ChevronLeft className="w-4 h-4 mr-2" />
+              Anterior
+            </Button>
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground">Paso 3 de 5</p>
+            </div>
+            <Button 
+              onClick={() => setCurrentStep(4)} 
+              disabled={cart.length === 0}
+              className="bg-primary glow-primary"
+            >
+              Continuar a Pago
+              <ChevronRight className="w-4 h-4 ml-2" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ========== STEP 4: Pago y Financiamiento (PANEL SEPARADO) ========== */}
+      {currentStep === 4 && (
+        <div className="flex flex-col h-full animate-fade-in">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1">
+            {/* Columna Izquierda: Financiamiento y Métodos de Pago */}
+            <div className="space-y-4">
+
+              {/* KRece Financing Section */}
+              <Card className="p-3 glass-card">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
                   <img 
                     src="/krece_icono.png" 
                     alt="Krece"
@@ -2262,10 +3126,10 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                 </div>
               </div>
             )}
-          </Card>
+              </Card>
 
-          {/* Cashea Financing Section */}
-          <Card className="p-3 glass-card">
+              {/* Cashea Financing Section */}
+              <Card className="p-3 glass-card">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold flex items-center gap-2">
                 <img 
@@ -2410,12 +3274,12 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                 </div>
               </div>
             )}
-          </Card>
+              </Card>
 
-          <Card className="p-3 glass-card">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-semibold">Método de Pago</h3>
-              <Button
+              <Card className="p-3 glass-card">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold">Método de Pago</h3>
+                  <Button
                 variant={isMixedPayment ? "default" : "outline"}
                 size="sm"
                 onClick={() => {
@@ -2429,15 +3293,15 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                 }}
                 className={`text-xs ${isMixedPayment ? "bg-orange-600 hover:bg-orange-700" : ""}`}
               >
-                {isMixedPayment ? "Pagos Mixtos" : "Pago Único"}
-              </Button>
-            </div>
-            
-            {!isMixedPayment ? (
-              // Pago único
-              <div className="space-y-2">
-                            <div className="grid grid-cols-3 gap-2">
-                  {paymentMethods.slice(0, 3).map((method) => {
+                  {isMixedPayment ? "Pagos Mixtos" : "Pago Único"}
+                  </Button>
+                </div>
+                
+                {!isMixedPayment ? (
+                  // Pago único
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-3 gap-2">
+                      {paymentMethods.slice(0, 3).map((method) => {
                     const Icon = method.icon;
                     const isFinancingActive = isKreceEnabled || isCasheaEnabled;
                     const currentPaymentMethod = isFinancingActive 
@@ -2475,10 +3339,10 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                         )}
                       </Button>
                     );
-                  })}
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {paymentMethods.slice(3, 6).map((method) => {
+                      })}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {paymentMethods.slice(3, 6).map((method) => {
                     const Icon = method.icon;
                     const isFinancingActive = isKreceEnabled || isCasheaEnabled;
                     const currentPaymentMethod = isFinancingActive 
@@ -2516,12 +3380,12 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                         )}
                       </Button>
                     );
-                  })}
-                </div>
-              </div>
-            ) : (
-              // Pagos mixtos
-              <div className="space-y-3">
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  // Pagos mixtos
+                  <div className="space-y-3">
                 <div className="text-xs text-muted-foreground">
                   Agrega múltiples métodos de pago para dividir el total
                 </div>
@@ -2606,7 +3470,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                       const remaining = totalUSD - totalPaid;
                       
                       return (
-                        <div key={index} className="flex items-center gap-3 p-2 bg-muted/50 rounded-lg border">
+                        <div key={index} className="flex items-center gap-3 p-2 bg-muted/50 rounded-sm shadow-sm shadow-green-500/30">
                           <div className="flex-1">
                             <div className="text-xs font-medium text-muted-foreground mb-1">{method?.name}</div>
                             <Input
@@ -2646,7 +3510,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                     })}
                     
                     {/* Resumen */}
-                    <div className="text-xs space-y-2 bg-muted/30 p-3 rounded-lg border">
+                    <div className="text-xs space-y-2 bg-muted/30 p-3 rounded-sm shadow-sm shadow-green-500/30">
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Total pagado:</span>
                         <span className="font-semibold text-primary">${mixedPayments.reduce((sum, p) => sum + p.amount, 0).toFixed(2)}</span>
@@ -2690,24 +3554,25 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                   </div>
                 )}
               </div>
-            )}
-          </Card>
+                )}
+              </Card>
 
-          <Card className="p-3 glass-card">
-            <div className="space-y-1 text-xs">
-              <div className="flex justify-between"><span>Subtotal:</span><span>${subtotalUSD.toFixed(2)}</span></div>
-                <div className="flex justify-between"><span>IVA ({getTaxRate()}%):</span><span>${taxUSD.toFixed(2)}</span></div>
-            </div>
-            <div className="border-t border-border/50 pt-1 mt-1">
-              <div className="flex justify-between font-semibold text-sm"><span>Total USD:</span><span className="text-success">${totalUSD.toFixed(2)}</span></div>
-              <div className="flex justify-between font-bold text-md"><span>Total Bs:</span><span className="text-primary">Bs {totalBs.toFixed(2)}</span></div>
-            </div>
-          </Card>
+              <Card className="p-3 glass-card">
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between"><span>Subtotal:</span><span>${subtotalUSD.toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span>IVA ({getTaxRate()}%):</span><span>${taxUSD.toFixed(2)}</span></div>
+                </div>
+                <div className="pt-1 mt-1">
+                  <div className="flex justify-between font-semibold text-sm"><span>Total USD:</span><span className="text-success">${totalUSD.toFixed(2)}</span></div>
+                  <div className="flex justify-between font-bold text-md"><span>Total Bs:</span><span className="text-primary">Bs {totalBs.toFixed(2)}</span></div>
+                </div>
+              </Card>
 
-          <div className="grid grid-cols-1 gap-3">
-            <Button 
-              onClick={processSale} 
+              <div className="grid grid-cols-1 gap-3">
+                <Button 
+                  onClick={() => setCurrentStep(5)} 
               disabled={
+                isSaleConfirmedAndCompleted ||
                 isProcessingSale ||
                 cart.length === 0 || 
                 (
@@ -2739,39 +3604,377 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                   })()
                 )
               } 
-              className="w-full bg-primary glow-primary disabled:opacity-50 col-span-2" 
+              className="w-full bg-primary glow-primary disabled:opacity-50" 
               size="lg"
+            >
+              Continuar a Resumen
+              <ChevronRight className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
+              
+              {/* Footer con navegación */}
+              <div className="flex justify-between items-center pt-4 border-t mt-4">
+                <Button variant="outline" onClick={() => setCurrentStep(3)}>
+                  <ChevronLeft className="w-4 h-4 mr-2" />
+                  Anterior
+                </Button>
+                <p className="text-sm text-muted-foreground">Paso 4 de 5</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== STEP 5: Resumen Final (PANEL INLINE) ========== */}
+      {currentStep === 5 && (
+        <Card className="p-6 glass-card border border-green-500/30 animate-fade-in">
+          <div className="max-w-4xl mx-auto">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-accent-primary/20 flex items-center justify-center">
+                <Check className="w-8 h-8 text-accent-primary" />
+              </div>
+              <h2 className="text-2xl font-bold mb-2">Resumen de la Venta</h2>
+              <p className="text-muted-foreground">
+                Verifica todos los datos antes de procesar
+              </p>
+            </div>
+            
+            {/* Resumen en Grid */}
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <Card className="p-4 border border-green-500/30">
+                <div className="flex items-center gap-2 mb-2">
+                  <Store className="w-4 h-4 text-green-600" />
+                  <span className="text-sm text-muted-foreground">Tienda</span>
+                </div>
+                <p className="font-bold">{selectedStore?.name}</p>
+              </Card>
+              
+              <Card className="p-4 border border-green-500/30">
+                <div className="flex items-center gap-2 mb-2">
+                  <User className="w-4 h-4 text-green-600" />
+                  <span className="text-sm text-muted-foreground">Cliente</span>
+                </div>
+                <p className="font-bold">{selectedCustomer?.name}</p>
+                <p className="text-xs text-muted-foreground">{selectedCustomer?.id_number}</p>
+              </Card>
+              
+              <Card className="p-4 border border-accent-primary/30 bg-accent-hover/10">
+                <div className="flex items-center gap-2 mb-2">
+                  <DollarSign className="w-4 h-4 text-accent-primary" />
+                  <span className="text-sm text-muted-foreground">Tasa BCV</span>
+                </div>
+                <p className="font-bold text-xl text-green-600">Bs {bcvRate.toFixed(2)}</p>
+              </Card>
+            </div>
+            
+            {/* Productos */}
+            <Card className="p-4 border border-green-500/30 mb-6">
+              <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <ShoppingCart className="w-4 h-4" />
+                Productos ({cart.length})
+              </h3>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {cart.map((item) => (
+                  <div key={item.id} className="flex justify-between items-center p-2 bg-muted/30 rounded">
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">{item.name}</p>
+                      <p className="text-xs text-muted-foreground">SKU: {item.sku}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold">{item.quantity} x ${item.price.toFixed(2)}</p>
+                      <p className="text-xs text-green-600">${(item.price * item.quantity).toFixed(2)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+            
+            {/* Totales */}
+            <Card className="p-4 border border-green-500/40 bg-green-50/50 dark:bg-green-950/30 mb-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Subtotal:</span>
+                    <span className="font-semibold">${subtotalUSD.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span>IVA ({getTaxRate()}%):</span>
+                    <span className="font-semibold">${taxUSD.toFixed(2)}</span>
+                  </div>
+                </div>
+                <div className="border-l pl-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="font-bold">Total USD:</span>
+                    <span className="text-2xl font-bold text-green-600">${totalUSD.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold">Total Bs:</span>
+                    <span className="text-2xl font-bold text-primary">Bs {totalBs.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            </Card>
+            
+            {/* Método de Pago */}
+            <Card className="p-4 border border-green-500/30 mb-6">
+              <div className="flex items-center gap-2 mb-2">
+                <CreditCard className="w-4 h-4 text-green-600" />
+                <span className="font-semibold">Método de Pago</span>
+              </div>
+              <p className="text-lg font-bold">
+                {isMixedPayment 
+                  ? `Pagos Mixtos (${mixedPayments.length} métodos)`
+                  : (isKreceEnabled || isCasheaEnabled)
+                    ? `${isKreceEnabled ? 'Krece' : 'Cashea'} Financiamiento`
+                    : paymentMethods.find(m => m.id === selectedPaymentMethod)?.name || 'No seleccionado'
+                }
+              </p>
+              {(isKreceEnabled || isCasheaEnabled) && (
+                <div className="mt-2 text-sm text-muted-foreground">
+                  <span>Inicial: ${(isKreceEnabled ? kreceInitialAmount : casheaInitialAmount).toFixed(2)}</span>
+                  <span className="mx-2">|</span>
+                  <span>A financiar: ${(subtotalUSD - (isKreceEnabled ? kreceInitialAmount : casheaInitialAmount)).toFixed(2)}</span>
+                </div>
+              )}
+            </Card>
+            
+            {/* Botones de navegación */}
+            <div className="flex justify-between">
+              <Button
+                variant="outline"
+                onClick={() => setCurrentStep(3)}
+              >
+                <ChevronLeft className="w-4 h-4 mr-2" />
+                Volver a Productos
+              </Button>
+              <Button
+                onClick={() => setShowPreValidationModal(true)}
+                disabled={cart.length === 0 || isProcessingSale || isSaleConfirmedAndCompleted}
+                className="glow-primary px-8"
+              >
+                {isSaleConfirmedAndCompleted ? (
+                  <>
+                    <Check className="w-5 h-5 mr-2" />
+                    ✅ Venta Completada
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-5 h-5 mr-2" />
+                    Procesar Venta
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+      
+      </div>{/* Cierre del div CONTENIDO PRINCIPAL (Scrollable) */}
+
+      {/* Pre-Validation Modal */}
+      <Dialog open={showPreValidationModal} onOpenChange={setShowPreValidationModal}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto glass-card">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold">Revisar Venta Antes de Procesar</DialogTitle>
+            <DialogDescription>
+              Verifica todos los datos antes de confirmar la venta
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {/* Fila 1: Cliente, Tienda y Tasa BCV (horizontal) */}
+            <div className="grid grid-cols-3 gap-3">
+              <Card className="p-3 border border-green-500/30">
+                <div className="flex items-center gap-2 mb-1">
+                  <User className="w-4 h-4 text-green-600" />
+                  <span className="text-xs text-muted-foreground">Cliente</span>
+                </div>
+                <p className="font-semibold text-sm truncate">{selectedCustomer?.name || 'Cliente General'}</p>
+                {selectedCustomer?.id_number && (
+                  <p className="text-xs text-muted-foreground">Cédula: {selectedCustomer.id_number}</p>
+                )}
+              </Card>
+
+              <Card className="p-3 border border-green-500/30">
+                <div className="flex items-center gap-2 mb-1">
+                  <Store className="w-4 h-4 text-green-600" />
+                  <span className="text-xs text-muted-foreground">Tienda</span>
+                </div>
+                <p className="font-semibold text-sm truncate">{selectedStore?.name || 'No asignada'}</p>
+              </Card>
+
+              <Card className="p-3 border border-accent-primary/30 bg-accent-hover/5">
+                <div className="flex items-center gap-2 mb-1">
+                  <DollarSign className="w-4 h-4 text-accent-primary" />
+                  <span className="text-xs text-muted-foreground">Tasa BCV</span>
+                </div>
+                <p className="font-bold text-lg text-green-600">Bs {bcvRate.toFixed(2)}</p>
+              </Card>
+            </div>
+
+            {/* Fila 2: Productos y Totales (2 columnas) */}
+            <div className="grid grid-cols-5 gap-3">
+              {/* Productos - 3 columnas */}
+              <Card className="col-span-3 p-4 border border-green-500/30">
+                <h3 className="font-semibold mb-3 flex items-center gap-2 text-sm">
+                  <ShoppingCart className="w-4 h-4" />
+                  Productos ({cart.length})
+                </h3>
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {cart.map((item) => (
+                    <div key={item.id} className="flex justify-between items-center p-2 bg-muted/30 rounded-sm">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">{item.name}</p>
+                        <p className="text-xs text-muted-foreground">SKU: {item.sku}</p>
+                        {item.imeis && item.imeis.length > 0 && (
+                          <p className="text-xs text-muted-foreground truncate">
+                            IMEIs: {item.imeis.join(', ')}
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-right ml-3 flex-shrink-0">
+                        <p className="text-sm font-semibold">{item.quantity} x ${item.price.toFixed(2)}</p>
+                        <p className="text-xs text-green-600 font-medium">${(item.price * item.quantity).toFixed(2)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+
+              {/* Totales y Pago - 2 columnas */}
+              <div className="col-span-2 space-y-3">
+                {/* Totales */}
+                <Card className="p-4 border border-green-500/40 bg-green-50/50 dark:bg-green-950/30">
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Subtotal:</span>
+                      <span className="font-semibold">${subtotalUSD.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span>IVA ({getTaxRate()}%):</span>
+                      <span className="font-semibold">${taxUSD.toFixed(2)}</span>
+                    </div>
+                    <div className="border-t border-green-500/30 pt-2 mt-2 space-y-1">
+                      <div className="flex justify-between font-bold">
+                        <span>Total USD:</span>
+                        <span className="text-green-700 dark:text-green-400 text-lg">${totalUSD.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between font-bold">
+                        <span>Total Bs:</span>
+                        <span className="text-primary text-lg">Bs {totalBs.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+
+                {/* Método de Pago */}
+                <Card className="p-3 border border-green-500/30">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CreditCard className="w-4 h-4 text-green-600" />
+                    <span className="text-xs text-muted-foreground">Método de Pago</span>
+                  </div>
+                  <p className="text-sm font-semibold">
+                    {isMixedPayment 
+                      ? `Pagos Mixtos (${mixedPayments.length})`
+                      : (isKreceEnabled || isCasheaEnabled)
+                        ? `${isKreceEnabled ? 'Krece' : 'Cashea'}`
+                        : paymentMethods.find(m => m.id === selectedPaymentMethod)?.name || 'No seleccionado'
+                    }
+                  </p>
+                  {(isKreceEnabled || isCasheaEnabled) && (
+                    <div className="mt-1 text-xs text-muted-foreground grid grid-cols-2 gap-1">
+                      <span>Inicial: ${(isKreceEnabled ? kreceInitialAmount : casheaInitialAmount).toFixed(2)}</span>
+                      <span>Financiar: ${((isKreceEnabled ? (subtotalUSD - kreceInitialAmount) : (subtotalUSD - casheaInitialAmount))).toFixed(2)}</span>
+                    </div>
+                  )}
+                </Card>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowPreValidationModal(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={async () => {
+                setShowPreValidationModal(false);
+                setCurrentStep(4); // Avanzar al paso 4 (Revisión/Procesamiento)
+                await processSale();
+              }}
+              className="bg-primary glow-primary"
+              disabled={isProcessingSale}
             >
               {isProcessingSale ? (
                 <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Procesando...
                 </>
               ) : (
                 <>
-                  <ShoppingCart className="w-5 h-5 mr-2" />
-                  Procesar Venta
+                  <Check className="w-4 h-4 mr-2" />
+                  Confirmar y Procesar Venta
                 </>
               )}
             </Button>
-          </div>
-        </div>
-
-        {/* Cash Register Widget - TEMPORALMENTE DESHABILITADO */}
-        {/* <CashRegisterWidget storeName="Tienda Principal" /> */}
-      </div>
-
-      
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Sale Completion Modal */}
       <SaleCompletionModal
         isOpen={showSaleModal}
-        onClose={() => setShowSaleModal(false)}
+        onClose={() => {
+          setShowSaleModal(false);
+          // Limpiar completedSaleData para evitar bucle de reapertura
+          setCompletedSaleData(null);
+        }}
         saleData={completedSaleData}
         onPrintInvoice={() => {
+          console.log('📄 POS - onPrintInvoice llamado, completedSaleData:', completedSaleData?.invoice_number);
           if (completedSaleData) {
             printInvoice(completedSaleData, getTaxRate(), getReceiptFooter());
+          } else {
+            console.warn('⚠️ POS - completedSaleData es null, no se puede imprimir');
           }
+        }}
+        onNewSale={() => {
+          // Resetear todo el estado para una nueva venta
+          setIsSaleConfirmedAndCompleted(false);
+          setShowSaleModal(false);
+          setCart([]);
+          // Limpiar método de pago y financiamiento
+          setSelectedPaymentMethod("");
+          setIsKreceEnabled(false);
+          setKreceInitialAmount(0);
+          setIsCasheaEnabled(false);
+          setCasheaInitialAmount(0);
+          setIsMixedPayment(false);
+          setMixedPayments([]);
+          setCompletedSaleData(null);
+          // Mantener tienda y cliente, ir directo al paso 3 (Productos)
+          setCurrentStep(3);
+        }}
+        onExitPOS={() => {
+          // Limpiar TODO el estado antes de salir (romper el ciclo)
+          setIsSaleConfirmedAndCompleted(false);
+          setShowSaleModal(false);
+          setCart([]);
+          setSelectedCustomer(null);
+          setSelectedPaymentMethod("");
+          setIsKreceEnabled(false);
+          setKreceInitialAmount(0);
+          setIsCasheaEnabled(false);
+          setCasheaInitialAmount(0);
+          setIsMixedPayment(false);
+          setMixedPayments([]);
+          setCompletedSaleData(null);
+          setCurrentStep(1);
+          setHasSelectedStoreInSession(false);
+          // La redirección a /dashboard se hace en el componente SaleCompletionModal
         }}
       />
 
@@ -2783,7 +3986,6 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
         productName={pendingProduct?.name || ''}
         existingQuantity={pendingProduct ? cart.find(item => item.id === pendingProduct.id)?.quantity || 0 : 0}
       />
-      </div>
     </div>
   );
 }

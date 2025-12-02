@@ -43,9 +43,10 @@ export const StoresPage: React.FC = () => {
         return;
       }
 
+      // OPTIMIZADO: Select Minimal para lista de tiendas
       const { data, error } = await supabase
         .from('stores')
-        .select('*')
+        .select('id, name, business_name, tax_id, fiscal_address, phone_fiscal, email_fiscal, created_at')
         .eq('company_id', userProfile.company_id)
         .order('created_at', { ascending: false });
 

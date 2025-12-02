@@ -71,17 +71,18 @@ export function CategorySalesChart({ data, loading = false }: CategorySalesChart
   const totalSalesUSD = data.reduce((sum, category) => sum + category.totalSalesUSD, 0);
 
   const getCategoryColor = (index: number) => {
+    // Paleta Eco-Tech: Verde principal con variaciones sutiles
     const colors = [
-      'bg-blue-500',
-      'bg-green-500', 
-      'bg-yellow-500',
-      'bg-red-500',
-      'bg-purple-500',
-      'bg-pink-500',
-      'bg-indigo-500',
-      'bg-orange-500',
+      'bg-primary', // Verde principal Eco-Tech
+      'bg-emerald-400',
+      'bg-emerald-500',
+      'bg-emerald-600',
       'bg-teal-500',
-      'bg-cyan-500'
+      'bg-teal-600',
+      'bg-green-500',
+      'bg-green-600',
+      'bg-lime-500',
+      'bg-lime-600'
     ];
     return colors[index % colors.length];
   };

@@ -104,6 +104,10 @@ CREATE TRIGGER inventory_transfers_updated_at_trigger
   FOR EACH ROW
   EXECUTE FUNCTION public.update_inventory_transfers_updated_at();
 
+-- Eliminar todas las versiones anteriores de la función para evitar conflictos
+DROP FUNCTION IF EXISTS public.transfer_inventory(uuid, uuid, uuid, integer, uuid, uuid);
+DROP FUNCTION IF EXISTS public.transfer_inventory(uuid, uuid, uuid, integer, uuid);
+
 -- Crear función principal transfer_inventory
 CREATE OR REPLACE FUNCTION public.transfer_inventory(
   p_product_id uuid,
@@ -127,6 +131,7 @@ DECLARE
   v_from_store_name text;
   v_to_store_name text;
   v_user_role text;
+  v_assigned_store_id uuid;
 BEGIN
   -- Verificar permisos del usuario (admin o manager)
   SELECT role INTO v_user_role
@@ -142,10 +147,12 @@ BEGIN
     );
   END IF;
 
-  IF v_user_role NOT IN ('admin', 'manager') THEN
+  -- SOLO ADMINS pueden transferir (las transferencias son entre sucursales)
+  -- Managers NO pueden transferir porque solo ven su sucursal asignada
+  IF v_user_role != 'admin' THEN
     RETURN json_build_object(
       'error', true,
-      'message', 'No tienes permisos para transferir inventario. Solo administradores y gerentes pueden realizar transferencias.',
+      'message', 'Solo los administradores pueden transferir inventario entre sucursales. Los gerentes solo pueden ver su sucursal asignada.',
       'code', 'INSUFFICIENT_PERMISSIONS'
     );
   END IF;
@@ -354,5 +361,5 @@ $$;
 GRANT EXECUTE ON FUNCTION public.transfer_inventory TO authenticated;
 
 -- Comentario de la función
-COMMENT ON FUNCTION public.transfer_inventory IS 'Transfiere productos de inventario entre tiendas. Requiere rol admin o manager.';
+COMMENT ON FUNCTION public.transfer_inventory IS 'Transfiere productos de inventario entre tiendas. SOLO administradores pueden transferir (las transferencias requieren ver todas las sucursales).';
 

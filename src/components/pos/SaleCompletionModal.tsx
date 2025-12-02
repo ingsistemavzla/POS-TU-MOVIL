@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Printer, CheckCircle, Mail, Loader2, Download } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Printer, CheckCircle, Loader2, Download, LogOut, ShoppingCart } from 'lucide-react';
 import { useSystemSettings } from '@/hooks/useSystemSettings';
 import { useToast } from '@/hooks/use-toast';
 import { EmailService } from '@/services/emailService';
@@ -49,40 +50,83 @@ interface SaleCompletionModalProps {
   onClose: () => void;
   saleData: SaleData;
   onPrintInvoice: () => void;
+  onNewSale?: () => void;
+  onExitPOS?: () => void; // Nueva prop para salir del POS
 }
 
 export const SaleCompletionModal: React.FC<SaleCompletionModalProps> = ({
   isOpen,
   onClose,
   saleData,
-  onPrintInvoice
+  onPrintInvoice,
+  onNewSale,
+  onExitPOS
 }) => {
+  const navigate = useNavigate();
   const { getTaxRate, getReceiptFooter } = useSystemSettings();
   const { toast } = useToast();
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [printCompleted, setPrintCompleted] = useState(false);
+  const [showActionButtons, setShowActionButtons] = useState(false);
 
-  // Efecto para cerrar automáticamente después de 5 segundos
+  // Ref para controlar si ya se ejecutó la impresión para esta venta
+  const printTriggeredRef = React.useRef<string | null>(null);
+
+  // Efecto para impresión automática - INMEDIATO al abrir el modal
   useEffect(() => {
-    if (isOpen && saleData) {
-      // Imprimir automáticamente al abrir
-      setIsPrinting(true);
-      setTimeout(() => {
+    // Solo ejecutar si el modal está abierto, hay datos válidos, y no se ha impreso ya esta factura
+    if (isOpen && saleData && saleData.invoice_number && printTriggeredRef.current !== saleData.invoice_number) {
+      console.log('🎉 SaleCompletionModal - Modal abierto, iniciando secuencia para:', saleData.invoice_number);
+      
+      // Marcar esta factura como procesada para evitar bucles
+      printTriggeredRef.current = saleData.invoice_number;
+      
+      // Resetear estados INMEDIATAMENTE
+      setPrintCompleted(false);
+      setShowActionButtons(false);
+      setIsPrinting(true); // Mostrar "Imprimiendo" inmediatamente
+      
+      // Esperar 2 segundos y ejecutar la impresión
+      const printTimer = setTimeout(() => {
+        console.log('🖨️ SaleCompletionModal - Ejecutando impresión automática...');
         onPrintInvoice();
         setIsPrinting(false);
-      }, 500);
+        setPrintCompleted(true);
+        setShowActionButtons(true); // Mostrar botones inmediatamente después de imprimir
+      }, 2000);
 
-      // Cerrar después de 5 segundos
-      const timer = setTimeout(() => {
-        onClose();
-      }, 5000);
-
-      return () => clearTimeout(timer);
+      return () => clearTimeout(printTimer);
     }
-  }, [isOpen, saleData, onClose, onPrintInvoice]);
+    
+    // Si el modal se cierra, resetear el ref para la próxima venta
+    if (!isOpen) {
+      printTriggeredRef.current = null;
+      setPrintCompleted(false);
+      setIsPrinting(false);
+      setShowActionButtons(false);
+    }
+  }, [isOpen, saleData, onPrintInvoice]);
 
-  if (!isOpen) return null;
+  // Función para salir del POS y redirigir a Dashboard
+  const handleExitPOS = () => {
+    if (onExitPOS) {
+      onExitPOS();
+    }
+    // Siempre redirigir a /dashboard para romper el ciclo
+    navigate('/dashboard');
+  };
+
+  // No renderizar si el modal no está abierto o no hay datos válidos
+  console.log('🔍 SaleCompletionModal render - isOpen:', isOpen, 'saleData:', saleData?.invoice_number);
+  
+  if (!isOpen || !saleData || !saleData.invoice_number) {
+    console.log('❌ SaleCompletionModal - No renderizando, condiciones no cumplidas');
+    return null;
+  }
+  
+  console.log('✅ SaleCompletionModal - Renderizando modal');
 
   // Log the current tax rate for debugging
   const currentTaxRate = getTaxRate();
@@ -201,34 +245,33 @@ export const SaleCompletionModal: React.FC<SaleCompletionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100] p-4">
+      <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-xl max-w-md w-full border border-green-500/30">
         {/* Header - Mensaje Prominente de Éxito */}
-        <div className="flex flex-col items-center justify-center p-8 border-b bg-green-50">
+        <div className="flex flex-col items-center justify-center p-8 border-b bg-green-50 dark:bg-green-950/50">
           <div className="flex items-center justify-center mb-4">
-            <CheckCircle className="h-16 w-16 text-green-600" />
+            <CheckCircle className="h-20 w-20 text-green-600 animate-in zoom-in duration-300" />
           </div>
-          <h2 className="text-3xl font-bold text-green-800 mb-2 text-center">
-            ✅ Venta Completada con Éxito
+          <h2 className="text-3xl font-bold text-green-800 dark:text-green-400 mb-2 text-center animate-in fade-in duration-500">
+            ✅ Venta Concretada con Éxito
           </h2>
-          <p className="text-lg font-semibold text-green-700 mb-4">
+          <p className="text-lg font-semibold text-green-700 dark:text-green-500 mb-4">
             Factura #{saleData.invoice_number}
           </p>
           
-          {/* Mensaje pequeño de impresión */}
-          <div className="flex items-center gap-2 mt-4 px-4 py-2 bg-green-100 rounded-lg">
-            {isPrinting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin text-green-700" />
-                <p className="text-sm text-green-700 font-medium">Imprimiendo factura...</p>
-              </>
-            ) : (
-              <>
-                <Printer className="h-4 w-4 text-green-700" />
-                <p className="text-sm text-green-700 font-medium">Imprimiendo factura...</p>
-              </>
-            )}
-          </div>
+          {/* Mensaje de impresión secuencial */}
+          {isPrinting && (
+            <div className="flex items-center gap-2 mt-4 px-4 py-2 bg-green-100 dark:bg-green-900/50 rounded-lg animate-in slide-in-from-top duration-300">
+              <Loader2 className="h-5 w-5 animate-spin text-green-700 dark:text-green-400" />
+              <p className="text-base text-green-700 dark:text-green-400 font-medium">🖨️ Imprimiendo Factura...</p>
+            </div>
+          )}
+          {printCompleted && !isPrinting && (
+            <div className="flex items-center gap-2 mt-4 px-4 py-2 bg-green-200 dark:bg-green-800/50 rounded-lg animate-in slide-in-from-top duration-300">
+              <CheckCircle className="h-5 w-5 text-green-700 dark:text-green-400" />
+              <p className="text-base text-green-700 dark:text-green-400 font-medium">✅ Factura Impresa</p>
+            </div>
+          )}
         </div>
 
         {/* Resumen Compacto */}
@@ -400,33 +443,65 @@ export const SaleCompletionModal: React.FC<SaleCompletionModalProps> = ({
           </details>
         </div>
 
-        {/* Actions - Botones Opcionales */}
-        <div className="flex flex-col sm:flex-row gap-2 p-4 border-t bg-gray-50">
-          <button
-            onClick={onPrintInvoice}
-            className="flex-1 flex items-center justify-center space-x-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors font-medium text-sm"
-          >
-            <Printer className="h-4 w-4" />
-            <span>Imprimir</span>
-          </button>
-          <button
-            onClick={handleDownloadPDF}
-            className="flex-1 flex items-center justify-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors font-medium text-sm"
-            disabled={isGeneratingPDF}
-          >
-            {isGeneratingPDF ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-            <span>{isGeneratingPDF ? 'Generando...' : 'PDF'}</span>
-          </button>
-          <button
-            onClick={onClose}
-            className="flex-1 bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors font-medium text-sm"
-          >
-            Cerrar
-          </button>
+        {/* Actions - Botones Dinámicos según el estado */}
+        <div className="flex flex-col gap-3 p-4 border-t bg-gray-50 dark:bg-zinc-800/50">
+          {printCompleted ? (
+            <>
+              {/* Fila 1: Opciones secundarias (Imprimir de nuevo, PDF) */}
+              <div className="flex gap-2">
+                <button
+                  onClick={onPrintInvoice}
+                  className="flex-1 flex items-center justify-center space-x-2 bg-gray-100 dark:bg-zinc-700 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-zinc-600 transition-colors font-medium text-sm border border-gray-300 dark:border-zinc-600"
+                >
+                  <Printer className="h-4 w-4" />
+                  <span>Reimprimir</span>
+                </button>
+                <button
+                  onClick={handleDownloadPDF}
+                  className="flex-1 flex items-center justify-center space-x-2 bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 px-4 py-2 rounded-lg hover:bg-purple-200 dark:hover:bg-purple-800/50 transition-colors font-medium text-sm border border-purple-300 dark:border-purple-600"
+                  disabled={isGeneratingPDF}
+                >
+                  {isGeneratingPDF ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                  <span>{isGeneratingPDF ? 'Generando...' : 'Descargar PDF'}</span>
+                </button>
+              </div>
+              
+              {/* Fila 2: Botones principales de cierre */}
+              <div className="flex gap-2 animate-in slide-in-from-bottom duration-300">
+                {/* Botón Nueva Venta - Mantiene tienda y cliente */}
+                {onNewSale && (
+                  <button
+                    onClick={onNewSale}
+                    className="flex-1 flex items-center justify-center space-x-2 bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 transition-colors font-semibold text-base shadow-md"
+                  >
+                    <ShoppingCart className="h-5 w-5" />
+                    <span>Nueva Venta</span>
+                  </button>
+                )}
+                
+                {/* Botón Salir del POS - Redirige a Dashboard */}
+                <button
+                  onClick={handleExitPOS}
+                  className="flex-1 flex items-center justify-center space-x-2 bg-gray-700 text-white px-4 py-3 rounded-lg hover:bg-gray-800 transition-colors font-semibold text-base shadow-md"
+                >
+                  <LogOut className="h-5 w-5" />
+                  <span>Salir del POS</span>
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Mientras imprime, mostrar mensaje de estado grande y visible */}
+              <div className="flex flex-col items-center justify-center gap-3 py-6">
+                <Loader2 className="h-8 w-8 animate-spin text-green-600" />
+                <span className="text-base text-gray-700 dark:text-gray-300 font-medium">🖨️ Imprimiendo factura, por favor espere...</span>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

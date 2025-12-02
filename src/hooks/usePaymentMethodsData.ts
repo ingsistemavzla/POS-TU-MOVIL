@@ -32,9 +32,20 @@ export function usePaymentMethodsData(selectedPeriod: PeriodType = 'today') {
 
   const fetchPaymentMethodsData = async () => {
     if (!userProfile?.company_id) {
+      console.log('usePaymentMethodsData: No company_id, returning empty data');
       setData(prev => ({ ...prev, loading: false }));
       return;
     }
+
+    // Timeout de seguridad (10 segundos)
+    const timeoutId = setTimeout(() => {
+      console.warn('usePaymentMethodsData: Timeout alcanzado, devolviendo datos vacíos');
+      setData(prev => ({
+        ...prev,
+        loading: false,
+        error: 'Timeout al obtener datos de pagos'
+      }));
+    }, 10000);
 
     try {
       setData(prev => ({ ...prev, loading: true, error: null }));
@@ -64,25 +75,43 @@ export function usePaymentMethodsData(selectedPeriod: PeriodType = 'today') {
           endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
       }
 
-      // Obtener datos de pagos
-      const { data: paymentsData, error: paymentsError } = await (supabase as any)
-        .from('sale_payments')
-        .select(`
-          payment_method,
-          amount_usd,
-          amount_bs,
-          sales!inner(
-            company_id,
-            created_at
-          )
-        `)
-        .eq('sales.company_id', userProfile.company_id)
-        .gte('sales.created_at', startDate.toISOString())
-        .lte('sales.created_at', endDate.toISOString());
+      // Obtener datos de pagos con manejo de errores mejorado
+      let paymentsData: any[] = [];
+      let paymentsError: any = null;
+      
+      try {
+        const result = await (supabase as any)
+          .from('sale_payments')
+          .select(`
+            payment_method,
+            amount_usd,
+            amount_bs,
+            sales!inner(
+              company_id,
+              created_at
+            )
+          `)
+          .eq('sales.company_id', userProfile.company_id)
+          .gte('sales.created_at', startDate.toISOString())
+          .lte('sales.created_at', endDate.toISOString());
+        
+        paymentsData = result.data || [];
+        paymentsError = result.error;
+      } catch (err) {
+        console.error('Error en query de sale_payments:', err);
+        paymentsError = err;
+      }
 
       if (paymentsError) {
         console.error('Error obteniendo datos de pagos:', paymentsError);
-        throw paymentsError;
+        // No lanzar error, devolver datos vacíos
+        clearTimeout(timeoutId);
+        setData(prev => ({
+          ...prev,
+          loading: false,
+          error: paymentsError?.message || 'Error al obtener datos de pagos'
+        }));
+        return;
       }
 
       // Procesar datos por método de pago
@@ -129,7 +158,8 @@ export function usePaymentMethodsData(selectedPeriod: PeriodType = 'today') {
         loading: false,
         error: null
       });
-
+      
+      clearTimeout(timeoutId);
     } catch (error) {
       console.error('Error fetching payment methods data:', error);
       setData(prev => ({
@@ -137,6 +167,7 @@ export function usePaymentMethodsData(selectedPeriod: PeriodType = 'today') {
         loading: false,
         error: error instanceof Error ? error.message : 'Error al cargar datos de métodos de pago'
       }));
+      clearTimeout(timeoutId);
     }
   };
 

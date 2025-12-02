@@ -1,11 +1,13 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { Tables } from '@/integrations/supabase/types';
 import { sessionKeepAlive } from '@/utils/sessionKeepAlive';
-import { getAuthRedirectUrl } from '@/config/environment';
+import { clearAuthCache } from '@/utils/clearCache';
+import { useToast } from '@/hooks/use-toast';
 
 type UserProfile = Tables<'users'>;
+
 type Company = Tables<'companies'>;
 
 interface AuthContextType {
@@ -15,22 +17,34 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   requiresPasswordSetup: boolean;
+  isSlowNetwork: boolean;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
-  signUp: (email: string, password: string, companyName: string, userName: string) => Promise<{ error: any }>;
+  signUp: (
+    email: string, 
+    password: string, 
+    companyName: string, 
+    userName: string,
+    companyId?: string,
+    role?: string,
+    assignedStoreId?: string | null
+  ) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   markPasswordAsSetup: () => Promise<void>;
+  retryProfileFetch: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 };
+
+
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -39,9 +53,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [requiresPasswordSetup, setRequiresPasswordSetup] = useState(false);
+  const [isSlowNetwork, setIsSlowNetwork] = useState(false);
   const creatingProfileRef = useRef(false);
   const profileCacheRef = useRef<Map<string, { profile: UserProfile; company: Company; timestamp: number }>>(new Map());
+  const retryAttemptsRef = useRef<Map<string, number>>(new Map());
   const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes cache
+  const MAX_RETRY_ATTEMPTS = 5; // Máximo 5 intentos antes de considerar error real (aumentado de 3 para mayor resiliencia)
+  const PROFILE_FETCH_TIMEOUT = 15000; // 15 segundos (aumentado de 3s)
   
   // Keep session alive with periodic refresh and cache cleanup
   useEffect(() => {
@@ -77,7 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [session]);
 
-  const fetchUserProfile = async (userId: string, forceRefresh = false) => {
+  const fetchUserProfile = async (userId: string, forceRefresh = false, isRetry = false): Promise<{ success: boolean; isNetworkError?: boolean; error?: string }> => {
     try {
       // Check cache first (unless forcing refresh)
       if (!forceRefresh) {
@@ -86,115 +104,313 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.log('Using cached profile data for user:', userId);
           setUserProfile(cached.profile);
           setCompany(cached.company);
-          return;
+          setLoading(false);
+          setIsSlowNetwork(false);
+          return { success: true };
         }
       }
 
-      // Add timeout for the entire profile fetch operation
-      const profilePromise = supabase
+      // Crear un timeout de 15 segundos para la búsqueda principal
+      const profileFetchPromise = supabase
         .from('users')
-        .select('*')
+        .select('id, auth_user_id, company_id, email, name, role, assigned_store_id, active, created_at, updated_at')
         .eq('auth_user_id', userId)
         .maybeSingle();
 
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Profile fetch timeout')), 15000); // Increased to 15 seconds
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('PROFILE_FETCH_TIMEOUT')), PROFILE_FETCH_TIMEOUT);
       });
 
-      const { data: profile, error } = await Promise.race([profilePromise, timeoutPromise]) as any;
+      let profileResult: any;
+      let error: any;
 
-      if (error && error.code !== 'PGRST116') {
-        console.error('Error fetching user profile:', error);
-        setLoading(false);
-        return;
+      try {
+        const result = await Promise.race([profileFetchPromise, timeoutPromise]);
+        profileResult = result;
+        error = null;
+      } catch (raceError: any) {
+        if (raceError?.message === 'PROFILE_FETCH_TIMEOUT') {
+          // Timeout - NO es un error fatal, es un problema de red
+          console.warn('Profile fetch timeout - conexión lenta detectada');
+          setIsSlowNetwork(true);
+          return { success: false, isNetworkError: true, error: 'timeout' };
+        }
+        // Otro tipo de error
+        error = raceError;
       }
 
-      // If profile does not exist, try to bootstrap from an invitation
-      let effectiveProfile = (profile as any) as UserProfile | null;
-      if (!effectiveProfile) {
-        // If another concurrent creation is in progress, wait briefly and re-check
-        if (creatingProfileRef.current) {
-          await new Promise((r) => setTimeout(r, 500));
-          const { data: recheck } = await (supabase as any)
-            .from('users')
-            .select('*')
-            .eq('auth_user_id', userId)
-            .maybeSingle();
-          effectiveProfile = (recheck as UserProfile) ?? null;
-        } else {
+      let effectiveProfile = (profileResult?.data as any) as UserProfile | null;
+      const queryError = profileResult?.error || error;
+
+      // 🚨 VERIFICACIÓN CRÍTICA: Error 403 (Forbidden) - RLS bloqueó el acceso
+      if (queryError?.code === 'PGRST301' || queryError?.status === 403) {
+        console.error('❌ RLS bloqueó el acceso al perfil (403 Forbidden)');
+        console.error('Error details:', {
+          code: queryError.code,
+          message: queryError.message,
+          details: queryError.details,
+          hint: queryError.hint
+        });
+        
+        // NO cerrar sesión inmediatamente - puede ser un problema temporal de RLS
+        // Reintentar si no es un retry
+        if (!isRetry) {
+          const retryCount = retryAttemptsRef.current.get(userId) || 0;
+          if (retryCount < MAX_RETRY_ATTEMPTS) {
+            retryAttemptsRef.current.set(userId, retryCount + 1);
+            console.log(`🔄 Reintentando después de error 403 (intento ${retryCount + 1}/${MAX_RETRY_ATTEMPTS})`);
+            // Esperar 2 segundos antes de reintentar (dar tiempo a que RLS se sincronice)
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            return fetchUserProfile(userId, forceRefresh, true);
+          }
+        }
+        
+        // Si ya se reintentó y sigue fallando, marcar como error de red (no cerrar sesión)
+        setIsSlowNetwork(true);
+        return { 
+          success: false, 
+          isNetworkError: false, 
+          error: 'rls_forbidden',
+          details: 'RLS bloqueó el acceso al perfil. Verificar políticas RLS.'
+        };
+      }
+
+      // 🚨 VERIFICACIÓN: Si el resultado es null pero NO hay error (posible bloqueo RLS silencioso)
+      if (!effectiveProfile && !queryError) {
+        console.warn('⚠️ Query retornó null sin error - posible bloqueo RLS silencioso');
+        // Reintentar una vez más con delay si no es retry
+        if (!isRetry) {
+          const retryCount = retryAttemptsRef.current.get(userId) || 0;
+          if (retryCount < MAX_RETRY_ATTEMPTS) {
+            retryAttemptsRef.current.set(userId, retryCount + 1);
+            console.log(`🔄 Reintentando después de null silencioso (intento ${retryCount + 1}/${MAX_RETRY_ATTEMPTS})`);
+            // Esperar 2 segundos antes de reintentar
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            return fetchUserProfile(userId, forceRefresh, true);
+          }
+        }
+      }
+
+      // PASO 2: Si no existe por auth_user_id, buscar por email (solo si no hay error de red)
+      if (!effectiveProfile && (!queryError || queryError.code === 'PGRST116')) {
+        if (!creatingProfileRef.current) {
           creatingProfileRef.current = true;
           try {
             const { data: authUser } = await supabase.auth.getUser();
-            const email = authUser.user?.email ?? null;
+            const email = authUser.user?.email;
+            
             if (email) {
-              const { data: invitation, error: inviteError } = await (supabase as any)
-                .from('invitations')
-                .select('*')
+              // Buscar por email con timeout de 10 segundos (menos agresivo que antes)
+              const emailSearchPromise = supabase
+                .from('users')
+                .select('id, auth_user_id, company_id, email, name, role, assigned_store_id, active, created_at, updated_at')
                 .eq('email', email)
-                .eq('status', 'pending')
-                .order('created_at', { ascending: false })
-                .limit(1)
                 .maybeSingle();
+              
+              const emailTimeout = new Promise<never>((_, reject) => {
+                setTimeout(() => reject(new Error('EMAIL_SEARCH_TIMEOUT')), 10000);
+              });
 
-              if (inviteError && inviteError.code !== 'PGRST116') {
-                console.warn('Invitation lookup error (ignorable if none):', inviteError);
-              }
-
-              if (invitation) {
-                const defaultName = email.split('@')[0];
-                console.log('Creating user profile from invitation:', {
-                  auth_user_id: userId,
-                  company_id: (invitation as any).company_id,
-                  name: defaultName,
-                  email: email,
-                  role: (invitation as any).role,
-                  assigned_store_id: (invitation as any).assigned_store_id,
-                  invitation: invitation
-                });
+              try {
+                const emailResult = await Promise.race([emailSearchPromise, emailTimeout]) as any;
+                const existingProfile = emailResult?.data;
                 
-                const { data: createdProfile, error: profileErr } = await (supabase as any)
-                  .from('users')
-                  .upsert(
-                    {
-                      auth_user_id: userId,
-                      company_id: (invitation as any).company_id,
-                      name: defaultName,
-                      email: email,
-                      role: (invitation as any).role,
-                      active: true,
-                      assigned_store_id: (invitation as any).assigned_store_id ?? null,
-                    },
-                    { onConflict: 'auth_user_id' }
-                  )
-                  .select()
-                  .single();
-
-                if (profileErr) {
-                  console.error('Failed creating user profile from invitation:', profileErr);
+                if (existingProfile) {
+                  // Vincular perfil con auth_user_id
+                  // Intentar UPDATE directo primero
+                  try {
+                    const { data: linkedProfile, error: updateError } = await supabase
+                      .from('users')
+                      .update({ auth_user_id: userId, updated_at: new Date().toISOString() })
+                      .eq('id', existingProfile.id)
+                      .select()
+                      .single();
+                    
+                    if (!updateError && linkedProfile) {
+                      effectiveProfile = linkedProfile as UserProfile;
+                      console.log('✅ Profile linked successfully by email (direct update)');
+                    } else {
+                      // Si el UPDATE falla (probablemente por RLS), usar función RPC
+                      console.log('⚠️ Direct update failed, trying RPC function...', updateError);
+                      const { data: rpcResult, error: rpcError } = await supabase.rpc('link_user_profile_by_email');
+                      
+                      if (rpcError) {
+                        console.error('❌ Error linking profile via RPC:', rpcError);
+                        // Usar el perfil existente aunque no esté vinculado
+                        effectiveProfile = existingProfile as UserProfile;
+                      } else if (rpcResult?.success) {
+                        console.log('✅ Profile linked successfully via RPC');
+                        // Recargar el perfil después de vincular
+                        const { data: reloadedProfile } = await supabase
+                          .from('users')
+                          .select('id, auth_user_id, company_id, email, name, role, assigned_store_id, active, created_at, updated_at')
+                          .eq('auth_user_id', userId)
+                          .single();
+                        effectiveProfile = reloadedProfile as UserProfile || existingProfile as UserProfile;
+                      } else {
+                        console.warn('⚠️ RPC returned unsuccessful:', rpcResult);
+                        effectiveProfile = existingProfile as UserProfile;
+                      }
+                    }
+                  } catch (linkErr: any) {
+                    console.error('❌ Error linking profile:', linkErr);
+                    // Intentar RPC como último recurso
+                    try {
+                      const { data: rpcResult } = await supabase.rpc('link_user_profile_by_email');
+                      if (rpcResult?.success) {
+                        const { data: reloadedProfile } = await supabase
+                          .from('users')
+                          .select('id, auth_user_id, company_id, email, name, role, assigned_store_id, active, created_at, updated_at')
+                          .eq('auth_user_id', userId)
+                          .single();
+                        effectiveProfile = reloadedProfile as UserProfile || existingProfile as UserProfile;
+                        console.log('✅ Profile linked via RPC fallback');
+                      } else {
+                        effectiveProfile = existingProfile as UserProfile;
+                      }
+                    } catch (rpcFallbackErr) {
+                      console.error('❌ RPC fallback also failed:', rpcFallbackErr);
+                      effectiveProfile = existingProfile as UserProfile;
+                    }
+                  }
+                }
+              } catch (emailSearchErr: any) {
+                if (emailSearchErr?.message === 'EMAIL_SEARCH_TIMEOUT') {
+                  // Timeout en búsqueda por email - no es fatal, continuar
+                  console.warn('Email search timeout - continuando sin vincular por email');
+                  setIsSlowNetwork(true);
                 } else {
-                  effectiveProfile = createdProfile as UserProfile;
-                  console.log('User profile created successfully from invitation:', {
-                    createdProfile: effectiveProfile,
-                    assigned_store_id: effectiveProfile.assigned_store_id
-                  });
-                  
-                  // Mark invitation as accepted (best effort)
-                  await supabase
-                    .from('invitations')
-                    .update({ status: 'accepted' })
-                    .eq('id', (invitation as any).id);
+                  console.warn('Email search failed:', emailSearchErr?.message);
                 }
               }
             }
           } catch (bootstrapErr) {
-            console.error('Error bootstrapping profile from invitation:', bootstrapErr);
+            console.error('Error bootstrapping profile:', bootstrapErr);
           } finally {
             creatingProfileRef.current = false;
           }
         }
       }
 
+      // Si no se encontró perfil después de todos los intentos
+      // DIFERENCIAR: ¿Es error de red, timeout, RLS bloqueando, o perfil realmente no existe?
+      if (!effectiveProfile) {
+        // Si hay error de timeout/red (pero NO 403), NO cerrar sesión
+        if (queryError?.message?.includes('timeout') || queryError?.message?.includes('network')) {
+          console.warn('Error de red al buscar perfil - manteniendo sesión activa');
+          setIsSlowNetwork(true);
+          return { success: false, isNetworkError: true, error: 'network_error' };
+        }
+
+        // Si el error es "no encontrado" (PGRST116) y no es retry, intentar una vez más
+        if (queryError?.code === 'PGRST116' && !isRetry) {
+          const retryCount = retryAttemptsRef.current.get(userId) || 0;
+          if (retryCount < MAX_RETRY_ATTEMPTS) {
+            retryAttemptsRef.current.set(userId, retryCount + 1);
+            console.log(`🔄 Reintentando fetchUserProfile (intento ${retryCount + 1}/${MAX_RETRY_ATTEMPTS})`);
+            // Esperar 2 segundos antes de reintentar
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            return fetchUserProfile(userId, forceRefresh, true);
+          }
+        }
+
+        // 🛡️ BLINDAJE DE CIERRE DE SESIÓN: Verificación RLS explícita antes de cerrar sesión
+        // Última consulta de prueba para diferenciar entre "RLS bloqueando" y "perfil no existe"
+        console.log('🛡️ Ejecutando verificación RLS explícita antes de cerrar sesión...');
+        try {
+          const finalRLSCheck = await supabase
+            .from('users')
+            .select('id')
+            .eq('auth_user_id', userId)
+            .maybeSingle();
+
+          // Si la consulta falla con 403 Forbidden, significa que RLS está bloqueando
+          if (finalRLSCheck.error?.code === 'PGRST301' || finalRLSCheck.error?.status === 403) {
+            console.error('❌ RLS bloquea acceso al perfil (403 Forbidden) - NO cerrando sesión');
+            console.error('   El usuario está autenticado pero RLS impide leer su perfil.');
+            console.error('   Esto puede ser un problema de sincronización RLS o permisos incorrectos.');
+            console.error('   El Admin debe verificar las políticas RLS en public.users');
+            
+            // NO cerrar sesión - mantener al usuario logueado para que el Admin pueda corregir
+            setIsSlowNetwork(true);
+            setLoading(false);
+            return { 
+              success: false, 
+              isNetworkError: false, 
+              error: 'rls_forbidden',
+              details: 'RLS bloqueó el acceso al perfil. Verificar políticas RLS. Sesión mantenida para corrección administrativa.'
+            };
+          }
+
+          // Si la consulta se completa sin error pero retorna null, el perfil realmente no existe
+          if (!finalRLSCheck.error && !finalRLSCheck.data) {
+            console.warn('✅ Verificación RLS completada: Perfil realmente no existe. Cerrando sesión.');
+            // Limpiar cache primero
+            profileCacheRef.current.delete(userId);
+            retryAttemptsRef.current.delete(userId);
+            // Limpiar cache de autenticación
+            clearAuthCache();
+            // Limpiar el estado local inmediatamente
+            setUserProfile(null);
+            setCompany(null);
+            setLoading(false);
+            setIsSlowNetwork(false);
+            // Forzar limpieza de user y session
+            setUser(null);
+            setSession(null);
+            // Cerrar sesión en background (no esperar)
+            supabase.auth.signOut().catch((err) => {
+              console.error('Error signing out:', err);
+            });
+            return { success: false, isNetworkError: false, error: 'profile_not_found' };
+          }
+
+          // Si la consulta retorna datos, el perfil existe pero hubo un problema anterior
+          if (finalRLSCheck.data) {
+            console.warn('⚠️ Verificación RLS encontró perfil pero no se pudo leer completamente. Reintentando...');
+            // Reintentar una vez más con delay adicional
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            return fetchUserProfile(userId, true, false);
+          }
+        } catch (finalCheckError: any) {
+          // Si la verificación final falla con error de red, NO cerrar sesión
+          if (finalCheckError?.message?.includes('timeout') || 
+              finalCheckError?.message?.includes('network') ||
+              finalCheckError?.code === 'ECONNREFUSED' ||
+              finalCheckError?.code === 'ETIMEDOUT') {
+            console.warn('Error de red en verificación final - manteniendo sesión activa');
+            setIsSlowNetwork(true);
+            setLoading(false);
+            return { success: false, isNetworkError: true, error: 'network_error' };
+          }
+
+          // Otro tipo de error en la verificación final - asumir que es problema de RLS
+          console.error('Error en verificación final RLS:', finalCheckError);
+          setIsSlowNetwork(true);
+          setLoading(false);
+          return { 
+            success: false, 
+            isNetworkError: false, 
+            error: 'rls_forbidden',
+            details: 'Error al verificar RLS. Sesión mantenida para corrección administrativa.'
+          };
+        }
+
+        // Si llegamos aquí sin retornar, algo inesperado pasó
+        console.error('⚠️ Estado inesperado después de verificación RLS - manteniendo sesión activa por seguridad');
+        setIsSlowNetwork(true);
+        setLoading(false);
+        return { 
+          success: false, 
+          isNetworkError: false, 
+          error: 'unexpected_state',
+          details: 'Estado inesperado después de verificación RLS. Sesión mantenida.'
+        };
+      }
+
       setUserProfile(effectiveProfile);
+      setIsSlowNetwork(false);
+      retryAttemptsRef.current.delete(userId); // Limpiar contador de reintentos en éxito
 
       // Verificar si el usuario requiere configuración de contraseña
       if (effectiveProfile && user) {
@@ -204,81 +420,138 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setRequiresPasswordSetup(needsPasswordSetup);
       }
 
-      // Fetch company data with timeout
+      // Fetch company data (con timeout también)
       if (effectiveProfile?.company_id) {
         try {
-          const companyPromise = supabase
+          const companyFetchPromise = supabase
             .from('companies')
-            .select('*')
+            .select('id, name, created_at, updated_at')
             .eq('id', effectiveProfile.company_id)
             .single();
 
-          const companyTimeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('Company fetch timeout')), 10000); // Increased to 10 seconds
+          const companyTimeout = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('COMPANY_FETCH_TIMEOUT')), 10000);
           });
 
-          const { data: companyData, error: companyError } = await Promise.race([companyPromise, companyTimeoutPromise]) as any;
+          try {
+            const companyResult = await Promise.race([companyFetchPromise, companyTimeout]);
+            const companyData = companyResult?.data;
+            const companyError = companyResult?.error;
 
-          if (companyError) {
-            console.error('Error fetching company:', companyError);
-          } else {
-            setCompany(companyData);
+            if (companyError) {
+              console.error('Error fetching company:', companyError);
+            } else if (companyData) {
+              setCompany(companyData);
+              
+              // Cache the profile and company data
+              profileCacheRef.current.set(userId, {
+                profile: effectiveProfile,
+                company: companyData,
+                timestamp: Date.now()
+              });
+            }
+          } catch (companyTimeoutErr: any) {
+            if (companyTimeoutErr?.message === 'COMPANY_FETCH_TIMEOUT') {
+              console.warn('Company fetch timeout - usando perfil sin datos de compañía');
+              setIsSlowNetwork(true);
+              // Cachear perfil sin compañía para evitar bloqueo
+              profileCacheRef.current.set(userId, {
+                profile: effectiveProfile,
+                company: null as any,
+                timestamp: Date.now()
+              });
+            } else {
+              console.error('Company fetch failed:', companyTimeoutErr);
+            }
           }
         } catch (companyError) {
           console.error('Company fetch failed:', companyError);
         }
 
-        // Check if default store exists, if not create it (for users who registered before this fix)
-        ensureDefaultStore((effectiveProfile as any).company_id); // Don't await - run in background
-        
-        // Cache the profile and company data
-        if (effectiveProfile && company) {
-          profileCacheRef.current.set(userId, {
-            profile: effectiveProfile,
-            company: company,
-            timestamp: Date.now()
-          });
-        }
+        // Check if default store exists (background, no await)
+        ensureDefaultStore((effectiveProfile as any).company_id);
       }
-    } catch (error) {
+
+      return { success: true };
+    } catch (error: any) {
       console.error('Error in fetchUserProfile:', error);
-    } finally {
-      setLoading(false); // Always stop loading
+      
+      // DIFERENCIAR entre error de red y error real
+      // NOTA: PGRST301 (403) NO se considera error de red aquí porque ya se maneja arriba
+      const isNetworkError = 
+        error?.message?.includes('timeout') ||
+        error?.message?.includes('network') ||
+        error?.message?.includes('fetch') ||
+        error?.code === 'ECONNREFUSED' ||
+        error?.code === 'ETIMEDOUT';
+      
+      // Verificar si es error 403 (ya debería haberse manejado arriba, pero por si acaso)
+      if (error?.code === 'PGRST301' || error?.status === 403) {
+        console.error('❌ Error 403 detectado en catch - reintentando');
+        setIsSlowNetwork(true);
+        if (!isRetry) {
+          const retryCount = retryAttemptsRef.current.get(userId) || 0;
+          if (retryCount < MAX_RETRY_ATTEMPTS) {
+            retryAttemptsRef.current.set(userId, retryCount + 1);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            return fetchUserProfile(userId, forceRefresh, true);
+          }
+        }
+        return { success: false, isNetworkError: false, error: 'rls_forbidden' };
+      }
+
+      if (isNetworkError) {
+        // Error de red - NO cerrar sesión, permitir reintento
+        console.warn('Error de red detectado - manteniendo sesión activa para reintento');
+        setIsSlowNetwork(true);
+        return { success: false, isNetworkError: true, error: 'network_error' };
+      }
+
+      // Error real (perfil no existe, permisos, etc.) - cerrar sesión
+      console.warn('Error real detectado - cerrando sesión');
+      profileCacheRef.current.delete(userId);
+      retryAttemptsRef.current.delete(userId);
+      setUserProfile(null);
+      setCompany(null);
+      setUser(null);
+      setSession(null);
+      setLoading(false);
+      setIsSlowNetwork(false);
+      // Cerrar sesión en background
+      supabase.auth.signOut().catch((err) => {
+        console.error('Error signing out:', err);
+      });
+      return { success: false, isNetworkError: false, error: 'real_error' };
     }
   };
 
   const ensureDefaultStore = async (companyId: string) => {
     try {
-      // Check if company has any stores
-        const { data: stores, error: storesError } = await (supabase as any)
+      const { data: stores, error: storesError } = await supabase
         .from('stores')
-        .select('id, name')
+        .select('id')
         .eq('company_id', companyId)
-        .limit(10); // Get more stores to check if there are multiple
+        .limit(1);
 
       if (storesError) {
         console.error('Error checking stores:', storesError);
         return;
       }
 
-      // If no stores exist, create default store (but don't block loading)
       if (!stores || stores.length === 0) {
         console.log('No stores found, creating default store...');
-        // Don't await this - let it run in background
-        (supabase as any)
+        supabase
           .rpc('create_default_store', { 
             p_company_id: companyId,
             p_store_name: 'Tienda Principal'
           })
           .then(({ data: storeData, error: storeError }) => {
             if (storeError || (storeData && storeData.error)) {
-              console.error('Error creating default store on login:', storeError || storeData);
+              console.error('Error creating default store:', storeError || storeData);
             } else {
-              console.log('Default store created successfully on login:', storeData);
+              console.log('Default store created successfully');
             }
           });
-      } else {
-          console.log(`Company has ${stores.length} stores: ${(stores as any[]).map((s: any) => (s as any).name).join(', ')}`);
       }
     } catch (error) {
       console.error('Error in ensureDefaultStore:', error);
@@ -286,8 +559,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const refreshProfile = async () => {
-    if (user) {
-      await fetchUserProfile(user.id, true); // Force refresh
+    if (user?.id) {
+      setIsSlowNetwork(false);
+      retryAttemptsRef.current.delete(user.id); // Reset retry counter
+      const result = await fetchUserProfile(user.id, true);
+      if (!result.success && result.isNetworkError) {
+        setIsSlowNetwork(true);
+      }
+    }
+  };
+
+  const retryProfileFetch = async () => {
+    if (user?.id) {
+      setIsSlowNetwork(false);
+      retryAttemptsRef.current.delete(user.id); // Reset retry counter
+      setLoading(true);
+      try {
+        const result = await fetchUserProfile(user.id, true, false);
+        if (result.success) {
+          setIsSlowNetwork(false);
+        } else if (result.isNetworkError) {
+          setIsSlowNetwork(true);
+        }
+      } catch (error) {
+        console.error('Error retrying profile fetch:', error);
+        setIsSlowNetwork(true);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -295,7 +594,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       if (!user?.id) return;
       
-      // Actualizar metadata del usuario para marcar que ya configuró su contraseña
       const { error } = await supabase.auth.updateUser({
         data: { 
           requiresPasswordSetup: false,
@@ -308,10 +606,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      // Actualizar estado local
       setRequiresPasswordSetup(false);
       
-      // Actualizar el usuario local
       setUser(prev => prev ? {
         ...prev,
         user_metadata: {
@@ -320,10 +616,133 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           passwordSetupDate: new Date().toISOString()
         }
       } : null);
-
     } catch (error) {
       console.error('Error in markPasswordAsSetup:', error);
     }
+  };
+
+  const signIn = async (email: string, password: string) => {
+    console.log('[Auth] Starting signIn...');
+    
+    // Step 1: Authenticate with Supabase
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (authError) {
+      console.error('[Auth] Authentication failed:', authError);
+      return { error: authError };
+    }
+
+    if (!authData.session?.user) {
+      console.error('[Auth] No session after authentication');
+      return { error: { message: 'No session created' } };
+    }
+
+    console.log('[Auth] Session found, user ID:', authData.session.user.id);
+    
+    // Step 2: Wait for profile to be loaded
+    console.log('[Auth] Fetching Profile...');
+    setLoading(true);
+    
+    try {
+      const profileResult = await fetchUserProfile(authData.session.user.id, false, false);
+      
+      if (!profileResult.success) {
+        console.error('[Auth] Profile fetch failed:', profileResult.error);
+        
+        // If profile doesn't exist, sign out
+        if (profileResult.error === 'profile_not_found') {
+          await supabase.auth.signOut();
+          return { error: { message: 'Perfil de usuario no encontrado. Contacte al administrador.' } };
+        }
+        
+        // For other errors (network, RLS), return error but keep session
+        return { error: { message: profileResult.details || 'Error al cargar perfil de usuario' } };
+      }
+
+      console.log('[Auth] Profile Loaded');
+      
+      // Step 3: Verify profile exists in state
+      // Wait a bit for state to update (React state is async)
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Check if profile is in cache (most reliable way)
+      const cachedProfile = profileCacheRef.current.get(authData.session.user.id);
+      if (!cachedProfile) {
+        console.error('[Auth] Profile not found in cache after fetch');
+        return { error: { message: 'Error al cargar perfil de usuario' } };
+      }
+
+      console.log('[Auth] Ready - User authenticated and profile loaded');
+      setLoading(false);
+      return { error: null };
+    } catch (error: any) {
+      console.error('[Auth] Error during signIn:', error);
+      setLoading(false);
+      return { error: { message: error.message || 'Error al iniciar sesión' } };
+    }
+  };
+
+  const signUp = async (
+    email: string, 
+    password: string, 
+    companyName: string, 
+    userName: string,
+    companyId?: string,
+    role?: string,
+    assignedStoreId?: string | null
+  ) => {
+    console.log('[Auth] Starting signUp...', { email, companyId, role, assignedStoreId });
+    
+    // Build metadata object for the trigger
+    const metadata: Record<string, any> = {
+      name: userName,
+      user_name: userName, // Keep for backward compatibility
+      company_name: companyName, // Keep for backward compatibility
+    };
+    
+    // CRITICAL: company_id is REQUIRED by the trigger to create the profile
+    if (companyId) {
+      metadata.company_id = companyId;
+    }
+    
+    // Optional: role (defaults to 'cashier' in trigger if not provided)
+    if (role) {
+      metadata.role = role;
+    }
+    
+    // Optional: assigned_store_id (nullable)
+    if (assignedStoreId) {
+      metadata.assigned_store_id = assignedStoreId;
+    }
+    
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: metadata,
+      },
+    });
+    
+    if (error) {
+      console.error('[Auth] signUp failed:', error);
+    } else {
+      console.log('[Auth] signUp successful - trigger will create profile automatically');
+    }
+    
+    return { error };
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setSession(null);
+    setUserProfile(null);
+    setCompany(null);
+    profileCacheRef.current.clear();
+    sessionKeepAlive.stop();
   };
 
   useEffect(() => {
@@ -333,368 +752,369 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const initializeAuth = async () => {
       try {
-        // Set a timeout to prevent infinite loading
-        timeoutId = setTimeout(() => {
+        // Limpiar cache de autenticación al inicio si es la primera vez en esta sesión
+        const cacheCleared = sessionStorage.getItem('auth_cache_cleared');
+        if (!cacheCleared) {
+          console.log('Limpiando cache de autenticación al inicio...');
+          clearAuthCache();
+          sessionStorage.setItem('auth_cache_cleared', 'true');
+        }
+        
+        timeoutId = setTimeout(async () => {
           if (mounted && !isInitialized) {
-            console.warn('Auth initialization timeout - forcing loading to false');
-            setLoading(false);
+            console.warn('Auth initialization timeout - verificando estado de conexión');
+            // Obtener la sesión actual para verificar
+            const { data: { session: currentSession } } = await supabase.auth.getSession();
+            // Si hay sesión pero no hay perfil, puede ser conexión lenta
+            if (currentSession?.user) {
+              // Verificar si hay perfil en cache
+              const hasCachedProfile = profileCacheRef.current.has(currentSession.user.id);
+              if (!hasCachedProfile) {
+                // No hay perfil después del timeout - puede ser conexión lenta
+                console.warn('Timeout: Sesión activa sin perfil. Marcando como conexión lenta.');
+                setIsSlowNetwork(true);
+                setLoading(false); // Permitir que la UI se renderice
+                // NO cerrar sesión automáticamente - permitir reintento
+                isInitialized = true;
+              } else {
+                // Hay perfil en cache, establecerlo y continuar
+                const cached = profileCacheRef.current.get(currentSession.user.id);
+                if (cached) {
+                  setUserProfile(cached.profile);
+                  setCompany(cached.company);
+                }
+                setIsSlowNetwork(false);
+                setLoading(false);
+                isInitialized = true;
+              }
+            } else {
+              // No hay sesión, mostrar login
+              setIsSlowNetwork(false);
+              setLoading(false);
+              isInitialized = true;
+            }
           }
-        }, 15000); // Increased to 15 seconds
+        }, 20000); // 20 segundos máximo (aumentado para dar más tiempo)
 
-        // Get initial session
-        const { data: { session }, error } = await supabase.auth.getSession();
+        // 1. Obtener Sesión (Siempre necesario)
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
-        if (!mounted) return;
+        if (!mounted) {
+          clearTimeout(timeoutId);
+          return;
+        }
         
-        if (error) {
-          console.error('Error getting session:', error);
+        if (sessionError) {
+          console.error('Error getting session:', sessionError);
           setLoading(false);
+          clearTimeout(timeoutId);
+          isInitialized = true;
+          return;
+        }
+        
+        if (!session) {
+          // No hay sesión, mostrar login inmediatamente
+          setLoading(false);
+          sessionKeepAlive.stop();
+          isInitialized = true;
+          clearTimeout(timeoutId);
           return;
         }
         
         setSession(session);
-        setUser(session?.user ?? null);
+        setUser(session.user);
         
-        if (session?.user) {
-          // Check if we have cached data first
-          const hasCachedProfile = profileCacheRef.current.has(session.user.id);
-          if (!hasCachedProfile) {
-          await fetchUserProfile(session.user.id);
-          } else {
-            console.log('Using cached profile on initialization');
-            const cached = profileCacheRef.current.get(session.user.id);
-            if (cached) {
-              setUserProfile(cached.profile);
-              setCompany(cached.company);
-            }
-          }
-          // Start session keep-alive for authenticated users
-          sessionKeepAlive.start();
-        } else {
+        if (!session.user) {
           setLoading(false);
-          // Stop keep-alive if no session
           sessionKeepAlive.stop();
+          isInitialized = true;
+          clearTimeout(timeoutId);
+          return;
         }
         
-        isInitialized = true;
-        // Clear timeout if we reach here successfully
-        if (timeoutId) clearTimeout(timeoutId);
+        console.log('[Auth] Session found on initialization, user ID:', session.user.id);
+        
+        // CRITICAL: loading must be true until profile is loaded
+        setLoading(true);
+        
+        // Check cache first (fastest path)
+        const hasCachedProfile = profileCacheRef.current.has(session.user.id);
+        
+        if (hasCachedProfile) {
+          console.log('[Auth] Using cached profile on initialization');
+          const cached = profileCacheRef.current.get(session.user.id);
+          if (cached) {
+            setUserProfile(cached.profile);
+            setCompany(cached.company);
+            sessionKeepAlive.start();
+            setLoading(false);
+            isInitialized = true;
+            clearTimeout(timeoutId);
+            console.log('[Auth] Ready (cached)');
+            return;
+          }
+        }
+        
+        // --- ⚡ FAST LANE (Vía Rápida) ---
+        // Intentamos traer Perfil + Compañía en un solo viaje.
+        // Usamos el alias 'company' para la relación 'companies' para que coincida con el estado local.
+        try {
+          const { data: fastData, error: fastError } = await supabase
+            .from('users')
+            .select('*, company:companies(id, name, created_at, updated_at)')
+            .eq('auth_user_id', session.user.id)
+            .maybeSingle();
+          
+          // Validamos: No error, Datos existen, y Compañía existe (no es null por RLS/Trigger)
+          if (!fastError && fastData && fastData.company) {
+            console.log('⚡ Fast Lane Auth: Carga optimizada exitosa');
+            
+            if (mounted) {
+              // Desestructuramos para separar perfil de compañía
+              const { company, ...profile } = fastData;
+              
+              // Establecer estados
+              setUserProfile(profile as UserProfile);
+              setCompany(company as Company);
+              
+              // Cachear el resultado
+              profileCacheRef.current.set(session.user.id, {
+                profile: profile as UserProfile,
+                company: company as Company,
+                timestamp: Date.now()
+              });
+              
+              sessionKeepAlive.start();
+              setLoading(false);
+              isInitialized = true;
+              clearTimeout(timeoutId);
+              console.log('[Auth] Ready (Fast Lane)');
+              return; // ¡Terminamos en <300ms!
+            }
+          }
+          
+          // --- 🐢 SLOW LANE (Fallback / Recuperación) ---
+          // Si llegamos aquí, el trigger de creación no ha terminado o es un caso legacy.
+          console.warn('Fast lane omitido (Trigger pendiente o RLS), usando carga legacy...', fastError?.message || 'company is null');
+          
+          if (mounted) {
+            // Llamamos a la lógica original robusta con reintentos
+            const profileResult = await fetchUserProfile(session.user.id);
+            
+            if (!profileResult.success) {
+              console.error('[Auth] Profile fetch failed:', profileResult.error);
+              
+              // If profile doesn't exist, clear session
+              if (profileResult.error === 'profile_not_found') {
+                setUser(null);
+                setSession(null);
+                setUserProfile(null);
+                setCompany(null);
+                setLoading(false);
+                sessionKeepAlive.stop();
+                isInitialized = true;
+                clearTimeout(timeoutId);
+                return;
+              }
+              
+              // For network/RLS errors, keep session but mark as slow network
+              setIsSlowNetwork(true);
+              setLoading(false);
+              isInitialized = true;
+              clearTimeout(timeoutId);
+              return;
+            }
+            
+            console.log('[Auth] Profile Loaded (Slow Lane)');
+            
+            // Verify profile is in cache
+            const currentCached = profileCacheRef.current.get(session.user.id);
+            if (currentCached) {
+              setUserProfile(currentCached.profile);
+              setCompany(currentCached.company);
+              sessionKeepAlive.start();
+              console.log('[Auth] Ready (Slow Lane)');
+            } else {
+              console.error('[Auth] Profile not in cache after fetch');
+              setIsSlowNetwork(true);
+            }
+            
+            setLoading(false);
+            isInitialized = true;
+            clearTimeout(timeoutId);
+          }
+        } catch (profileError) {
+          console.error('[Auth] Error in profile fetch:', profileError);
+          setIsSlowNetwork(true);
+          setLoading(false);
+          isInitialized = true;
+          clearTimeout(timeoutId);
+        }
       } catch (error) {
-        console.error('Error in initializeAuth:', error);
+        console.error('Error initializing auth:', error);
         if (mounted) {
           setLoading(false);
+          isInitialized = true;
         }
       }
     };
 
     initializeAuth();
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (!mounted) return;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+
+      console.log('Auth state change:', event, session?.user?.id);
+
+      setSession(session);
+      setUser(session?.user ?? null);
+
+      if (event === 'SIGNED_OUT') {
+        setUserProfile(null);
+        setCompany(null);
+        profileCacheRef.current.clear();
+        sessionKeepAlive.stop();
+        setLoading(false);
+        // Limpiar cache del navegador
+        clearAuthCache();
+    } else if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+      if (session?.user) {
+        console.log('[Auth] Session found, user ID:', session.user.id);
         
-        console.log('Auth state change:', event, session?.user?.id);
+        // CRITICAL: loading must be true until profile is loaded
+        setLoading(true);
         
-        // Skip processing for certain events that don't require state changes
-        if (['TOKEN_REFRESHED', 'USER_UPDATED', 'MFA_CHALLENGE_VERIFIED', 'SIGNED_OUT', 'PASSWORD_RECOVERY'].includes(event) && session?.user?.id === user?.id) {
-          console.log(`${event} for same user, skipping profile fetch`);
-          return;
-        }
+        const hasCachedProfile = profileCacheRef.current.has(session.user.id);
         
-        // Handle token refresh failures - but don't clear state immediately
-        if (event === 'TOKEN_REFRESHED' && !session) {
-          console.warn('Token refresh failed - attempting manual refresh');
+        if (!hasCachedProfile || !userProfile) {
+          console.log('[Auth] Fetching Profile...');
           try {
-            const { data: { session: manualSession }, error } = await supabase.auth.refreshSession();
-            if (manualSession) {
-              console.log('Manual session refresh successful');
-              setSession(manualSession);
+            const profileResult = await fetchUserProfile(session.user.id);
+            
+            if (!profileResult.success) {
+              console.error('[Auth] Profile fetch failed:', profileResult.error);
+              
+              // If profile doesn't exist, sign out
+              if (profileResult.error === 'profile_not_found') {
+                setUser(null);
+                setSession(null);
+                setUserProfile(null);
+                setCompany(null);
+                setLoading(false);
+                sessionKeepAlive.stop();
+                await supabase.auth.signOut();
+                return;
+              }
+              
+              // For network/RLS errors, keep session but mark as slow network
+              setIsSlowNetwork(true);
+              setLoading(false);
               return;
             }
-          } catch (error) {
-            console.error('Manual session refresh failed:', error);
-          }
-          
-          // Only clear state if manual refresh also fails
-          console.warn('All refresh attempts failed - clearing auth state');
-          setSession(null);
-          setUser(null);
-          setUserProfile(null);
-          setCompany(null);
-          setLoading(false);
-          return;
-        }
-        
-        // Only update session and user if they actually changed
-        setSession(prevSession => {
-          if (prevSession?.access_token !== session?.access_token) {
-            return session;
-          }
-          return prevSession;
-        });
-        
-        setUser(prevUser => {
-          if (prevUser?.id !== session?.user?.id) {
-            // Clear cache when user changes
-            if (prevUser?.id) {
-              profileCacheRef.current.delete(prevUser.id);
+            
+            console.log('[Auth] Profile Loaded');
+            
+            // Verify profile is in cache
+            const cached = profileCacheRef.current.get(session.user.id);
+            if (cached) {
+              setUserProfile(cached.profile);
+              setCompany(cached.company);
+              sessionKeepAlive.start();
+              console.log('[Auth] Ready');
+            } else {
+              console.error('[Auth] Profile not in cache after fetch');
+              setIsSlowNetwork(true);
             }
-            return session?.user ?? null;
-          }
-          return prevUser;
-        });
-        
-        // Skip profile fetch if we already have the profile for this user
-        if (session?.user?.id === userProfile?.auth_user_id && userProfile && company) {
-          console.log('Profile already loaded for user, skipping fetch');
-          return;
-        }
-        
-        // Skip profile fetch for certain events that don't require profile updates
-        if (event === 'TOKEN_REFRESHED' && session?.user?.id === userProfile?.auth_user_id) {
-          console.log('Token refreshed for same user, skipping profile fetch');
-          return;
-        }
-        
-        // Skip profile fetch for events that don't require profile updates
-        if (['TOKEN_REFRESHED', 'USER_UPDATED', 'MFA_CHALLENGE_VERIFIED', 'SIGNED_OUT', 'PASSWORD_RECOVERY'].includes(event) && session?.user?.id === userProfile?.auth_user_id) {
-          console.log(`Event ${event} for same user, skipping profile fetch`);
-          return;
-        }
-        
-        if (session?.user && event === 'SIGNED_IN') {
-          // Only show loading for initial sign-in, not for token refresh or other events
-          if (!isInitialized) {
-          setLoading(true);
-          }
-          
-          // Only fetch profile if we don't have it cached or if it's a new user
-          const hasCachedProfile = profileCacheRef.current.has(session.user.id);
-          if (!hasCachedProfile || !userProfile) {
-          try {
-            await fetchUserProfile(session.user.id);
+            
+            setLoading(false);
           } catch (error) {
-            console.error('Error fetching profile on auth change:', error);
-              if (mounted && !isInitialized) setLoading(false);
-            }
+            console.error('[Auth] Error fetching profile on auth change:', error);
+            setIsSlowNetwork(true);
+            setLoading(false);
+          }
+        } else {
+          console.log('[Auth] Using cached profile');
+          const cached = profileCacheRef.current.get(session.user.id);
+          if (cached) {
+            setUserProfile(cached.profile);
+            setCompany(cached.company);
+            sessionKeepAlive.start();
+            console.log('[Auth] Ready');
           } else {
-            console.log('Using cached profile, skipping fetch');
-            if (mounted && !isInitialized) setLoading(false);
+            // Cache invalid, try to fetch
+            console.log('[Auth] Cache invalid, fetching profile...');
+            setLoading(true);
+            try {
+              const profileResult = await fetchUserProfile(session.user.id);
+              if (profileResult.success) {
+                const refreshedCache = profileCacheRef.current.get(session.user.id);
+                if (refreshedCache) {
+                  setUserProfile(refreshedCache.profile);
+                  setCompany(refreshedCache.company);
+                  sessionKeepAlive.start();
+                  console.log('[Auth] Ready');
+                }
+              }
+            } catch (error) {
+              console.error('[Auth] Error refreshing profile:', error);
+            }
           }
-        } else if (session?.user && event === 'TOKEN_REFRESHED') {
-          // For token refresh, only update session if needed, don't fetch profile
-          console.log('Token refreshed, updating session only');
-        } else if (!session) {
-          setUserProfile(null);
-          setCompany(null);
           setLoading(false);
-          // Stop keep-alive when session ends
-          sessionKeepAlive.stop();
-        } else if (event === 'USER_UPDATED') {
-          // Skip profile fetch for user updates that don't affect profile
-          console.log('User updated, skipping profile fetch');
-        } else if (event === 'MFA_CHALLENGE_VERIFIED') {
-          // Skip profile fetch for MFA events
-          console.log('MFA verified, skipping profile fetch');
-        } else if (event === 'SIGNED_OUT') {
-          // Skip profile fetch for sign out events
-          console.log('User signed out, skipping profile fetch');
-        } else if (event === 'PASSWORD_RECOVERY') {
-          // Skip profile fetch for password recovery events
-          console.log('Password recovery initiated, skipping profile fetch');
-        } else if (event === 'MFA_CHALLENGE_VERIFIED') {
-          // Skip profile fetch for MFA events
-          console.log('MFA verified, skipping profile fetch');
+        }
+      } else {
+        // No session, show login
+        console.log('[Auth] No session');
+        setLoading(false);
+      }
+      } else if (event === 'TOKEN_REFRESHED') {
+        if (session?.user && !userProfile) {
+          console.log('[Auth] Token refreshed, fetching profile...');
+          setLoading(true);
+          try {
+            const profileResult = await fetchUserProfile(session.user.id);
+            if (profileResult.success) {
+              const cached = profileCacheRef.current.get(session.user.id);
+              if (cached) {
+                setUserProfile(cached.profile);
+                setCompany(cached.company);
+                console.log('[Auth] Profile refreshed');
+              }
+            }
+          } catch (error) {
+            console.error('[Auth] Error fetching profile on token refresh:', error);
+          } finally {
+            setLoading(false);
+          }
         }
       }
-    );
+    });
 
     return () => {
       mounted = false;
-      if (timeoutId) clearTimeout(timeoutId);
+      clearTimeout(timeoutId);
       subscription.unsubscribe();
     };
   }, []);
 
-  const signIn = async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    
-    // Si hay error en autenticación, retornar el error
-    if (error) {
-      return { error };
-    }
-    
-    // Si la autenticación fue exitosa, verificar si el usuario está activo
-    if (data?.user) {
-      try {
-        // Buscar el perfil del usuario para verificar si está activo
-        const { data: profileData, error: profileError } = await supabase
-          .from('users')
-          .select('active, email')
-          .eq('email', email)
-          .single();
-        
-        if (profileError) {
-          console.error('Error checking user profile:', profileError);
-          // Si no se puede verificar, permitir acceso (no bloquear por error de consulta)
-          return { error: null };
-        }
-        
-        // Si el usuario no está activo, cerrar sesión y mostrar error
-        if (profileData && !profileData.active) {
-          // Cerrar sesión inmediatamente
-          await supabase.auth.signOut();
-          return { 
-            error: { 
-              message: 'Cuenta Deshabilitada. Contacta al administrador para más información.' 
-            } 
-          };
-        }
-      } catch (error) {
-        console.error('Error verifying user active status:', error);
-        // Si hay error verificando, permitir acceso (no bloquear por error técnico)
-      }
-    }
-    
-    return { error: null };
-  };
-
-  const signUp = async (email: string, password: string, companyName: string, userName: string) => {
-    try {
-      console.log('Starting registration process...');
-      
-      // First, create the auth user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: getAuthRedirectUrl()
-        }
-      });
-
-      console.log('Auth signup result:', { authData, authError });
-
-      if (authError) {
-        console.error('Auth error:', authError);
-        return { error: authError };
-      }
-
-      if (!authData.user) {
-        console.error('No user returned from auth signup');
-        return { error: { message: 'Failed to create user account' } };
-      }
-
-      // Wait a moment for the user to be properly created
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      console.log('Creating company...');
-      // Create company using service role bypass
-      const { data: companyData, error: companyError } = await supabase
-        .from('companies')
-        .insert({
-          name: companyName,
-          plan: 'basic',
-          settings: {}
-        })
-        .select()
-        .single();
-
-      console.log('Company creation result:', { companyData, companyError });
-
-      if (companyError) {
-        console.error('Company creation error:', companyError);
-        return { error: companyError };
-      }
-
-      console.log('Creating user profile...');
-      // Create user profile
-      const { data: userData, error: profileError } = await supabase
-        .from('users')
-        .insert({
-          auth_user_id: authData.user.id,
-          company_id: companyData.id,
-          name: userName,
-          email: email,
-          role: 'admin',
-          active: true
-        })
-        .select()
-        .single();
-
-      console.log('User profile creation result:', { userData, profileError });
-
-      if (profileError) {
-        console.error('Profile creation error:', profileError);
-        return { error: profileError };
-      }
-
-      // Wait for user profile to be committed and refresh auth state
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Skip store creation during registration - will be created on first login
-      console.log('Registration completed - store will be created on first login');
-
-      console.log('Registration completed successfully');
-      return { error: null };
-    } catch (error) {
-      console.error('Registration error:', error);
-      return { error };
-    }
-  };
-
-  const signOut = async () => {
-    try {
-      console.log('Signing out user...');
-      
-      // Stop session keep-alive before signing out
-      sessionKeepAlive.stop();
-      
-      // Clear cache
-      profileCacheRef.current.clear();
-      
-      // Clear local state first
-      setUserProfile(null);
-      setCompany(null);
-      setUser(null);
-      setSession(null);
-      
-      // Sign out from Supabase
-      const { error } = await supabase.auth.signOut();
-      
-      if (error) {
-        console.error('Error during sign out:', error);
-        // Even if there's an error, we've cleared local state
-      } else {
-        console.log('Sign out successful');
-      }
-
-    } catch (error) {
-      console.error('Unexpected error during sign out:', error);
-      // Clear state anyway and redirect
-      setUserProfile(null);
-      setCompany(null);
-      setUser(null);
-      setSession(null);
-    }
-  };
-
-  const value = {
-    user,
-    userProfile,
-    company,
-    session,
-    loading,
-    requiresPasswordSetup,
-    signIn,
-    signUp,
-    signOut,
-    refreshProfile,
-    markPasswordAsSetup,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        userProfile,
+        company,
+        session,
+        loading,
+        requiresPasswordSetup,
+        isSlowNetwork,
+        signIn,
+        signUp,
+        signOut,
+        refreshProfile,
+        markPasswordAsSetup,
+        retryProfileFetch,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 };

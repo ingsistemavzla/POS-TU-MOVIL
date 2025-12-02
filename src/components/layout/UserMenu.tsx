@@ -38,9 +38,9 @@ export const UserMenu: React.FC = () => {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-            <Avatar className="h-8 w-8">
-              <AvatarFallback>{initials}</AvatarFallback>
+          <Button variant="ghost" className="relative h-8 w-8 rounded-full hover:bg-white/20">
+            <Avatar className="h-8 w-8 border-2 border-dark-bg/20">
+              <AvatarFallback className="bg-white text-dark-bg font-semibold">{initials}</AvatarFallback>
             </Avatar>
           </Button>
         </DropdownMenuTrigger>

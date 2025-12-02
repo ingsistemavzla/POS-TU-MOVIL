@@ -168,6 +168,10 @@ END;
 $$;
 
 -- Create function to update inventory for a specific store
+-- Eliminar todas las versiones anteriores de la función para evitar conflictos
+DROP FUNCTION IF EXISTS public.update_store_inventory(uuid, uuid, integer, integer);
+DROP FUNCTION IF EXISTS public.update_store_inventory(uuid, uuid, integer);
+
 CREATE OR REPLACE FUNCTION update_store_inventory(
   p_product_id uuid,
   p_store_id uuid,
@@ -196,16 +200,12 @@ BEGIN
     );
   END IF;
 
-  -- Check permissions (admin or manager)
-  IF NOT (public.is_admin() OR EXISTS (
-    SELECT 1 FROM public.users 
-    WHERE auth_user_id = auth.uid() 
-    AND company_id = user_company_id 
-    AND role IN ('admin', 'manager')
-  )) THEN
+  -- SOLO ADMINS pueden actualizar stock manualmente
+  -- Managers NO pueden editar stock (solo pueden ver y vender)
+  IF NOT public.is_admin() THEN
     RETURN json_build_object(
       'error', true,
-      'message', 'Insufficient permissions',
+      'message', 'Solo los administradores pueden actualizar el stock manualmente. Los gerentes solo pueden ver el inventario y procesar ventas.',
       'code', 'INSUFFICIENT_PERMISSIONS'
     );
   END IF;

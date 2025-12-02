@@ -24,40 +24,41 @@ export function KpiCard({
   borderColor = 'green',
   isLoading = false
 }: KpiCardProps) {
-  const borderColors = {
-    green: 'border-green-500',
-    blue: 'border-blue-500',
-    purple: 'border-purple-500',
-    red: 'border-red-500'
+  const shadowColors = {
+    green: 'shadow-accent-primary/40',
+    blue: 'shadow-blue-500/50',
+    purple: 'shadow-purple-500/50',
+    red: 'shadow-status-danger/50'
   };
 
   const textColors = {
-    green: 'text-green-500',
+    green: 'text-accent-primary',
     blue: 'text-blue-500',
     purple: 'text-purple-500',
-    red: 'text-red-500'
+    red: 'text-status-danger'
   };
 
-  const borderClass = borderColors[borderColor];
-  const textColorClass = borderColor === 'red' ? 'text-red-500' : textColors[borderColor];
+  const shadowClass = shadowColors[borderColor];
+  const hoverShadowClass = shadowClass.replace('/40', '/50').replace('/50', '/60');
+  const textColorClass = borderColor === 'red' ? 'text-status-danger' : textColors[borderColor];
 
-  const changeColor = change >= 0 ? 'text-green-500' : 'text-red-500';
+  const changeColor = change >= 0 ? 'text-accent-primary' : 'text-status-danger';
   const changeIcon = change > 0 ? <ArrowUpRight className="w-4 h-4" /> : change < 0 ? <ArrowDownRight className="w-4 h-4" /> : <TrendingUp className="w-4 h-4" />;
 
   return (
-    <Card className={`p-6 bg-[#1a1a1a] border-2 ${borderClass} border-opacity-50 hover:border-opacity-100 transition-all duration-300 shadow-lg shadow-${borderColor}-500/20`}>
+    <Card className={`p-6 transition-all duration-300 shadow-lg ${shadowClass} hover:${hoverShadowClass}`}>
       <div className="flex items-center justify-between">
         <div className="space-y-3 flex-1">
-          <p className="text-sm font-medium text-muted-foreground">{title}</p>
+          <p className="text-sm font-medium text-gray-600">{title}</p>
           <div>
             {isLoading ? (
-              <p className="text-2xl font-bold text-muted-foreground">Cargando...</p>
+              <p className="text-2xl font-bold text-gray-400">Cargando...</p>
             ) : (
               <p className={`text-3xl font-bold ${textColorClass}`}>
                 {formatCurrency(value)}
               </p>
             )}
-            <p className="text-xs text-muted-foreground mt-1">
+            <p className="text-xs text-gray-500 mt-1">
               {period}
             </p>
           </div>
@@ -70,8 +71,8 @@ export function KpiCard({
             </span>
           </div>
         </div>
-        <div className="p-3 rounded-lg bg-[#2a2a2a]">
-          <div className="text-white">
+        <div className="p-3 rounded-md bg-gray-50">
+          <div className="text-accent-primary">
             {icon}
           </div>
         </div>

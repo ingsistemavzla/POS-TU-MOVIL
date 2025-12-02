@@ -18,7 +18,7 @@ export default {
 			}
 		},
 		fontFamily: {
-			sans: ['Questrial', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'Noto Sans', 'sans-serif'],
+			sans: ['Poppins', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'Noto Sans', 'sans-serif'],
 		},
 		screens: {
 			'xs': '475px',
@@ -30,14 +30,18 @@ export default {
 		},
 		extend: {
 			colors: {
+				// Colores base (mantener para compatibilidad con shadcn)
+				white: '#FFFFFF',
+				black: '#000000',
+				transparent: 'transparent',
 				border: 'hsl(var(--border))',
 				input: 'hsl(var(--input))',
 				ring: 'hsl(var(--ring))',
 				background: 'hsl(var(--background))',
 				foreground: 'hsl(var(--foreground))',
 				primary: {
-					DEFAULT: 'hsl(var(--primary))',
-					foreground: 'hsl(var(--primary-foreground))',
+					DEFAULT: '#30D96B',
+					foreground: '#0D0D0D',
 					glow: 'hsl(var(--primary-glow))'
 				},
 				secondary: {
@@ -71,7 +75,14 @@ export default {
 				card: {
 					DEFAULT: 'hsl(var(--card))',
 					foreground: 'hsl(var(--card-foreground))'
-				}
+				},
+				// Paleta "Legacy Pro" Estricta
+				'dark-bg': '#022601',        // Sidebar/Navbar
+				'main-text': '#0D0D0D',      // Texto principal
+				'accent-primary': '#30D96B', // Acción principal, iconos, bordes
+				'accent-hover': '#64F23D',   // Estado hover, alertas success
+				'app-background': '#E6E6E6', // Fondo general (15% del blanco)
+				'status-danger': '#EF4444',  // Errores/stock bajo
 			},
 			backgroundImage: {
 				'gradient-primary': 'var(--gradient-primary)',
@@ -81,12 +92,18 @@ export default {
 			boxShadow: {
 				'glow-primary': 'var(--glow-primary)',
 				'glow-accent': 'var(--glow-accent)',
-				'glow-success': 'var(--glow-success)'
+				'glow-success': 'var(--glow-success)',
+				'eco-sm': '0 1px 2px 0 rgba(16, 185, 129, 0.05)',
+				'eco-md': '0 4px 6px -1px rgba(16, 185, 129, 0.1), 0 2px 4px -1px rgba(16, 185, 129, 0.06)',
+				'eco-lg': '0 10px 15px -3px rgba(16, 185, 129, 0.1), 0 4px 6px -2px rgba(16, 185, 129, 0.05)',
+				'glow': '0 0 15px rgba(52, 211, 153, 0.3)',
+				'pro-card': '0 4px 12px rgba(0, 0, 0, 0.05)' // Sombra suave para tarjetas blancas
 			},
 			borderRadius: {
-				lg: 'var(--radius)',
-				md: 'calc(var(--radius) - 2px)',
-				sm: 'calc(var(--radius) - 4px)'
+				lg: "var(--radius)",
+				md: "calc(var(--radius) - 2px)",
+				sm: "calc(var(--radius) - 4px)",
+				none: '0px'
 			},
 			keyframes: {
 				'accordion-down': {
@@ -164,6 +181,20 @@ export default {
 					'100%': {
 						transform: 'translateX(100%)'
 					}
+				},
+				'zoomBounce': {
+					'0%, 100%': {
+						transform: 'scale(1)'
+					},
+					'25%': {
+						transform: 'scale(1.15)'
+					},
+					'50%': {
+						transform: 'scale(0.95)'
+					},
+					'75%': {
+						transform: 'scale(1.1)'
+					}
 				}
 			},
 			animation: {
@@ -175,7 +206,8 @@ export default {
 				'slide-out-right': 'slide-out-right 0.3s ease-out',
 				'glow-pulse': 'glow-pulse 2s ease-in-out infinite',
 				'float': 'float 3s ease-in-out infinite',
-				'shine': 'shine 2s ease-in-out infinite'
+				'shine': 'shine 2s ease-in-out infinite',
+				'zoom-bounce': 'zoomBounce 2s ease-in-out infinite'
 			},
 			spacing: {
 				'18': '4.5rem',

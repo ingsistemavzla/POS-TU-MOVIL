@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, User, Mail } from 'lucide-react';
@@ -210,8 +211,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
               className="glass-card"
             />
             <p className="text-xs text-muted-foreground">
-              Si cambias el email, recibirás un enlace de confirmación en tu nuevo correo.
-              Deberás hacer clic en el enlace para confirmar el cambio.
+              El cambio de email se aplicará inmediatamente.
             </p>
           </div>
 
@@ -222,9 +222,11 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
           )}
 
           {success && (
-            <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg border border-green-200">
-              {success}
-            </div>
+            <Alert variant="success" className="p-3">
+              <AlertDescription className="text-main-text">
+                {success}
+              </AlertDescription>
+            </Alert>
           )}
 
           <DialogFooter>

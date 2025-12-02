@@ -198,6 +198,7 @@ export default function SalesPage() {
       toast({
         title: "Exportación exitosa",
         description: "Los datos se han exportado correctamente",
+        variant: "success",
       });
     } catch (error) {
       toast({
@@ -257,10 +258,11 @@ export default function SalesPage() {
         const effectiveDateTo = dateRangeEnd ? new Date(dateRangeEnd.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString() : (filters.dateTo || undefined);
 
         // Construir la consulta base con los mismos filtros que useSalesData
+        // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
         let salesQuery = supabase
           .from('sales')
-          .select('id')
-          .eq('company_id', userProfile.company_id);
+          .select('id');
+          // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
 
         // Aplicar filtros de fecha
         if (effectiveDateFrom) {
@@ -278,18 +280,20 @@ export default function SalesPage() {
         // Si hay filtro de categoría, obtener sale_ids primero
         let saleIds: string[] | null = null;
         if (effectiveCategory) {
+          // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
           const { data: productsData } = await supabase
             .from('products')
             .select('id')
-            .eq('company_id', userProfile.company_id)
+            // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
             .eq('category', effectiveCategory);
 
           if (productsData && productsData.length > 0) {
             const productIds = productsData.map((p: any) => p.id);
+            // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
             let saleItemsQuery = supabase
               .from('sale_items')
               .select('sale_id, sales!inner(id, company_id, store_id, created_at)')
-              .eq('sales.company_id', userProfile.company_id)
+              // ✅ REMOVED: .eq('sales.company_id', userProfile.company_id) - RLS handles this automatically
               .in('product_id', productIds);
 
             if (effectiveStoreId) {
@@ -451,10 +455,11 @@ export default function SalesPage() {
       // PASO 1: Obtener IDs de productos por categoría (si se aplica filtro de categoría)
       let categoryProductIds: string[] | null = null;
       if (reportFilters.categoryId && reportFilters.categoryId !== 'all') {
+        // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
         const { data: productsData, error: productsError } = await supabase
           .from('products')
           .select('id')
-          .eq('company_id', userProfile.company_id)
+          // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
           .eq('category', reportFilters.categoryId);
 
         if (productsError) {
@@ -559,7 +564,7 @@ export default function SalesPage() {
           customers(id, name),
           stores(id, name)
         `)
-        .eq('company_id', userProfile.company_id)
+        // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
         .order('created_at', { ascending: false });
 
       // Aplicar filtro de sale_ids si se filtró por categoría
@@ -641,10 +646,11 @@ export default function SalesPage() {
       // Obtener datos de cajeros (users)
       const usersMap = new Map<string, { id: string; name: string; email: string }>();
       if (cashierIds.length > 0) {
+        // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
         const { data: usersData } = await supabase
           .from('users')
           .select('id, name, email')
-          .eq('company_id', userProfile.company_id)
+          // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
           .in('id', cashierIds);
 
         if (usersData) {
@@ -672,10 +678,11 @@ export default function SalesPage() {
       // Obtener datos de tiendas
       const storesMap = new Map<string, { id: string; name: string }>();
       if (storeIds.length > 0) {
+        // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
         const { data: storesData } = await supabase
           .from('stores')
           .select('id, name')
-          .eq('company_id', userProfile.company_id)
+          // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
           .in('id', storeIds);
 
         if (storesData) {
@@ -815,7 +822,7 @@ export default function SalesPage() {
     
     switch (method) {
       case 'cash_usd':
-        return <Badge variant="outline" className="bg-green-50 text-green-700">Efectivo USD</Badge>;
+        return <Badge variant="outline" className="bg-green-50 text-green-600 shadow-sm">Efectivo USD</Badge>;
       case 'cash_bs':
         return <Badge variant="outline" className="bg-blue-50 text-blue-700">Efectivo BS</Badge>;
       case 'card':
@@ -856,7 +863,7 @@ export default function SalesPage() {
     
     // Si no es financiamiento, mostrar "DE CONTADO" en verde
     return (
-      <Badge variant="outline" className="bg-green-50 text-green-700">
+      <Badge variant="outline" className="bg-green-50 text-green-600 shadow-sm">
         DE CONTADO
       </Badge>
     );
@@ -908,10 +915,10 @@ export default function SalesPage() {
     try {
       console.log('📦 Cargando items de venta:', saleId);
 
-      // Fetch sale items directamente (igual que en SaleDetailModal)
+      // Fetch sale items - OPTIMIZADO: Select Minimal
       const { data: itemsData, error: itemsError } = await supabase
         .from('sale_items')
-        .select('*')
+        .select('id, product_id, product_name, qty, price_usd, subtotal_usd')
         .eq('sale_id', saleId);
 
       if (itemsError) {
@@ -942,10 +949,11 @@ export default function SalesPage() {
           .filter(id => id) as string[];
 
         if (productIds.length > 0) {
+          // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
           const { data: productsData, error: productsError } = await supabase
             .from('products')
             .select('id, category')
-            .eq('company_id', userProfile.company_id)
+            // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
             .in('id', productIds);
 
           if (!productsError && productsData) {
@@ -1016,6 +1024,7 @@ export default function SalesPage() {
     setDeletingSale(true);
 
     try {
+      // Llamar a la función RPC delete_sale_and_restore_inventory
       const { data: result, error } = await supabase.rpc('delete_sale_and_restore_inventory', {
         p_sale_id: saleToDelete.id
       });
@@ -1025,20 +1034,44 @@ export default function SalesPage() {
         throw new Error(error.message);
       }
 
-      if (result && (result as any).success) {
-        toast({
-          title: "Venta eliminada",
-          description: `La venta ${saleToDelete.invoice_number} ha sido eliminada exitosamente. Se repuso el inventario de ${(result as any).items_count} productos.`,
-        });
+      // Verificar si la respuesta es exitosa
+      // La función puede retornar un objeto con success o directamente un mensaje
+      if (result) {
+        const response = result as any;
         
-        // Refresh the data to update the list
-        refreshData();
-        
-        // Close modal
-        setShowDeleteModal(false);
-        setSaleToDelete(null);
+        // Si retorna un objeto con success
+        if (response.success === true || response.success === false) {
+          if (response.success) {
+            toast({
+              title: "Venta eliminada",
+              description: response.message || `La venta ${saleToDelete.invoice_number} ha sido eliminada exitosamente. Se repuso el inventario.`,
+            });
+            
+            // Refresh the data to update the list
+            refreshData();
+            
+            // Close modal
+            setShowDeleteModal(false);
+            setSaleToDelete(null);
+          } else {
+            throw new Error(response.error || response.message || 'Error desconocido al eliminar la venta');
+          }
+        } else {
+          // Si retorna directamente un mensaje de éxito (string o UUID)
+          toast({
+            title: "Venta eliminada",
+            description: `La venta ${saleToDelete.invoice_number} ha sido eliminada exitosamente. Se repuso el inventario.`,
+          });
+          
+          // Refresh the data to update the list
+          refreshData();
+          
+          // Close modal
+          setShowDeleteModal(false);
+          setSaleToDelete(null);
+        }
       } else {
-        throw new Error((result as any)?.error || 'Error desconocido al eliminar la venta');
+        throw new Error('No se recibió respuesta del servidor');
       }
     } catch (error) {
       console.error('Error deleting sale:', error);
@@ -1063,17 +1096,17 @@ export default function SalesPage() {
       if (!userProfile?.company_id) return;
 
       try {
+        // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
         let query = (supabase as any)
           .from('stores')
           .select('id, name')
-          .eq('company_id', userProfile.company_id)
+          // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
           .eq('active', true)
           .order('name');
 
-        // Si el usuario es manager, solo mostrar su tienda asignada
-        if (userProfile?.role === 'manager' && userProfile?.assigned_store_id) {
-          query = query.eq('id', userProfile.assigned_store_id);
-        }
+      // 🛡️ SEGURIDAD: RLS maneja el filtrado automáticamente
+      // El backend solo retorna stores que el usuario tiene permiso de ver
+      // No necesitamos filtrar por roles en el frontend
 
         const { data, error } = await query;
 
@@ -1208,7 +1241,7 @@ export default function SalesPage() {
           </h1>
           <Badge
             variant="secondary"
-            className="w-fit text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 bg-green-400 text-black"
+            className="w-fit text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 bg-accent-primary text-white shadow-md shadow-accent-primary/50"
           >
             v-valid
           </Badge>
@@ -1306,7 +1339,7 @@ export default function SalesPage() {
 
       {/* Filters Panel */}
       {showFilters && (
-        <Card className="border-2 border-primary/20">
+        <Card className="shadow-lg shadow-green-500/50 border border-green-500/40">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -1463,7 +1496,7 @@ export default function SalesPage() {
                 {/* Badges dinámicos de categorías */}
                 <div className="flex items-center gap-2 flex-wrap">
                   {/* Badge Teléfonos - Verde */}
-                  <Badge className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 text-sm font-semibold">
+                  <Badge className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 text-sm font-semibold shadow-md shadow-green-500/50">
                     Teléfonos {categoryTotals.phones}
                   </Badge>
                   {/* Badge Accesorios - Rojo */}
@@ -1667,7 +1700,7 @@ export default function SalesPage() {
             </div>
           ) : (
             <>
-              <div className="rounded-md border overflow-x-auto">
+              <div className="rounded-sm shadow-md shadow-green-500/50 overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -1728,7 +1761,7 @@ export default function SalesPage() {
                               <Button
                                 size="sm"
                                 onClick={() => setExpandedSaleId(isExpanded ? null : sale.id)}
-                                className="flex items-center gap-1 bg-green-500 hover:bg-green-600 text-black font-medium"
+                                className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white font-medium shadow-md shadow-green-500/50"
                               >
                                 {isExpanded ? (
                                   <>
@@ -1748,21 +1781,24 @@ export default function SalesPage() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleViewSale(sale.id)}
-                                className="flex items-center gap-1 border-green-600 text-green-600 hover:bg-green-600 hover:text-white dark:bg-gray-800 dark:text-green-400 dark:border-green-400"
+                                className="flex items-center gap-1 border-green-600 text-green-600 hover:bg-green-600 hover:text-white dark:bg-gray-800 dark:text-green-500 dark:border-green-500 shadow-sm"
                               >
                                 <Eye className="h-3 w-3" />
                                 Ver factura
                               </Button>
                             </TableCell>
                             <TableCell>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDeleteSale(sale.id, sale.invoice_number)}
-                                className="flex items-center justify-center h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              {/* 🛡️ Conditional Rendering: Solo admins pueden eliminar ventas */}
+                              {userProfile?.role === 'master_admin' || userProfile?.role === 'admin' ? (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDeleteSale(sale.id, sale.invoice_number)}
+                                  className="flex items-center justify-center h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              ) : null}
                             </TableCell>
                           </TableRow>
                           {isExpanded && (
@@ -1958,7 +1994,7 @@ export default function SalesPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="mt-4 border rounded-lg overflow-hidden">
+          <div className="mt-4 shadow-md shadow-green-500/50 rounded-sm overflow-hidden">
             {pdfPreviewUrl ? (
               <iframe
                 src={pdfPreviewUrl}

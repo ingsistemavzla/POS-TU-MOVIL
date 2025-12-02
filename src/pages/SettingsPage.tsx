@@ -68,6 +68,7 @@ export default function SettingsPage() {
       
       if (success) {
         toast({
+          variant: "success",
           title: "Configuración guardada",
           description: `Los cambios se han guardado correctamente. El IVA ahora es ${localSettings.tax_rate}% y se aplicará inmediatamente en el POS.`,
         });
@@ -90,6 +91,7 @@ export default function SettingsPage() {
     if (settings) {
       setLocalSettings(settings);
       toast({
+        variant: "success",
         title: "Configuración restaurada",
         description: "Se han restaurado los valores originales",
       });

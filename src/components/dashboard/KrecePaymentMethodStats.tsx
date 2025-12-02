@@ -157,7 +157,7 @@ export function KrecePaymentMethodStats() {
       <CardContent>
         <div className="space-y-4">
           {stats.map((stat, index) => (
-            <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+            <div key={index} className="flex items-center justify-between p-3 rounded-sm shadow-sm shadow-green-500/30">
               <div className="flex items-center gap-3">
                 {getPaymentMethodIcon(stat.payment_method)}
                 <div>

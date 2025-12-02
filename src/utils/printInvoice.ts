@@ -37,6 +37,8 @@ interface SaleData {
 }
 
 export const printInvoice = (saleData: SaleData, taxRate?: number, receiptFooter?: string) => {
+  console.log('🖨️ printInvoice - Iniciando impresión de factura:', saleData.invoice_number);
+  
   const formatCurrency = (amount: number, currency: 'USD' | 'BS') => {
     return new Intl.NumberFormat('es-VE', {
       style: 'currency',

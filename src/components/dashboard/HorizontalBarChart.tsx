@@ -16,7 +16,7 @@ interface HorizontalBarChartProps {
 export function HorizontalBarChart({ data, height = 400, maxValue }: HorizontalBarChartProps) {
   if (!data || data.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full min-h-[300px] text-muted-foreground">
+      <div className="flex items-center justify-center h-full min-h-[300px] text-gray-500">
         <p>No hay datos para mostrar</p>
       </div>
     );
@@ -32,29 +32,30 @@ export function HorizontalBarChart({ data, height = 400, maxValue }: HorizontalB
           data={data}
           margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-          <XAxis type="number" stroke="#888" tick={{ fill: '#fff' }} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <XAxis type="number" stroke="#6b7280" tick={{ fill: '#0D0D0D' }} />
           <YAxis
             dataKey="name"
             type="category"
             width={90}
-            stroke="#888"
-            tick={{ fill: '#fff', fontSize: 12 }}
+            stroke="#6b7280"
+            tick={{ fill: '#0D0D0D', fontSize: 12 }}
           />
           <Tooltip
             formatter={(value: number) => formatCurrency(value)}
             contentStyle={{
-              backgroundColor: 'rgba(0, 0, 0, 0.8)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
+              backgroundColor: '#fff',
+              borderColor: '#e5e7eb',
               borderRadius: '8px',
-              color: '#fff'
+              color: '#000'
             }}
+            itemStyle={{ color: '#000' }}
           />
           <Bar dataKey="value" radius={[0, 4, 4, 0]}>
             {data.map((entry, index) => (
               <Cell
                 key={`cell-${index}`}
-                fill={entry.color || '#10b981'}
+                fill={entry.color || '#30D96B'}
               />
             ))}
           </Bar>

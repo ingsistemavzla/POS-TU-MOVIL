@@ -41,11 +41,22 @@ import { Switch } from "@/components/ui/switch";
 
 type UserRow = Tables<"users">;
 
+// NOTA: El rol 'master_admin' NO está incluido aquí intencionalmente.
+// Este rol es exclusivo y solo puede ser asignado directamente en la base de datos.
+// Esto garantiza que ningún administrador pueda crear usuarios con privilegios de auditoría.
 const roles = [
   { key: "admin", name: "Administrador", color: "primary", icon: Shield },
   { key: "manager", name: "Gerente", color: "accent", icon: UserCheck },
   { key: "cashier", name: "Cajero", color: "secondary", icon: UsersIcon },
 ] as const;
+
+// Lista completa de roles para mostrar usuarios existentes (incluye master_admin para visualización)
+const allRolesDisplay: Record<string, { name: string; color: string }> = {
+  master_admin: { name: "Master Admin", color: "destructive" },
+  admin: { name: "Administrador", color: "primary" },
+  manager: { name: "Gerente", color: "accent" },
+  cashier: { name: "Cajero", color: "secondary" },
+};
 
 export default function Users() {
   const { toast } = useToast();
@@ -172,10 +183,11 @@ export default function Users() {
   const fetchUsers = async () => {
     if (!companyId) return;
     
-    // Obtener todos los usuarios (activos y deshabilitados)
+    // Obtener todos los usuarios - OPTIMIZADO: Select Minimal
+    // NOTA: Removido 'is_disabled' que NO existe en el esquema. 'active' SÍ existe y se usa.
     const { data, error } = await (supabase as any)
       .from("users")
-      .select("*")
+      .select("id, email, name, role, assigned_store_id, active, created_at")
       .eq("company_id", companyId)
       .order("created_at", { ascending: true });
     
@@ -206,76 +218,96 @@ export default function Users() {
       toast({ title: "Contraseña requerida", description: "Ingrese una contraseña." });
       return;
     }
+    if (createPassword.length < 6) {
+      toast({ title: "Contraseña muy corta", description: "La contraseña debe tener al menos 6 caracteres.", variant: "destructive" });
+      return;
+    }
     if (!createName) {
       toast({ title: "Nombre requerido", description: "Ingrese el nombre del usuario." });
       return;
     }
-    // La tienda es opcional al crear - puede asignarse después desde el dashboard
+    // GERENTE requiere tienda asignada obligatoriamente
+    if (createRole === 'manager' && !createStoreId) {
+      toast({ 
+        title: "Tienda requerida", 
+        description: "El Gerente debe tener una tienda asignada.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     setLoading(true);
     try {
-      console.log('Creating user with:', {
-        company_id: companyId,
-        email: createEmail,
-        name: createName,
-        role: createRole,
-        assigned_store_id: createRole === "admin" ? null : createStoreId,
-      });
-      
-      // First create the user profile
-      const { data: profileData, error: profileError } = await (supabase as any).rpc('create_user_directly', {
+      console.log('Creating user with RPC create_user_atomic_admin:', {
         p_email: createEmail,
         p_password: createPassword,
         p_name: createName,
         p_role: createRole,
         p_company_id: companyId,
-        p_assigned_store_id: createRole === "admin" ? null : createStoreId,
+        p_assigned_store_id: createRole === "admin" ? null : (createStoreId || null),
       });
 
-      if (profileError) throw profileError;
-
-      if (profileData && typeof profileData === 'object' && 'error' in profileData && profileData.error) {
-        throw new Error((profileData as any).message || 'Error al crear usuario');
-      }
-
-      // Now create the auth user using Supabase's signUp method
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: createEmail,
-        password: createPassword,
-        options: {
-          data: {
-            name: createName,
-            role: createRole,
-            company_id: companyId,
-            assigned_store_id: createRole === "admin" ? null : createStoreId,
-          }
-        }
-      });
-
-      if (authError) {
-        console.warn('Auth user creation failed:', authError);
-        toast({ 
-          title: "Perfil creado", 
-          description: `Perfil de ${createName} creado. El usuario debe registrarse manualmente con este email.`,
-          variant: "default"
+      // Llamada a la RPC atómica que maneja todo el proceso
+      const { data: result, error: rpcError } = await (supabase as any)
+        .rpc('create_user_atomic_admin', {
+          p_email: createEmail,
+          p_password: createPassword,
+          p_name: createName,
+          p_role: createRole,
+          p_company_id: companyId,
+          p_assigned_store_id: createRole === "admin" ? null : (createStoreId || null),
         });
-      } else {
-        // Update the user profile with the correct auth_user_id
-        if (authData.user) {
-          const { error: updateError } = await (supabase as any)
-            .from('users')
-            .update({ auth_user_id: authData.user.id })
-            .eq('email', createEmail);
-          
-          if (updateError) {
-            console.warn('Failed to update user with auth_user_id:', updateError);
-          }
+
+      // Manejo mejorado de errores del RPC - Extraer mensaje específico del backend
+      if (rpcError) {
+        // Supabase RPC errors pueden venir en diferentes formatos
+        let errorMessage = 'Error al crear usuario';
+        
+        // Intentar extraer mensaje de diferentes estructuras posibles
+        if (rpcError.message) {
+          errorMessage = rpcError.message;
+        } else if (rpcError.details) {
+          errorMessage = rpcError.details;
+        } else if (rpcError.hint) {
+          errorMessage = rpcError.hint;
+        } else if (typeof rpcError === 'string') {
+          errorMessage = rpcError;
         }
         
-        toast({ 
-          title: "Usuario creado", 
-          description: `Usuario ${createName} creado exitosamente. Puede iniciar sesión inmediatamente con las credenciales proporcionadas.`
-        });
+        // Si el mensaje contiene información específica del backend, usarla
+        if (errorMessage.includes('tienda') || errorMessage.includes('store') || errorMessage.includes('Gerente')) {
+          // Mensaje específico sobre tienda - mantener tal cual
+        } else if (errorMessage.includes('email') || errorMessage.includes('correo')) {
+          // Mensaje específico sobre email - mantener tal cual
+        }
+        
+        throw new Error(errorMessage);
       }
+
+      // Verificar respuesta de la RPC (formato JSONB retornado por la función)
+      if (result && typeof result === 'object') {
+        // Caso 1: Campo 'error' con valor truthy (formato: { error: "mensaje" })
+        if ('error' in result && result.error) {
+          const errorMsg = typeof result.error === 'string' 
+            ? result.error 
+            : (result.error as any)?.message || 'Error al crear usuario';
+          throw new Error(errorMsg);
+        }
+        
+        // Caso 2: Campo 'success' es false (formato: { success: false, error: "mensaje" })
+        if ('success' in result && result.success === false) {
+          const errorMsg = result.message || result.error || 'Error al crear usuario';
+          throw new Error(typeof errorMsg === 'string' ? errorMsg : 'Error al crear usuario');
+        }
+      }
+
+      console.log('User created successfully via RPC:', result);
+      
+      toast({ 
+        variant: "success",
+        title: "Perfil creado exitosamente", 
+        description: `${createName} (${createRole}) debe registrarse en la app con el correo: ${createEmail} para activar su cuenta.`
+      });
       
       // Reset form
       setCreateEmail("");
@@ -288,7 +320,28 @@ export default function Users() {
       // Refresh users list
       await fetchUsers();
     } catch (e: any) {
-      toast({ title: "No se pudo crear usuario", description: e?.message ?? String(e), variant: "destructive" });
+      console.error('Create user error:', e);
+      
+      // Extraer mensaje de error específico
+      let errorMessage = 'Error al crear usuario';
+      
+      if (e?.message) {
+        errorMessage = e.message;
+      } else if (typeof e === 'string') {
+        errorMessage = e;
+      } else if (e?.error?.message) {
+        errorMessage = e.error.message;
+      } else if (e?.error) {
+        errorMessage = typeof e.error === 'string' ? e.error : 'Error al crear usuario';
+      }
+      
+      // Mostrar mensaje específico del backend
+      toast({ 
+        title: "Error al crear usuario", 
+        description: errorMessage, 
+        variant: "destructive",
+        duration: 5000 // Mostrar por 5 segundos para que el usuario pueda leer el mensaje completo
+      });
     } finally {
       setLoading(false);
     }
@@ -358,6 +411,7 @@ export default function Users() {
       }
 
       toast({ 
+        variant: "success",
         title: "Usuario actualizado", 
         description: `El usuario ${editName} ha sido actualizado exitosamente.`
       });
@@ -566,56 +620,65 @@ export default function Users() {
 
   const deleteUser = async (userId: string, userName: string) => {
     // Verificar si es el último admin
-    const userToDelete = users.find(u => u.id === userId);
+    const userToDelete = allUsers.find(u => u.id === userId);
     if (userToDelete?.role === 'admin') {
-      const adminCount = users.filter(u => u.role === 'admin' && u.active).length;
+      const adminCount = allUsers.filter(u => u.role === 'admin' && u.active).length;
       if (adminCount <= 1) {
         toast({ 
-          title: "No se puede deshabilitar", 
-          description: "No se puede deshabilitar el último administrador activo de la empresa.", 
+          title: "No se puede eliminar", 
+          description: "No se puede eliminar el último administrador activo de la empresa.", 
           variant: "destructive" 
         });
         return;
       }
     }
 
-    if (!confirm(`¿Estás seguro de que quieres deshabilitar al usuario ${userName}? El usuario dejará de aparecer en la lista y no podrá acceder al sistema, pero sus datos históricos se conservarán.`)) {
+    if (!confirm(`¿Estás seguro de que quieres ELIMINAR PERMANENTEMENTE al usuario ${userName}? Esta acción no se puede deshacer. Todos los datos del usuario serán eliminados.`)) {
       return;
     }
 
     setLoading(true);
     try {
-      console.log('Attempting to disable user:', { userId, userName });
+      console.log('Attempting to delete user permanently:', { userId, userName });
       
       // Prevent self-deletion
       if (userProfile?.id === userId) {
-        throw new Error('No puedes deshabilitarte a ti mismo');
+        throw new Error('No puedes eliminarte a ti mismo');
       }
 
-      // Deshabilitar usuario (soft delete) estableciendo active = false
-      // No necesitamos usar la función SQL, podemos hacerlo directamente
-      const { data, error } = await (supabase as any)
-        .from('users')
-        .update({ active: false, updated_at: new Date().toISOString() })
-        .eq('id', userId)
-        .select();
+      // Llamada a la RPC atómica que elimina permanentemente
+      const { data: result, error: rpcError } = await (supabase as any)
+        .rpc('delete_user_atomic_admin', {
+          p_user_profile_id: userId
+        });
 
-      if (error) {
-        console.error('Disable user error:', error);
-        throw error;
+      if (rpcError) {
+        throw new Error(rpcError.message || 'Error al eliminar usuario');
       }
+
+      // Verificar respuesta de la RPC
+      if (result && typeof result === 'object' && 'error' in result && result.error) {
+        throw new Error(result.error || 'Error al eliminar usuario');
+      }
+
+      if (result && typeof result === 'object' && 'success' in result && !result.success) {
+        throw new Error(result.message || result.error || 'Error al eliminar usuario');
+      }
+
+      console.log('User deleted successfully via RPC:', result);
 
       toast({ 
-        title: "Usuario deshabilitado", 
-        description: `El usuario ${userName} ha sido deshabilitado exitosamente. Ya no aparecerá en la lista y no podrá acceder al sistema, pero sus datos históricos se conservarán.`
+        title: "✅ Usuario eliminado permanentemente", 
+        description: `El usuario ${userName} y todos sus datos han sido eliminados del sistema.`,
+        variant: "success",
       });
       
       // Refresh users list
       await fetchUsers();
     } catch (e: any) {
-      console.error('Disable user error:', e);
+      console.error('Delete user error:', e);
       toast({ 
-        title: "No se pudo deshabilitar usuario", 
+        title: "No se pudo eliminar usuario", 
         description: e?.message ?? String(e), 
         variant: "destructive" 
       });
@@ -736,7 +799,7 @@ export default function Users() {
                     <Label>Contraseña</Label>
                     <Input 
                       type="password" 
-                      placeholder="Contraseña del usuario" 
+                      placeholder="Mínimo 6 caracteres" 
                       value={createPassword} 
                       onChange={(e) => setCreatePassword(e.target.value)} 
                     />
@@ -755,26 +818,64 @@ export default function Users() {
                   </div>
                   {createRole !== 'admin' && (
                     <div className="space-y-2">
-                      <Label>Tienda asignada (opcional)</Label>
+                      <Label htmlFor="create-store-select">
+                        Tienda asignada 
+                        {createRole === 'manager' && <span className="text-red-500 ml-1 font-bold">*</span>}
+                        {createRole === 'cashier' && <span className="text-muted-foreground ml-1">(opcional)</span>}
+                      </Label>
                       <select
-                        className="w-full bg-background border rounded-md px-3 py-2"
+                        id="create-store-select"
+                        className={`w-full bg-background border rounded-md px-3 py-2 transition-colors ${
+                          createRole === 'manager' && !createStoreId 
+                            ? 'border-red-500 focus:border-red-500 focus:ring-red-500' 
+                            : 'border-border focus:border-primary'
+                        }`}
                         value={createStoreId}
                         onChange={(e) => setCreateStoreId(e.target.value)}
+                        required={createRole === 'manager'}
+                        aria-required={createRole === 'manager'}
+                        aria-invalid={createRole === 'manager' && !createStoreId}
                       >
-                        <option value="">Sin asignar - Asignar después</option>
+                        <option value="">
+                          {createRole === 'manager' ? 'Seleccione una tienda (obligatorio)' : 'Sin asignar - Asignar después'}
+                        </option>
                         {stores.map((s) => (
                           <option key={s.id} value={s.id}>{s.name}</option>
                         ))}
                       </select>
-                      <p className="text-xs text-muted-foreground">
-                        Puede asignarse ahora o después desde el dashboard. El cajero solo podrá operar cuando tenga una tienda asignada.
-                      </p>
+                      {createRole === 'manager' && !createStoreId && (
+                        <p className="text-xs text-red-500 font-medium">
+                          ⚠️ El Gerente DEBE tener una tienda asignada. Tendrá permisos de Admin pero solo para su sucursal.
+                        </p>
+                      )}
+                      {createRole === 'cashier' && (
+                        <p className="text-xs text-muted-foreground">
+                          Puede asignarse ahora o después desde el dashboard. El cajero solo podrá operar cuando tenga una tienda asignada.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button>
-                  <Button disabled={loading} onClick={createUser}>Crear Usuario</Button>
+                  <Button 
+                    disabled={
+                      loading || 
+                      (createRole === 'manager' && !createStoreId) ||
+                      !createName.trim() ||
+                      !createEmail.trim() ||
+                      !createPassword.trim() ||
+                      createPassword.length < 6
+                    } 
+                    onClick={createUser}
+                    className={
+                      createRole === 'manager' && !createStoreId
+                        ? 'opacity-50 cursor-not-allowed'
+                        : ''
+                    }
+                  >
+                    Crear Usuario
+                  </Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -864,10 +965,8 @@ export default function Users() {
                             <div className="flex items-center gap-2">
                               <Switch
                                 isSelected={!!user.active}
-                                onSelectionChange={(isSelected) => {
-                                  if (isSelected !== !!user.active) {
-                                    toggleUserStatus(user.id, user.name || 'Usuario', !!user.active, user.role);
-                                  }
+                                onChange={(isSelected) => {
+                                  toggleUserStatus(user.id, user.name || 'Usuario', !!user.active, user.role);
                                 }}
                                 isDisabled={loading || (user.role === 'admin' && allUsers.filter(u => u.role === 'admin' && u.active).length <= 1 && user.active)}
                                 className={`
@@ -896,6 +995,16 @@ export default function Users() {
                             >
                               <Edit className="w-4 h-4 mr-2" />
                               Modificar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              className="bg-red-600 hover:bg-red-700"
+                              onClick={() => deleteUser(user.id, user.name || 'Usuario')}
+                              disabled={loading || isDisabled}
+                              title="Eliminar usuario"
+                            >
+                              <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>
                         </td>
@@ -987,10 +1096,8 @@ export default function Users() {
                             <div className="flex items-center gap-2">
                               <Switch
                                 isSelected={!!user.active}
-                                onSelectionChange={(isSelected) => {
-                                  if (isSelected !== !!user.active) {
-                                    toggleUserStatus(user.id, user.name || 'Usuario', !!user.active, user.role);
-                                  }
+                                onChange={(isSelected) => {
+                                  toggleUserStatus(user.id, user.name || 'Usuario', !!user.active, user.role);
                                 }}
                                 isDisabled={loading || (user.role === 'admin' && allUsers.filter(u => u.role === 'admin' && u.active).length <= 1 && user.active)}
                                 className={`
@@ -1019,6 +1126,16 @@ export default function Users() {
                             >
                               <Edit className="w-4 h-4 mr-2" />
                               Modificar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              className="bg-red-600 hover:bg-red-700"
+                              onClick={() => deleteUser(user.id, user.name || 'Usuario')}
+                              disabled={loading || isDisabled}
+                              title="Eliminar usuario"
+                            >
+                              <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>
                         </td>
@@ -1089,10 +1206,8 @@ export default function Users() {
                             <div className="flex items-center gap-2">
                               <Switch
                                 isSelected={!!user.active}
-                                onSelectionChange={(isSelected) => {
-                                  if (isSelected !== !!user.active) {
-                                    toggleUserStatus(user.id, user.name || 'Usuario', !!user.active, user.role);
-                                  }
+                                onChange={(isSelected) => {
+                                  toggleUserStatus(user.id, user.name || 'Usuario', !!user.active, user.role);
                                 }}
                                 isDisabled={loading || (user.role === 'admin' && allUsers.filter(u => u.role === 'admin' && u.active).length <= 1 && user.active)}
                                 className={`
@@ -1121,6 +1236,16 @@ export default function Users() {
                             >
                               <Edit className="w-4 h-4 mr-2" />
                               Modificar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              className="bg-red-600 hover:bg-red-700"
+                              onClick={() => deleteUser(user.id, user.name || 'Usuario')}
+                              disabled={loading || isDisabled}
+                              title="Eliminar usuario"
+                            >
+                              <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>
                         </td>
@@ -1202,10 +1327,8 @@ export default function Users() {
                           <div className="flex items-center gap-3">
                             <Switch
                               isSelected={!!user.active}
-                              onSelectionChange={(isSelected) => {
-                                if (isSelected !== !!user.active) {
-                                  toggleUserStatus(user.id, user.name || 'Usuario', !!user.active, user.role);
-                                }
+                              onChange={(isSelected) => {
+                                toggleUserStatus(user.id, user.name || 'Usuario', !!user.active, user.role);
                               }}
                               isDisabled={loading || (isAdmin && isLastAdminActive)}
                               className={`
@@ -1223,17 +1346,32 @@ export default function Users() {
                         </td>
                         <td className="p-4 opacity-90">
                           <div className="flex items-center gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="border-gray-400 text-gray-700 hover:bg-gray-100"
-                              onClick={() => openEditModal(user)}
-                              disabled={loading}
-                              title={`Modificar usuario (${roleLabel})`}
-                            >
-                              <Edit className="w-4 h-4 mr-2" />
-                              Modificar
-                            </Button>
+                            {/* 🛡️ Conditional Rendering: Solo admins pueden editar/eliminar usuarios */}
+                            {(userProfile?.role === 'master_admin' || userProfile?.role === 'admin') && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-gray-400 text-gray-700 hover:bg-gray-100"
+                                  onClick={() => openEditModal(user)}
+                                  disabled={loading}
+                                  title={`Modificar usuario (${roleLabel})`}
+                                >
+                                  <Edit className="w-4 h-4 mr-2" />
+                                  Modificar
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  className="bg-red-600 hover:bg-red-700"
+                                  onClick={() => deleteUser(user.id, user.name || 'Usuario')}
+                                  disabled={loading}
+                                  title="Eliminar usuario permanentemente"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>

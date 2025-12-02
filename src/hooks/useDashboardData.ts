@@ -152,20 +152,22 @@ const getDateRanges = () => {
 };
 
 // Helper: obtener ventas de un período específico
+// 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
 const getSalesForPeriod = async (
-  companyId: string,
+  companyId: string, // Mantenido para compatibilidad, pero no se usa en la query
   startDate: Date,
   endDate: Date,
-  storeId?: string
+  storeId?: string // UI filter: Admin puede querer ver una tienda específica
 ) => {
   try {
     let query = supabase
       .from('sales')
       .select('id, total_usd, created_at')
-      .eq('company_id', companyId)
+      // ✅ REMOVED: .eq('company_id', companyId) - RLS handles this automatically
       .gte('created_at', startDate.toISOString())
       .lte('created_at', endDate.toISOString());
 
+    // ✅ KEEP: storeId filter is for UI filtering (admin selecting specific store), not security
     if (storeId) {
       query = query.eq('store_id', storeId);
     }
@@ -214,10 +216,18 @@ export function useDashboardData() {
     const fetchData = async () => {
       // Protección: si no hay usuario o compañía, devolver datos vacíos
       if (!userProfile || !company) {
+        console.log('useDashboardData: No userProfile or company, returning empty data');
         setData(getEmptyData());
         setLoading(false);
         return;
       }
+
+      // Timeout de seguridad (30 segundos máximo)
+      const timeoutId = setTimeout(() => {
+        console.warn('useDashboardData: Timeout alcanzado, devolviendo datos vacíos');
+        setData(getEmptyData());
+        setLoading(false);
+      }, 30000);
 
       try {
         setLoading(true);
@@ -237,10 +247,11 @@ export function useDashboardData() {
         };
 
         try {
+          // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
           const { data: viewData, error: viewError } = await supabase
             .from('dashboard_stats_view')
             .select('total_products, total_stock, total_value, low_stock_count')
-            .eq('company_id', companyId)
+            // ✅ REMOVED: .eq('company_id', companyId) - RLS handles this automatically
             .single();
 
           if (!viewError && viewData) {
@@ -257,31 +268,22 @@ export function useDashboardData() {
 
         // ============================================
         // 2. OBTENER TIENDAS
+        // 🛡️ RLS: No necesitamos filtrar por company_id o role - RLS lo hace automáticamente
         // ============================================
         let stores: Array<{ id: string; name: string }> = [];
 
         try {
-          if (userProfile.role === 'cashier' && userProfile.assigned_store_id) {
-            const { data: storeData, error: storeError } = await supabase
+          // ✅ SIMPLIFIED: RLS automatically filters stores based on user's permissions
+          // Managers/Cashiers only see their assigned store, Admins see all stores in their company
+          const { data: storesData, error: storesError } = await supabase
             .from('stores')
             .select('id, name')
-            .eq('id', userProfile.assigned_store_id)
-            .eq('active', true)
-            .single();
-          
-            if (!storeError && storeData) {
-              stores = [storeData];
-            }
-        } else {
-            const { data: storesData, error: storesError } = await supabase
-            .from('stores')
-            .select('id, name')
-              .eq('company_id', companyId)
+            // ✅ REMOVED: .eq('company_id', companyId) - RLS handles this automatically
+            // ✅ REMOVED: Role-based filtering - RLS handles this automatically
             .eq('active', true);
           
-            if (!storesError && storesData) {
-              stores = storesData;
-            }
+          if (!storesError && storesData) {
+            stores = storesData;
           }
         } catch (err) {
           console.warn('Error fetching stores:', err);
@@ -295,211 +297,201 @@ export function useDashboardData() {
         }
 
         // ============================================
-        // 3. OBTENER VENTAS POR PERÍODO (Simple)
+        // 3. OBTENER VENTAS POR PERÍODO (Paralelizado con Promise.all)
+        // 🛡️ RLS: No necesitamos filtrar por role/store - RLS lo hace automáticamente
         // ============================================
-        const todaySales = await getSalesForPeriod(
-          companyId,
-          dates.today,
-          dates.todayEnd,
-          userProfile.role === 'cashier' || userProfile.role === 'manager'
-            ? userProfile.assigned_store_id || undefined
-            : undefined
-        );
+        // ✅ REMOVED: Role-based store filtering - RLS handles this automatically
+        // Managers/Cashiers only see sales from their assigned store, Admins see all sales in their company
 
-        const yesterdaySales = await getSalesForPeriod(
-          companyId,
-          dates.yesterday,
-          dates.yesterdayEnd,
-          userProfile.role === 'cashier' || userProfile.role === 'manager'
-            ? userProfile.assigned_store_id || undefined
-            : undefined
-        );
-
-        const thisMonthSales = await getSalesForPeriod(
-          companyId,
-          dates.startOfMonth,
-          dates.todayEnd,
-          userProfile.role === 'cashier' || userProfile.role === 'manager'
-            ? userProfile.assigned_store_id || undefined
-            : undefined
-        );
-
-        const lastMonthSales = await getSalesForPeriod(
-          companyId,
-          dates.startOfLastMonth,
-          dates.endOfLastMonth,
-          userProfile.role === 'cashier' || userProfile.role === 'manager'
-            ? userProfile.assigned_store_id || undefined
-            : undefined
-        );
+        // ✅ OPTIMIZACIÓN: Ejecutar todas las consultas de períodos en paralelo
+        const [todaySales, yesterdaySales, thisMonthSales, lastMonthSales] = await Promise.all([
+          getSalesForPeriod(companyId, dates.today, dates.todayEnd), // No store filter - RLS handles it
+          getSalesForPeriod(companyId, dates.yesterday, dates.yesterdayEnd),
+          getSalesForPeriod(companyId, dates.startOfMonth, dates.todayEnd),
+          getSalesForPeriod(companyId, dates.startOfLastMonth, dates.endOfLastMonth),
+        ]);
 
         // ============================================
-        // 4. OBTENER VENTAS RECIENTES (Simple)
+        // 4-7. OBTENER DATOS ADICIONALES (Paralelizado con Promise.all)
+        // 🛡️ RLS: No necesitamos filtrar por company_id o role - RLS lo hace automáticamente
         // ============================================
-        let recentSales: DashboardData['recentSales'] = [];
+        const storeIds = stores.map(s => s.id);
+        // ✅ REMOVED: Role-based store filtering - RLS handles this automatically
 
-        try {
-          let recentQuery = supabase
-            .from('sales')
-            .select('id, total_usd, total_bs, created_at, store_id, stores(name)')
-            .eq('company_id', companyId)
-            .order('created_at', { ascending: false })
-            .limit(10);
-          
-          if (userProfile.role === 'cashier' && userProfile.assigned_store_id) {
-            recentQuery = recentQuery.eq('store_id', userProfile.assigned_store_id);
-          } else if (userProfile.role === 'manager' && userProfile.assigned_store_id) {
-            recentQuery = recentQuery.eq('store_id', userProfile.assigned_store_id);
-          }
+        // ✅ OPTIMIZACIÓN: Ejecutar todas las consultas independientes en paralelo
+        const [
+          recentSalesResult,
+          topProductsResult,
+          criticalStockResult,
+          dailySalesResult
+        ] = await Promise.all([
+          // 4. Ventas recientes
+          (async () => {
+            try {
+              // 🛡️ RLS: No necesitamos filtrar por company_id o store_id - RLS lo hace automáticamente
+              const recentQuery = supabase
+                .from('sales')
+                .select('id, total_usd, total_bs, created_at, store_id, stores(name)')
+                // ✅ REMOVED: .eq('company_id', companyId) - RLS handles this automatically
+                // ✅ REMOVED: Role-based store filtering - RLS handles this automatically
+                .order('created_at', { ascending: false })
+                .limit(10);
 
-          const { data: recentData, error: recentError } = await recentQuery;
+              const { data: recentData, error: recentError } = await recentQuery;
+              if (recentError) throw recentError;
 
-          if (!recentError && recentData) {
-            recentSales = recentData.map((sale: any) => ({
-              id: sale.id,
-              customerName: 'Cliente General',
-              total: safeNum(sale.total_bs),
-              totalUSD: safeNum(sale.total_usd),
-              createdAt: sale.created_at,
-              storeName: sale.stores?.name || 'N/A',
-              itemsCount: 0,
-            }));
-          }
-        } catch (err) {
-          console.warn('Error fetching recent sales:', err);
-        }
-
-        // ============================================
-        // 5. OBTENER PRODUCTOS MÁS VENDIDOS (Simple)
-        // ============================================
-        let topProducts: DashboardData['topProducts'] = [];
-
-        try {
-          const { data: topData, error: topError } = await supabase
-          .from('sale_items')
-          .select(`
-            qty,
-              subtotal_usd,
-            products(id, name, sku),
-              sales!inner(store_id, stores(name), company_id)
-            `)
-            .eq('sales.company_id', companyId)
-            .gte('sales.created_at', dates.startOfMonth.toISOString())
-            .limit(50);
-
-          if (!topError && topData) {
-            const productMap = new Map<string, any>();
-
-            (topData as any[]).forEach((item: any) => {
-              const productId = item.products?.id;
-              if (!productId) return;
-
-            if (!productMap.has(productId)) {
-              productMap.set(productId, {
-                id: productId,
-                  name: item.products?.name || 'Producto',
-                quantity: 0,
-                revenue: 0,
-                revenueUSD: 0,
-                storeName: item.sales?.stores?.name || 'N/A',
-              });
+              return recentData?.map((sale: any) => ({
+                id: sale.id,
+                customerName: 'Cliente General',
+                total: safeNum(sale.total_bs),
+                totalUSD: safeNum(sale.total_usd),
+                createdAt: sale.created_at,
+                storeName: sale.stores?.name || 'N/A',
+                itemsCount: 0,
+              })) || [];
+            } catch (err) {
+              console.warn('Error fetching recent sales:', err);
+              return [];
             }
+          })(),
+          // 5. Productos más vendidos
+          (async () => {
+            try {
+              // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
+              const { data: topData, error: topError } = await supabase
+                .from('sale_items')
+                .select(`
+                  qty,
+                  subtotal_usd,
+                  products(id, name, sku),
+                  sales!inner(store_id, stores(name), company_id)
+                `)
+                // ✅ REMOVED: .eq('sales.company_id', companyId) - RLS handles this automatically
+                .gte('sales.created_at', dates.startOfMonth.toISOString())
+                .limit(50);
 
-              const product = productMap.get(productId)!;
-              product.quantity += safeNum(item.qty);
-              product.revenueUSD += safeNum(item.subtotal_usd);
-              product.revenue = product.revenueUSD;
-            });
+              if (topError) throw topError;
+              if (!topData) return [];
 
-            topProducts = Array.from(productMap.values())
-          .sort((a, b) => b.quantity - a.quantity)
-          .slice(0, 10);
-          }
-        } catch (err) {
-          console.warn('Error fetching top products:', err);
-        }
+              const productMap = new Map<string, any>();
+              (topData as any[]).forEach((item: any) => {
+                const productId = item.products?.id;
+                if (!productId) return;
+
+                if (!productMap.has(productId)) {
+                  productMap.set(productId, {
+                    id: productId,
+                    name: item.products?.name || 'Producto',
+                    quantity: 0,
+                    revenue: 0,
+                    revenueUSD: 0,
+                    storeName: item.sales?.stores?.name || 'N/A',
+                  });
+                }
+
+                const product = productMap.get(productId)!;
+                product.quantity += safeNum(item.qty);
+                product.revenueUSD += safeNum(item.subtotal_usd);
+                product.revenue = product.revenueUSD;
+              });
+
+              return Array.from(productMap.values())
+                .sort((a, b) => b.quantity - a.quantity)
+                .slice(0, 10);
+            } catch (err) {
+              console.warn('Error fetching top products:', err);
+              return [];
+            }
+          })(),
+          // 6. Stock crítico
+          (async () => {
+            try {
+              // ⚠️ FILTRO CRÍTICO: JOIN con products y filtrar solo productos activos
+              // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
+              const { data: stockData, error: stockError } = await supabase
+                .from('inventories')
+                .select('qty, min_qty, products!inner(id, name, sku, active), stores(id, name)')
+                .in('store_id', storeIds)
+                .eq('products.active', true);  // ⚠️ Solo inventario de productos activos
+
+              if (stockError) throw stockError;
+              if (!stockData) return [];
+
+              return (stockData as any[])
+                .filter((item: any) => {
+                  const qty = safeNum(item.qty);
+                  const minQty = safeNum(item.min_qty);
+                  return item.products && item.stores && qty <= minQty;
+                })
+                .map((item: any) => ({
+                  id: item.products?.id || '',
+                  name: item.products?.name || '',
+                  sku: item.products?.sku || '',
+                  currentStock: safeNum(item.qty),
+                  minStock: safeNum(item.min_qty),
+                  storeName: item.stores?.name || '',
+                }))
+                .slice(0, 15);
+            } catch (err) {
+              console.warn('Error fetching critical stock:', err);
+              return [];
+            }
+          })(),
+          // 7. Ventas por día
+          (async () => {
+            try {
+              // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
+              const { data: dailyData, error: dailyError } = await supabase
+                .from('sales')
+                .select('total_usd, total_bs, created_at')
+                // ✅ REMOVED: .eq('company_id', companyId) - RLS handles this automatically
+                .gte('created_at', dates.thirtyDaysAgo.toISOString())
+                .order('created_at', { ascending: false });
+
+              if (dailyError) throw dailyError;
+              if (!dailyData) return [];
+
+              const dailyMap = new Map<string, { sales: number; salesUSD: number; orders: number }>();
+              (dailyData as any[]).forEach((sale: any) => {
+                const date = new Date(sale.created_at).toISOString().split('T')[0];
+                if (!dailyMap.has(date)) {
+                  dailyMap.set(date, { sales: 0, salesUSD: 0, orders: 0 });
+                }
+                const dayData = dailyMap.get(date)!;
+                dayData.sales += safeNum(sale.total_bs);
+                dayData.salesUSD += safeNum(sale.total_usd);
+                dayData.orders += 1;
+              });
+
+              return Array.from(dailyMap.entries())
+                .map(([date, data]) => ({ date, ...data }))
+                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                .slice(0, 30);
+            } catch (err) {
+              console.warn('Error fetching daily sales:', err);
+              return [];
+            }
+          })(),
+        ]);
+
+        const recentSales: DashboardData['recentSales'] = recentSalesResult;
+        const topProducts: DashboardData['topProducts'] = topProductsResult;
+        const criticalStock: DashboardData['criticalStock'] = criticalStockResult;
+        const dailySales: DashboardData['dailySales'] = dailySalesResult;
 
         // ============================================
-        // 6. OBTENER STOCK CRÍTICO (Simple)
+        // 8. OBTENER MÉTRICAS POR TIENDA (Paralelizado con Promise.all)
         // ============================================
-        let criticalStock: DashboardData['criticalStock'] = [];
-
-        try {
-          const storeIds = stores.map(s => s.id);
-          const { data: stockData, error: stockError } = await supabase
-            .from('inventories')
-            .select('qty, min_qty, products(id, name, sku), stores(id, name)')
-            .in('store_id', storeIds);
-
-          if (!stockError && stockData) {
-            criticalStock = (stockData as any[])
-              .filter((item: any) => {
-                const qty = safeNum(item.qty);
-                const minQty = safeNum(item.min_qty);
-                return item.products && item.stores && qty <= minQty;
-              })
-              .map((item: any) => ({
-            id: item.products?.id || '',
-            name: item.products?.name || '',
-            sku: item.products?.sku || '',
-                currentStock: safeNum(item.qty),
-                minStock: safeNum(item.min_qty),
-            storeName: item.stores?.name || '',
-          }))
-          .slice(0, 15);
-          }
-        } catch (err) {
-          console.warn('Error fetching critical stock:', err);
-        }
-
-        // ============================================
-        // 7. OBTENER VENTAS POR DÍA (Simple)
-        // ============================================
-        let dailySales: DashboardData['dailySales'] = [];
-
-        try {
-          const { data: dailyData, error: dailyError } = await supabase
-            .from('sales')
-            .select('total_usd, total_bs, created_at')
-            .eq('company_id', companyId)
-            .gte('created_at', dates.thirtyDaysAgo.toISOString())
-            .order('created_at', { ascending: false });
-
-          if (!dailyError && dailyData) {
-            const dailyMap = new Map<string, { sales: number; salesUSD: number; orders: number }>();
-
-            (dailyData as any[]).forEach((sale: any) => {
-          const date = new Date(sale.created_at).toISOString().split('T')[0];
-              if (!dailyMap.has(date)) {
-                dailyMap.set(date, { sales: 0, salesUSD: 0, orders: 0 });
-              }
-              const dayData = dailyMap.get(date)!;
-              dayData.sales += safeNum(sale.total_bs);
-              dayData.salesUSD += safeNum(sale.total_usd);
-          dayData.orders += 1;
-        });
-
-            dailySales = Array.from(dailyMap.entries())
-              .map(([date, data]) => ({ date, ...data }))
-          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-          .slice(0, 30);
-          }
-        } catch (err) {
-          console.warn('Error fetching daily sales:', err);
-        }
-
-        // ============================================
-        // 8. OBTENER MÉTRICAS POR TIENDA (Simple)
-        // ============================================
-        const storeMetrics: DashboardData['storeMetrics'] = [];
-
-        for (const store of stores) {
+        // ✅ OPTIMIZACIÓN: Ejecutar todas las consultas de tiendas en paralelo
+        const storeMetricsPromises = stores.map(async (store) => {
           try {
-            const storeToday = await getSalesForPeriod(companyId, dates.today, dates.todayEnd, store.id);
-            const storeYesterday = await getSalesForPeriod(companyId, dates.yesterday, dates.yesterdayEnd, store.id);
-            const storeThisMonth = await getSalesForPeriod(companyId, dates.startOfMonth, dates.todayEnd, store.id);
+            const [storeToday, storeYesterday, storeThisMonth] = await Promise.all([
+              getSalesForPeriod(companyId, dates.today, dates.todayEnd, store.id),
+              getSalesForPeriod(companyId, dates.yesterday, dates.yesterdayEnd, store.id),
+              getSalesForPeriod(companyId, dates.startOfMonth, dates.todayEnd, store.id),
+            ]);
 
-            storeMetrics.push({
+            return {
               storeId: store.id,
               storeName: store.name,
               sales: {
@@ -517,19 +509,21 @@ export function useDashboardData() {
                 yesterday: storeYesterday.average,
                 thisMonth: storeThisMonth.average,
               },
-            });
+            };
           } catch (err) {
             console.warn(`Error fetching metrics for store ${store.id}:`, err);
-            // Agregar métricas vacías
-            storeMetrics.push({
+            // Retornar métricas vacías en caso de error
+            return {
               storeId: store.id,
               storeName: store.name,
               sales: { today: 0, yesterday: 0, thisMonth: 0 },
               orders: { today: 0, yesterday: 0, thisMonth: 0 },
               averageOrder: { today: 0, yesterday: 0, thisMonth: 0 },
-            });
+            };
           }
-        }
+        });
+
+        const storeMetrics: DashboardData['storeMetrics'] = await Promise.all(storeMetricsPromises);
 
         // ============================================
         // 9. RESUMEN DE TIENDAS
@@ -558,6 +552,7 @@ export function useDashboardData() {
         let salesByCategory: DashboardData['salesByCategory'] = [];
 
         try {
+          // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
           const { data: catData, error: catError } = await supabase
             .from('sale_items')
             .select(`
@@ -566,7 +561,7 @@ export function useDashboardData() {
               products(id, category),
               sales!inner(company_id, created_at)
             `)
-            .eq('sales.company_id', companyId)
+            // ✅ REMOVED: .eq('sales.company_id', companyId) - RLS handles this automatically
             .gte('sales.created_at', dates.startOfMonth.toISOString())
             .limit(50);
 
@@ -650,17 +645,24 @@ export function useDashboardData() {
         };
 
         setData(dashboardData);
+        clearTimeout(timeoutId);
       } catch (err) {
         console.error('Error crítico en useDashboardData:', err);
         setError(err instanceof Error ? err.message : 'Error fetching data');
         // NUNCA dejar la app en blanco - devolver datos vacíos
         setData(getEmptyData());
+        clearTimeout(timeoutId);
       } finally {
         setLoading(false);
       }
     };
 
     fetchData();
+    
+    // Cleanup
+    return () => {
+      // El timeout se limpiará automáticamente si fetchData completa
+    };
   }, [userProfile, company]);
 
   return { data, loading, error };

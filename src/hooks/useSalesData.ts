@@ -113,12 +113,15 @@ export function useSalesData(): UseSalesDataReturn {
       console.log('User profile company ID:', userProfile.company_id);
 
       // Build query with filters
+      // 🛡️ RLS: No necesitamos filtrar por company_id o role - RLS lo hace automáticamente
       let query = (supabase as any)
         .from('sales')
         .select(`
           id,
           invoice_number,
           customer_id,
+          customer_name,
+          customer_id_number,
           store_id,
           cashier_id,
           subtotal_usd,
@@ -148,13 +151,9 @@ export function useSalesData(): UseSalesDataReturn {
               category
             )
           )
-        `)
-        .eq('company_id', userProfile.company_id);
-
-      // If user is manager, only show sales from their assigned store
-      if (userProfile?.role === 'manager' && userProfile?.assigned_store_id) {
-        query = query.eq('store_id', userProfile.assigned_store_id);
-      }
+        `);
+        // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
+        // ✅ REMOVED: Role-based store filtering - RLS handles this automatically
 
       // Filtro por categoría: DEBE APLICARSE PRIMERO porque obtiene los sale_ids
       // y luego se aplican otros filtros sobre esos IDs
@@ -164,10 +163,11 @@ export function useSalesData(): UseSalesDataReturn {
           console.log('🔍 Aplicando filtro de categoría:', filters.category);
           
           // 1. Obtener productos de la categoría especificada
+          // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
           const { data: productsData, error: productsError } = await (supabase as any)
             .from('products')
             .select('id')
-            .eq('company_id', userProfile.company_id)
+            // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
             .eq('category', filters.category);
 
           if (productsError) {
@@ -184,11 +184,11 @@ export function useSalesData(): UseSalesDataReturn {
             
             // 2. Obtener sale_ids que tienen productos de esta categoría
             // IMPORTANTE: Incluir filtro de tienda si existe, usando join con sales
-            // sale_items NO tiene company_id, se filtra a través de sales
+            // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
             let saleItemsQuery = (supabase as any)
               .from('sale_items')
               .select('sale_id, sales!inner(id, store_id, company_id, created_at)')
-              .eq('sales.company_id', userProfile.company_id)
+              // ✅ REMOVED: .eq('sales.company_id', userProfile.company_id) - RLS handles this automatically
               .in('product_id', categoryProductIds);
 
             // Aplicar filtro de tienda si existe
@@ -396,8 +396,9 @@ export function useSalesData(): UseSalesDataReturn {
           id: sale.id,
           invoice_number: sale.invoice_number,
           customer_id: sale.customer_id,
-          customer_name: 'Cargando...', // Placeholder, will be updated below
-          customer_id_number: '', // Placeholder, will be updated below
+          // Usar customer_name denormalizado directamente de sales (guardado por process_sale)
+          customer_name: sale.customer_name || 'Sin Cliente',
+          customer_id_number: sale.customer_id_number || '',
           store_id: sale.store_id,
           store_name: 'Cargando...', // Placeholder, will be updated below
           cashier_id: sale.cashier_id,
@@ -479,10 +480,11 @@ export function useSalesData(): UseSalesDataReturn {
       // 2. Fetch users (cashiers) data
       if (cashierIds.length > 0) {
         console.log('Fetching users with IDs:', cashierIds);
+        // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
         const { data: usersData, error: usersError } = await (supabase as any)
           .from('users')
           .select('id, name, email')
-          .eq('company_id', userProfile.company_id)
+          // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
           .in('id', cashierIds);
 
         if (usersError) {
@@ -501,32 +503,40 @@ export function useSalesData(): UseSalesDataReturn {
         }
       }
 
-      // 3. Fetch customers data
+      // 3. Fetch customers data (solo como fallback si customer_name no está disponible)
+      // NOTA: customer_name y customer_id_number ya vienen denormalizados de sales,
+      // pero hacemos esta consulta como fallback por si acaso hay ventas antiguas sin estos campos
       if (customerIds.length > 0) {
-        console.log('Fetching customers with IDs:', customerIds);
+        console.log('Fetching customers with IDs (fallback):', customerIds);
+        // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
         const { data: customersData, error: customersError } = await (supabase as any)
           .from('customers')
           .select('id, name, id_number')
-          .eq('company_id', userProfile.company_id)
+          // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
           .in('id', customerIds);
 
         if (customersError) {
           console.error('Error fetching customers data:', customersError);
         } else {
-          console.log('Customers data fetched:', customersData);
+          console.log('Customers data fetched (fallback):', customersData);
           
           // Create a map for quick lookup
           const customersMap = new Map(customersData?.map(customer => [customer.id, customer]) || []);
           
-          // Update customer names and ID numbers
+          // Update customer names and ID numbers SOLO si no están disponibles en sales
           transformedSales.forEach(sale => {
-            if (sale.customer_id) {
-              const customer = customersMap.get(sale.customer_id);
-              sale.customer_name = (customer as any)?.name || 'Cliente N/A';
-              sale.customer_id_number = (customer as any)?.id_number || '';
-            } else {
-              sale.customer_name = 'Sin Cliente';
-              sale.customer_id_number = '';
+            // Solo actualizar si customer_name no está disponible o es genérico
+            if (!sale.customer_name || sale.customer_name === 'Sin Cliente' || sale.customer_name === 'Cargando...') {
+              if (sale.customer_id) {
+                const customer = customersMap.get(sale.customer_id);
+                if (customer) {
+                  sale.customer_name = (customer as any)?.name || 'Cliente N/A';
+                  sale.customer_id_number = (customer as any)?.id_number || sale.customer_id_number || '';
+                }
+              } else {
+                sale.customer_name = 'Sin Cliente';
+                sale.customer_id_number = sale.customer_id_number || '';
+              }
             }
           });
         }
@@ -535,10 +545,11 @@ export function useSalesData(): UseSalesDataReturn {
       // 4. Fetch stores data
       if (storeIds.length > 0) {
         console.log('Fetching stores with IDs:', storeIds);
+        // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
         const { data: storesData, error: storesError } = await (supabase as any)
           .from('stores')
           .select('id, name')
-          .eq('company_id', userProfile.company_id)
+          // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
           .in('id', storeIds);
 
         if (storesError) {

@@ -9,12 +9,13 @@ interface PaymentMethodDonutChartProps {
 }
 
 const getMethodColor = (method: string, index: number) => {
+  // Paleta Eco-Tech: Verde principal con variaciones sutiles
   const colors = [
-    '#10b981', // green-500 - principal
-    '#6b7280', // gray-500
-    '#4b5563', // gray-600
-    '#374151', // gray-700
-    '#1f2937', // gray-800
+    'hsl(var(--primary))', // Verde principal Eco-Tech
+    '#34d399', // Emerald 400
+    '#10b981', // Emerald 500
+    '#059669', // Emerald 600
+    '#047857', // Emerald 700
   ];
   
   if (index === 0) return colors[0];
