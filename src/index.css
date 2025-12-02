@@ -166,6 +166,29 @@
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   }
 
+  /* Forzar color blanco en inputs dentro de glass-card */
+  .glass-card input[type="text"],
+  .glass-card input[type="email"],
+  .glass-card input[type="password"] {
+    color: #ffffff !important;
+    background-color: rgba(15, 23, 42, 0.5) !important; /* bg-slate-950/50 oscuro */
+  }
+
+  /* Mantener background oscuro cuando está en focus */
+  .glass-card input[type="text"]:focus,
+  .glass-card input[type="text"]:focus-visible,
+  .glass-card input[type="email"]:focus,
+  .glass-card input[type="email"]:focus-visible,
+  .glass-card input[type="password"]:focus,
+  .glass-card input[type="password"]:focus-visible {
+    background-color: rgba(15, 23, 42, 0.7) !important; /* Más oscuro en focus */
+    color: #ffffff !important;
+  }
+
+  .glass-card input::placeholder {
+    color: rgba(255, 255, 255, 0.5) !important;
+  }
+
   .glass-navbar {
     background-color: var(--glass-navbar);
     -webkit-backdrop-filter: blur(12px);
