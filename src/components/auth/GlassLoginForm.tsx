@@ -73,7 +73,8 @@ export const GlassLoginForm: React.FC<GlassLoginFormProps> = ({ onToggleMode }) 
             onChange={(e) => setEmail(e.target.value)}
             required
             disabled={loading}
-            className="bg-slate-950/50 border-emerald-500/30 text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
+            className="bg-slate-950/50 border-emerald-500/30 !text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
+            style={{ color: '#ffffff' }}
           />
         </div>
         
@@ -87,7 +88,8 @@ export const GlassLoginForm: React.FC<GlassLoginFormProps> = ({ onToggleMode }) 
             onChange={(e) => setPassword(e.target.value)}
             required
             disabled={loading}
-            className="bg-slate-950/50 border-emerald-500/30 text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
+            className="bg-slate-950/50 border-emerald-500/30 !text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
+            style={{ color: '#ffffff' }}
           />
         </div>
         
