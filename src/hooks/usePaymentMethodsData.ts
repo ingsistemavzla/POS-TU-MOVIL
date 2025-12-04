@@ -88,10 +88,12 @@ export function usePaymentMethodsData(selectedPeriod: PeriodType = 'today') {
             amount_bs,
             sales!inner(
               company_id,
-              created_at
+              created_at,
+              status
             )
           `)
           .eq('sales.company_id', userProfile.company_id)
+          .eq('sales.status', 'completed')  // ✅ FIX: Only fetch payments from completed sales
           .gte('sales.created_at', startDate.toISOString())
           .lte('sales.created_at', endDate.toISOString());
         

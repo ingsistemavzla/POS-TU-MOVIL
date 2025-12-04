@@ -500,7 +500,7 @@ export default function Dashboard() {
 
       {/* Tabla de Rendimiento por Sucursal (Legacy Migration) */}
       <div className="mt-8">
-        <DashboardStoreTable />
+        <DashboardStoreTable selectedPeriod={selectedPeriod} />
       </div>
     </div>
   );

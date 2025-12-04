@@ -131,7 +131,7 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
               required
               disabled={loading}
               className="bg-slate-950/50 border-emerald-500/30 !text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
-              style={{ color: '#ffffff' }}
+              style={{ color: '#ffffff !important' }}
             />
           </div>
           
@@ -146,7 +146,7 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
               required
               disabled={loading}
               className="bg-slate-950/50 border-emerald-500/30 !text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
-              style={{ color: '#ffffff' }}
+              style={{ color: '#ffffff !important' }}
             />
           </div>
           
@@ -161,7 +161,7 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
               required
               disabled={loading}
               className="bg-slate-950/50 border-emerald-500/30 !text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
-              style={{ color: '#ffffff' }}
+              style={{ color: '#ffffff !important' }}
             />
           </div>
           
@@ -176,7 +176,7 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
               required
               disabled={loading}
               className="bg-slate-950/50 border-emerald-500/30 !text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
-              style={{ color: '#ffffff' }}
+              style={{ color: '#ffffff !important' }}
             />
           </div>
           

@@ -762,7 +762,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         timeoutId = setTimeout(async () => {
           if (mounted && !isInitialized) {
-            console.warn('Auth initialization timeout - verificando estado de conexión');
+            console.warn('[Auth] Timeout de inicialización alcanzado (5s). Forzando estado.');
             // Obtener la sesión actual para verificar
             const { data: { session: currentSession } } = await supabase.auth.getSession();
             // Si hay sesión pero no hay perfil, puede ser conexión lenta
@@ -794,7 +794,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               isInitialized = true;
             }
           }
-        }, 20000); // 20 segundos máximo (aumentado para dar más tiempo)
+        }, 5000); // ✅ 5 segundos (suficiente para UX moderna)
 
         // 1. Obtener Sesión (Siempre necesario)
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -981,6 +981,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (session?.user) {
         console.log('[Auth] Session found, user ID:', session.user.id);
         
+        // ✨ BLOQUE DE SEGURIDAD: Si ya tenemos perfil cargado y el ID coincide, NO reiniciamos el loading
+        if (userProfile && session?.user?.id === userProfile.auth_user_id) {
+          console.log('[Auth] Cambio de foco detectado, pero la sesión ya está activa. Omitiendo recarga.');
+          return; // ✅ Salir temprano - evitar re-inicialización innecesaria
+        }
+        
         // CRITICAL: loading must be true until profile is loaded
         setLoading(true);
         
@@ -1067,23 +1073,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setLoading(false);
       }
       } else if (event === 'TOKEN_REFRESHED') {
-        if (session?.user && !userProfile) {
-          console.log('[Auth] Token refreshed, fetching profile...');
-          setLoading(true);
-          try {
-            const profileResult = await fetchUserProfile(session.user.id);
-            if (profileResult.success) {
-              const cached = profileCacheRef.current.get(session.user.id);
-              if (cached) {
-                setUserProfile(cached.profile);
-                setCompany(cached.company);
-                console.log('[Auth] Profile refreshed');
+        if (session?.user) {
+          // ✨ BLOQUE DE SEGURIDAD: Si ya tenemos perfil cargado y el ID coincide, NO reiniciamos el loading
+          if (userProfile && session?.user?.id === userProfile.auth_user_id) {
+            console.log('[Auth] Token refreshed, pero perfil ya está cargado. Omitiendo recarga.');
+            return; // ✅ Salir temprano - evitar re-inicialización innecesaria
+          }
+          
+          // Solo hacer fetch si realmente no hay perfil Y no está en cache
+          const hasCachedProfile = profileCacheRef.current.has(session.user.id);
+          if (!userProfile && !hasCachedProfile) {
+            console.log('[Auth] Token refreshed, fetching profile...');
+            setLoading(true);
+            try {
+              const profileResult = await fetchUserProfile(session.user.id);
+              if (profileResult.success) {
+                const cached = profileCacheRef.current.get(session.user.id);
+                if (cached) {
+                  setUserProfile(cached.profile);
+                  setCompany(cached.company);
+                  console.log('[Auth] Profile refreshed');
+                }
               }
+            } catch (error) {
+              console.error('[Auth] Error fetching profile on token refresh:', error);
+            } finally {
+              setLoading(false);
             }
-          } catch (error) {
-            console.error('[Auth] Error fetching profile on token refresh:', error);
-          } finally {
-            setLoading(false);
+          } else if (hasCachedProfile) {
+            // Usar cache si existe
+            const cached = profileCacheRef.current.get(session.user.id);
+            if (cached) {
+              setUserProfile(cached.profile);
+              setCompany(cached.company);
+              console.log('[Auth] Profile restored from cache on token refresh');
+            }
           }
         }
       }

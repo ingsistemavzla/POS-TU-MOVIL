@@ -87,7 +87,7 @@ const AuthPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen w-full grid lg:grid-cols-3 items-center gap-10 p-10 overflow-hidden relative">
+    <div className="min-h-screen w-full grid grid-cols-1 lg:grid-cols-3 items-center gap-6 lg:gap-10 p-4 lg:p-10 overflow-hidden relative">
       {/* CAPA 0: Background Gradient Base */}
       <div className="absolute inset-0 z-0" style={{ background: 'var(--gradient-diagonal)' }} />
       
@@ -215,8 +215,8 @@ const AuthPage: React.FC = () => {
         </div>
       </div>
 
-      {/* CAPA 6+: COLUMN 2: Glass Stage (Center) */}
-      <div className="flex flex-col justify-center items-center px-6 py-20 lg:py-32 relative z-[10]">
+      {/* CAPA 6+: COLUMN 2: Glass Stage (Center) - Visible en todas las pantallas */}
+      <div className="flex flex-col justify-center items-center px-6 py-20 lg:py-32 relative z-[10] col-span-1 lg:col-span-1">
         <div className="w-full max-w-md">
           {isLogin ? (
             <GlassLoginForm onToggleMode={toggleMode} />
@@ -226,20 +226,9 @@ const AuthPage: React.FC = () => {
         </div>
       </div>
 
-      {/* CAPA 6+: COLUMN 3: Phone Mockup (Right) */}
+      {/* CAPA 6+: COLUMN 3: Phone Mockup (Right) - Solo desktop */}
       <div className="hidden lg:flex flex-col justify-center items-center px-12 py-20 relative z-[10]">
         <PhoneMockup3D />
-      </div>
-
-      {/* CAPA 6+: Mobile Fallback - Show only center column on mobile */}
-      <div className="lg:hidden flex flex-col justify-center items-center px-6 py-20 relative z-[10]">
-        <div className="w-full max-w-md">
-          {isLogin ? (
-            <GlassLoginForm onToggleMode={toggleMode} />
-          ) : (
-            <GlassRegisterForm onToggleMode={toggleMode} />
-          )}
-        </div>
       </div>
     </div>
   );

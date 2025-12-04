@@ -140,7 +140,11 @@ const CashierRouteGuard = ({ children }: { children: React.ReactNode }) => {
 const AppRoutes = () => {
   const { user, loading } = useAuth();
 
-  if (loading) {
+  // ✅ ESTRATEGIA OPTIMISTIC UI:
+  // Solo bloqueamos si REALMENTE no sabemos quién es el usuario (carga inicial fría)
+  // Si "loading" es true por una revalidación en segundo plano, dejamos al usuario ver la app
+  if (loading && !user) {
+    // Solo bloqueamos si REALMENTE no sabemos quién es el usuario (carga inicial fría)
     return <LoadingFallback />;
   }
 

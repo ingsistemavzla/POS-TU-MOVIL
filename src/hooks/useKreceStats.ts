@@ -94,6 +94,7 @@ const fetchKreceStatsData = async (companyId: string, selectedPeriod: PeriodType
           .select('id, total_usd, krece_initial_amount_usd, krece_financed_amount_usd, created_at, bcv_rate_used, krece_initial_percentage')
           .eq('company_id', companyId)
           .eq('krece_enabled', true)
+          .eq('status', 'completed')  // ✅ FIX: Only fetch completed sales
           .gte('created_at', startDate.toISOString())
           .lt('created_at', endDate.toISOString())
           .limit(50);

@@ -31,37 +31,85 @@ import {
 } from 'lucide-react';
 import { useDashboardStorePerformance } from '@/hooks/useDashboardStorePerformance';
 import { formatCurrency } from '@/utils/currency';
-import { subDays, startOfMonth, endOfMonth, startOfToday } from 'date-fns';
+import { subDays, startOfMonth, endOfMonth, startOfToday, endOfToday, startOfYesterday, endOfYesterday } from 'date-fns';
 
 type DateRangePreset = '7days' | '30days' | 'thismonth' | 'custom';
+type PeriodType = 'today' | 'yesterday' | 'thisMonth';
 
-export const DashboardStoreTable: React.FC = () => {
+interface DashboardStoreTableProps {
+  selectedPeriod?: PeriodType;
+}
+
+export const DashboardStoreTable: React.FC<DashboardStoreTableProps> = ({ selectedPeriod }) => {
   const [datePreset, setDatePreset] = useState<DateRangePreset>('30days');
-  const [startDate, setStartDate] = useState<Date | undefined>(() => subDays(startOfToday(), 30));
-  const [endDate, setEndDate] = useState<Date | undefined>(startOfToday());
+  
+  // Calculate dates based on selectedPeriod prop or fallback to internal state
+  const { startDate, endDate } = useMemo(() => {
+    if (selectedPeriod) {
+      const today = startOfToday();
+      switch (selectedPeriod) {
+        case 'today':
+          return {
+            startDate: today,
+            endDate: endOfToday()
+          };
+        case 'yesterday':
+          return {
+            startDate: startOfYesterday(),
+            endDate: endOfYesterday()
+          };
+        case 'thisMonth':
+          return {
+            startDate: startOfMonth(today),
+            endDate: endOfToday()
+          };
+        default:
+          return {
+            startDate: subDays(today, 30),
+            endDate: today
+          };
+      }
+    }
+    // Fallback to internal state if no selectedPeriod prop
+    return {
+      startDate: subDays(startOfToday(), 30),
+      endDate: startOfToday()
+    };
+  }, [selectedPeriod]);
+  
+  const [internalStartDate, setInternalStartDate] = useState<Date | undefined>(startDate);
+  const [internalEndDate, setInternalEndDate] = useState<Date | undefined>(endDate);
+  
+  // Use selectedPeriod dates if provided, otherwise use internal state
+  const effectiveStartDate = selectedPeriod ? startDate : internalStartDate;
+  const effectiveEndDate = selectedPeriod ? endDate : internalEndDate;
 
   const { data, loading, error } = useDashboardStorePerformance({
-    startDate,
-    endDate,
+    startDate: effectiveStartDate,
+    endDate: effectiveEndDate,
   });
 
-  // Manejar cambios en el preset de fechas
+  // Manejar cambios en el preset de fechas (solo si no hay selectedPeriod prop)
   const handleDatePreset = (preset: DateRangePreset) => {
+    if (selectedPeriod) {
+      // Si hay selectedPeriod prop, ignorar cambios internos
+      return;
+    }
     setDatePreset(preset);
     const today = startOfToday();
 
     switch (preset) {
       case '7days':
-        setStartDate(subDays(today, 7));
-        setEndDate(today);
+        setInternalStartDate(subDays(today, 7));
+        setInternalEndDate(today);
         break;
       case '30days':
-        setStartDate(subDays(today, 30));
-        setEndDate(today);
+        setInternalStartDate(subDays(today, 30));
+        setInternalEndDate(today);
         break;
       case 'thismonth':
-        setStartDate(startOfMonth(today));
-        setEndDate(endOfMonth(today));
+        setInternalStartDate(startOfMonth(today));
+        setInternalEndDate(endOfMonth(today));
         break;
       case 'custom':
         // Para custom, no cambiamos las fechas automáticamente
@@ -237,6 +285,7 @@ export const DashboardStoreTable: React.FC = () => {
                 size="sm"
                 onClick={() => handleDatePreset('7days')}
                 className={datePreset === '7days' ? 'bg-accent-primary text-white' : ''}
+                disabled={!!selectedPeriod}  // ✅ Disable when synced with Dashboard
               >
                 7 Días
               </Button>
@@ -245,6 +294,7 @@ export const DashboardStoreTable: React.FC = () => {
                 size="sm"
                 onClick={() => handleDatePreset('30days')}
                 className={datePreset === '30days' ? 'bg-accent-primary text-white' : ''}
+                disabled={!!selectedPeriod}  // ✅ Disable when synced with Dashboard
               >
                 30 Días
               </Button>
@@ -253,6 +303,7 @@ export const DashboardStoreTable: React.FC = () => {
                 size="sm"
                 onClick={() => handleDatePreset('thismonth')}
                 className={datePreset === 'thismonth' ? 'bg-accent-primary text-white' : ''}
+                disabled={!!selectedPeriod}  // ✅ Disable when synced with Dashboard
               >
                 Este Mes
               </Button>

@@ -164,6 +164,7 @@ const getSalesForPeriod = async (
       .from('sales')
       .select('id, total_usd, created_at')
       // ✅ REMOVED: .eq('company_id', companyId) - RLS handles this automatically
+      .eq('status', 'completed')  // ✅ FIX: Only fetch completed sales
       .gte('created_at', startDate.toISOString())
       .lte('created_at', endDate.toISOString());
 

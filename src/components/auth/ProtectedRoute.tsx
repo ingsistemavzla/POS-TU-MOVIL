@@ -14,7 +14,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 }) => {
   const { user, userProfile, loading } = useAuth();
 
-  if (loading) {
+  // ✅ OPTIMISTIC UI: Solo mostrar loader si NO tenemos usuario (carga inicial)
+  // Si tenemos usuario pero loading es true, es una revalidación en segundo plano - NO bloquear
+  if (loading && !user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
