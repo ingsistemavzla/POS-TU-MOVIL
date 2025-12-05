@@ -120,3 +120,4 @@ git diff --staged --name-only | findstr /i "SCRIPT_CAMBIO DIAGNOSTICO_USUARIO"
 
 **Todo listo para commit manual** ✅
 
+

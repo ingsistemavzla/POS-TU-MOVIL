@@ -34,3 +34,4 @@ WHERE p.active = true;
 SELECT 
   public.get_user_company_id() AS current_company_id;
 
+

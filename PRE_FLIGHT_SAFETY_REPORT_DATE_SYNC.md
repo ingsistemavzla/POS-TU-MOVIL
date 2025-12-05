@@ -239,3 +239,4 @@ ArticulosPage.tsx ──────────────────┘
 
 **FIN DEL REPORTE**
 
+

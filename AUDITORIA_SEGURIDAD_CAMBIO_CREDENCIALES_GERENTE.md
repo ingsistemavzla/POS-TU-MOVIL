@@ -404,3 +404,4 @@ $$;
 - Verificar que el usuario puede iniciar sesión después del cambio
 - No cambiar el `role` ni el `company_id` durante el proceso
 
+

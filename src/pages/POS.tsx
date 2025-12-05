@@ -80,7 +80,6 @@ interface Product {
 }
 
 import { PRODUCT_CATEGORIES } from '@/constants/categories';
-import { formatInvoiceNumber, getDayKey } from "@/utils/invoiceGenerator";
 
 interface Customer {
   id: string;
@@ -100,52 +99,7 @@ interface PaymentMethod {
   customText?: string;
 }
 
-type InvoiceTrackerState = {
-  lastSeq: number;
-  lastUpdated: string; // Fecha de última actualización para referencia
-};
-
-type ReservedInvoice = {
-  invoiceNumber: string;
-  sequence: number;
-  previousState: InvoiceTrackerState;
-};
-
-const LOCAL_INVOICE_KEY = 'tm_pos_last_invoice_global'; // Clave global, no por tienda
-const LOCAL_INVOICE_MIGRATION_FLAG = 'tm_pos_global_invoice_migrated_v1'; // Marca que ya se limpió el correlativo viejo
 const OFFLINE_SALES_KEY = 'tm_pos_pending_sales';
-const DEFAULT_INVOICE_SEQUENCE_START = 999; // Primera factura será 1000
-
-const parseInvoiceSequence = (invoice?: string | null): number | null => {
-  if (!invoice) return null;
-  // Busca el número al final del formato FAC-DDMMMYYYY-####
-  const match = invoice.match(/-(\d{4,})$/);
-  return match ? parseInt(match[1], 10) : null;
-};
-
-// Ya no se usa storeId - es global
-const readLocalInvoiceState = (): InvoiceTrackerState | null => {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = window.localStorage.getItem(LOCAL_INVOICE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as InvoiceTrackerState;
-    if (typeof parsed.lastSeq !== 'number') return null;
-    return parsed;
-  } catch (error) {
-    console.warn('No se pudo leer el correlativo local de facturas:', error);
-    return null;
-  }
-};
-
-const writeLocalInvoiceState = (state: InvoiceTrackerState) => {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(LOCAL_INVOICE_KEY, JSON.stringify(state));
-  } catch (error) {
-    console.warn('No se pudo guardar el correlativo local de facturas:', error);
-  }
-};
 
 const getDayBoundaries = (date = new Date()) => {
   const start = new Date(date);
@@ -247,12 +201,7 @@ export default function POS() {
   const resolvedStoreId = isRestrictedToStore
     ? (userProfile as any)?.assigned_store_id ?? null
     : selectedStore?.id ?? null;
-  // Estado inicial: secuencia global continua (no se reinicia por día)
-  const invoiceTrackerRef = useRef<InvoiceTrackerState>({
-    lastSeq: DEFAULT_INVOICE_SEQUENCE_START,
-    lastUpdated: new Date().toISOString(),
-  });
-  const lastSyncRef = useRef<string>(''); // Para evitar sincronizaciones innecesarias
+  // Estado para ventas offline pendientes de sincronización
   const pendingOfflineSalesRef = useRef<any[]>([]);
   const syncingOfflineSalesRef = useRef(false);
   const prevStoreIdRef = useRef<string | null>(null); // Para detectar cambios de tienda (solo Admin)
@@ -318,22 +267,8 @@ export default function POS() {
     }
   }, [currentStep, hasSelectedStoreInSession, selectedStore, selectedCustomer, storeLoading, isSaleConfirmedAndCompleted]);
 
-  // Limpieza automática (una sola vez) del correlativo local antiguo al abrir el POS
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    try {
-      const alreadyMigrated = window.localStorage.getItem(LOCAL_INVOICE_MIGRATION_FLAG);
-      if (!alreadyMigrated) {
-        // Eliminar cualquier valor viejo de correlativo local y marcar como migrado
-        window.localStorage.removeItem(LOCAL_INVOICE_KEY);
-        window.localStorage.setItem(LOCAL_INVOICE_MIGRATION_FLAG, 'true');
-        console.log('POS: limpieza única de tm_pos_last_invoice_global aplicada. Se usará solo el correlativo global desde Supabase.');
-      }
-    } catch (error) {
-      console.warn('No se pudo aplicar la limpieza automática del correlativo local:', error);
-    }
-  }, []);
+  // ✅ LÓGICA LEGACY ELIMINADA: Ya no usamos localStorage para números de factura
+  // El backend genera los números de forma atómica usando una SEQUENCE de PostgreSQL
 
   useEffect(() => {
     if (userProfile?.company_id) {
@@ -1014,13 +949,13 @@ export default function POS() {
         .from('customers')
         .select('id, name, id_number, email, phone, address')
         // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
-        .eq('id_number', idNumber.trim())
+        .eq('id_number', idNumber.trim() as any)
         .maybeSingle();
       
       if (error) throw error;
       
-      if (data) {
-        setSelectedCustomer(data);
+      if (data && !('code' in data)) {
+        setSelectedCustomer(data as Customer);
         setCustomerNotFound(false);
         setShowRegistrationForm(false);
       } else {
@@ -1047,28 +982,29 @@ export default function POS() {
       const { data, error } = await supabase
         .from('customers')
         .insert({
-          company_id: userProfile.company_id,
           name: newCustomer.name.trim(),
           id_number: newCustomer.id_number.trim(),
           email: newCustomer.email.trim() || null,
           phone: newCustomer.phone.trim() || null,
           address: newCustomer.address.trim() || null,
-        })
+        } as any)
         .select('id, name, id_number, email, phone, address')
         .single();
       
       if (error) throw error;
       
-      setSelectedCustomer(data);
-      setShowRegistrationForm(false);
-      setCustomerNotFound(false);
-      setNewCustomer({ name: '', id_number: '', phone: '', email: '', address: '' });
-      
-      toast({
-        variant: "success",
-        title: "Cliente registrado",
-        description: `${data.name} ha sido registrado exitosamente`,
-      });
+      if (data && !('code' in data)) {
+        setSelectedCustomer(data as Customer);
+        setShowRegistrationForm(false);
+        setCustomerNotFound(false);
+        setNewCustomer({ name: '', id_number: '', phone: '', email: '', address: '' });
+        
+        toast({
+          variant: "success",
+          title: "Cliente registrado",
+          description: `${(data as Customer).name} ha sido registrado exitosamente`,
+        });
+      }
     } catch (error) {
       console.error('Error creating customer:', error);
       toast({
@@ -1089,149 +1025,14 @@ export default function POS() {
   };
 
 
-  // Sincroniza la secuencia GLOBAL continua (sin reset por día, sin filtro por tienda)
-  const syncInvoiceSequence = useCallback(async (force = false) => {
-    const syncKey = `global_${companyId}`;
-
-    if (!force && lastSyncRef.current === syncKey) {
-      return invoiceTrackerRef.current;
-    }
-
-    let baseSeq = DEFAULT_INVOICE_SEQUENCE_START;
-    
-    // 1. Leer desde localStorage (global, no por tienda)
-    const localState = readLocalInvoiceState();
-    if (localState) {
-      baseSeq = Math.max(baseSeq, localState.lastSeq);
-    }
-
-    try {
-      // 2. Consultar el ÚLTIMO número de factura GLOBAL de la compañía (sin filtrar por día ni tienda)
-      let query = supabase
-        .from('sales')
-        .select('invoice_number')
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (companyId) {
-        query = query.filter('company_id', 'eq', companyId);
-      }
-
-      const { data, error } = await query;
-
-      if (error) {
-        console.warn('No se pudo obtener la última factura global desde Supabase:', error);
-      } else if (Array.isArray(data) && data.length > 0) {
-        const seq = parseInvoiceSequence((data[0] as any).invoice_number);
-        if (seq !== null) {
-          baseSeq = Math.max(baseSeq, seq);
-        }
-      }
-    } catch (error) {
-      console.warn('Fallo al sincronizar correlativo global de facturas:', error);
-    }
-
-    const syncedState: InvoiceTrackerState = { 
-      lastSeq: baseSeq,
-      lastUpdated: new Date().toISOString()
-    };
-    invoiceTrackerRef.current = syncedState;
-    lastSyncRef.current = syncKey;
-    writeLocalInvoiceState(syncedState);
-    return syncedState;
-  }, [companyId]);
-
-  useEffect(() => {
-    if (!companyId) return;
-    // Sincronizar secuencia global al iniciar (no depende de tienda)
-    syncInvoiceSequence(true);
-  }, [companyId, syncInvoiceSequence]);
-
-  // Verifica si una factura existe GLOBALMENTE (no por tienda)
-  const invoiceExists = useCallback(
-    async (invoiceNumber: string) => {
-      try {
-        let query = supabase
-          .from('sales')
-          .select('id')
-          .filter('invoice_number', 'eq', invoiceNumber)
-          .limit(1);
-
-        // Solo filtrar por compañía, NO por tienda (es global)
-        if (companyId) {
-          query = query.filter('company_id', 'eq', companyId);
-        }
-
-        const { data, error } = await query;
-
-        if (error) {
-          console.warn('Error verificando la existencia de factura:', error);
-          return false;
-        }
-
-        return Array.isArray(data) && data.length > 0;
-      } catch (error) {
-        console.warn('Fallo al verificar la existencia de la factura:', error);
-        return false;
-      }
-    },
-    [companyId]
-  );
-
-  const commitInvoiceState = useCallback(
-    (state: InvoiceTrackerState) => {
-      invoiceTrackerRef.current = state;
-      lastSyncRef.current = `global_${companyId}`;
-      writeLocalInvoiceState(state);
-    },
-    [companyId]
-  );
-
-  const revertInvoiceState = useCallback(
-    (state: InvoiceTrackerState) => {
-      invoiceTrackerRef.current = state;
-      lastSyncRef.current = `global_${companyId}`;
-      writeLocalInvoiceState(state);
-    },
-    [companyId]
-  );
-
-  // Reserva el siguiente número de factura GLOBAL (sin reset por día)
-  const reserveInvoiceNumber = useCallback(async (): Promise<ReservedInvoice> => {
-    const now = new Date();
-
-    // Sincronizar con el último número global (sin filtrar por día ni tienda)
-    await syncInvoiceSequence();
-
-    const previousState: InvoiceTrackerState = { ...invoiceTrackerRef.current };
-    let candidateSeq = previousState.lastSeq + 1;
-    let candidateInvoice = formatInvoiceNumber(candidateSeq, now);
-    let attempts = 0;
-
-    // Verificar que no exista (búsqueda global)
-    while (await invoiceExists(candidateInvoice)) {
-      attempts += 1;
-      candidateSeq += 1;
-      candidateInvoice = formatInvoiceNumber(candidateSeq, now);
-
-      if (attempts > 20) {
-        throw new Error('No se pudo generar un número de factura único. Intenta nuevamente.');
-      }
-    }
-
-    // Actualizar estado (sin dateKey - es global y continuo)
-    const nextState: InvoiceTrackerState = { 
-      lastSeq: candidateSeq,
-      lastUpdated: now.toISOString()
-    };
-    invoiceTrackerRef.current = nextState;
-
-    return {
-      invoiceNumber: candidateInvoice,
-      sequence: candidateSeq,
-      previousState,
-    };
-  }, [invoiceExists, syncInvoiceSequence]);
+  // ✅ LÓGICA LEGACY ELIMINADA:
+  // - syncInvoiceSequence() - Buscaba MAX en frontend (race condition)
+  // - invoiceExists() - Verificación no atómica
+  // - reserveInvoiceNumber() - Generaba número en frontend (no atómico)
+  // - commitInvoiceState() / revertInvoiceState() - Gestión de estado local
+  // 
+  // ✅ NUEVA ESTRATEGIA: El backend genera el número de factura atómicamente
+  // usando una SEQUENCE de PostgreSQL. El frontend solo recibe y muestra el número.
 
   const syncPendingSales = useCallback(async () => {
     if (typeof window === 'undefined') return;
@@ -1251,13 +1052,7 @@ export default function POS() {
     for (let i = 0; i < queue.length; i++) {
       const pendingSale = queue[i];
       try {
-        if (pendingSale?.invoice_number && (await invoiceExists(pendingSale.invoice_number))) {
-          queue.splice(i, 1);
-          i--;
-          queueChanged = true;
-          continue;
-        }
-
+        // ✅ Ya no verificamos invoice_number porque el backend lo genera automáticamente
         const { data, error } = await supabase.rpc('process_sale', pendingSale.saleParams);
         if (error) {
           throw error;
@@ -1270,26 +1065,15 @@ export default function POS() {
           typeof data === 'string'
             ? data
             : Array.isArray(data)
-              ? (data[0] as any)?.id
-              : (data as any)?.id;
+              ? (data[0] as any)?.id || (data[0] as any)?.sale_id
+              : (data as any)?.id || (data as any)?.sale_id;
 
         if (!saleId) {
           throw new Error('No se pudo obtener el identificador de la venta sincronizada.');
         }
 
-        if (pendingSale?.invoice_number) {
-          const payload: Database['public']['Tables']['sales']['Update'] = {
-            invoice_number: pendingSale.invoice_number,
-          };
-          const { error: updateError } = await supabase
-            .from('sales')
-            .update(payload as any)
-            .eq('id', saleId);
-
-          if (updateError) {
-            throw updateError;
-          }
-        }
+        // ✅ El invoice_number ya viene generado por el backend en la respuesta del RPC
+        // No necesitamos actualizarlo manualmente
 
         queue.splice(i, 1);
         i--;
@@ -1302,12 +1086,7 @@ export default function POS() {
     persistOfflineSales(queue);
     pendingOfflineSalesRef.current = queue;
     syncingOfflineSalesRef.current = false;
-
-    if (queueChanged && !queue.length) {
-      // Sincronizar secuencia global después de sincronizar ventas offline
-      syncInvoiceSequence(true);
-    }
-  }, [invoiceExists, syncInvoiceSequence]);
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1623,8 +1402,7 @@ export default function POS() {
     // Iniciar procesamiento
     setIsProcessingSale(true);
 
-    let reservedInvoice: ReservedInvoice | null = null;
-    let invoiceCommitted = false;
+    // ✅ LÓGICA LEGACY ELIMINADA: Ya no necesitamos reservar números de factura
 
     try {
       // Validar que hay una tienda disponible
@@ -1698,34 +1476,8 @@ export default function POS() {
         }
       }
 
-      // Reservar número de factura
-      try {
-        reservedInvoice = await reserveInvoiceNumber();
-      } catch (invoiceError) {
-        console.error('No se pudo generar un número de factura correlativo:', invoiceError);
-        toast({
-          title: "Error generando factura",
-          description: invoiceError instanceof Error
-            ? invoiceError.message
-            : 'No se pudo generar un número de factura correlativo. Intenta nuevamente.',
-          variant: "destructive",
-        });
-        setIsProcessingSale(false);
-        return;
-      }
-
-      if (!reservedInvoice) {
-        toast({
-          title: "Error reservando factura",
-          description: "No se pudo reservar un número de factura. Intente nuevamente.",
-          variant: "destructive",
-        });
-        setIsProcessingSale(false);
-        return;
-      }
-
-      let activeReservation: ReservedInvoice | null = reservedInvoice;
-      const invoiceNumber = activeReservation.invoiceNumber;
+      // ✅ LÓGICA LEGACY ELIMINADA: Ya no reservamos números de factura en el frontend
+      // El backend genera el número de forma atómica usando una SEQUENCE de PostgreSQL
 
       // PREPARAR ITEMS DE VENTA
       const saleItems = cart.flatMap(item => {
@@ -1824,34 +1576,22 @@ export default function POS() {
       if (error) {
         console.error('Error al procesar la venta:', error);
 
-        if (activeReservation) {
-          if (isNetworkError(error)) {
-            commitInvoiceState(invoiceTrackerRef.current);
-            invoiceCommitted = true;
-            const updatedQueue = storeOfflineSale({
-              invoice_number: activeReservation.invoiceNumber,
-              sequence: activeReservation.sequence,
-              saleParams,
-              cartSnapshot: cart,
-              customer: selectedCustomer,
-              createdAt: new Date().toISOString(),
-              store_id: storeId,
-              total_usd: totalUSD,
-            });
-            if (updatedQueue) {
-              pendingOfflineSalesRef.current = updatedQueue;
-            }
-            alert(
-              `La venta se almacenó temporalmente por falla de red. Factura reservada ${activeReservation.invoiceNumber}.`
-            );
-          } else {
-            revertInvoiceState(activeReservation.previousState);
-            toast({
-              title: "Error al procesar venta",
-              description: error.message || "Ocurrió un error inesperado. Por favor, intenta nuevamente.",
-              variant: "destructive",
-            });
+        // Manejar errores de red guardando venta offline
+        if (isNetworkError(error)) {
+          const updatedQueue = storeOfflineSale({
+            saleParams,
+            cartSnapshot: cart,
+            customer: selectedCustomer,
+            createdAt: new Date().toISOString(),
+            store_id: storeId,
+            total_usd: totalUSD,
+          });
+          if (updatedQueue) {
+            pendingOfflineSalesRef.current = updatedQueue;
           }
+          alert(
+            `La venta se almacenó temporalmente por falla de red. Se procesará automáticamente cuando se restablezca la conexión.`
+          );
         } else {
           toast({
             title: "Error al procesar venta",
@@ -1864,9 +1604,6 @@ export default function POS() {
       }
 
       if (!data) {
-        if (activeReservation) {
-          revertInvoiceState(activeReservation.previousState);
-        }
         toast({
           title: "Error del servidor",
           description: "No se recibió respuesta del servidor. Por favor, intenta nuevamente.",
@@ -1876,45 +1613,27 @@ export default function POS() {
         return;
       }
 
-      // ====================================================================================
-      // 🚨 AUDITORÍA CRÍTICA: LOGS DE DEBUGGING PARA IDENTIFICAR RESPUESTA DEL RPC
-      // ====================================================================================
-      console.log('🚨 AUDITORÍA CRÍTICA: RESPUESTA DE RPC (data) =>', data);
-      console.log('🚨 AUDITORÍA CRÍTICA: TIPO DE RESPUESTA DE RPC =>', typeof data);
-      console.log('🚨 AUDITORÍA CRÍTICA: ES ARRAY? =>', Array.isArray(data));
-      console.log('🚨 AUDITORÍA CRÍTICA: ES OBJETO? =>', typeof data === 'object' && data !== null);
-      if (typeof data === 'object' && data !== null) {
-        console.log('🚨 AUDITORÍA CRÍTICA: KEYS DEL OBJETO =>', Object.keys(data));
-        console.log('🚨 AUDITORÍA CRÍTICA: VALOR DE data.id =>', (data as any)?.id);
-        console.log('🚨 AUDITORÍA CRÍTICA: JSON STRINGIFY =>', JSON.stringify(data, null, 2));
-      }
-      if (Array.isArray(data)) {
-        console.log('🚨 AUDITORÍA CRÍTICA: LONGITUD DEL ARRAY =>', data.length);
-        console.log('🚨 AUDITORÍA CRÍTICA: PRIMER ELEMENTO =>', data[0]);
-        if (data[0]) {
-          console.log('🚨 AUDITORÍA CRÍTICA: PRIMER ELEMENTO.id =>', (data[0] as any)?.id);
-        }
-      }
-      // ====================================================================================
-
-      // 🚨 CORRECCIÓN CRÍTICA: Priorizar 'sale_id' ya que el RPC retorna ese nombre
+      // ✅ NUEVO: Extraer sale_id e invoice_number de la respuesta del RPC
       const saleId =
         typeof data === 'string'
-          ? data // Caso 1: Si retorna un string directo (ej. el ID)
-          : (data as any)?.sale_id // Caso 2: El nombre real que retorna el RPC
+          ? data
+          : (data as any)?.sale_id
           ? (data as any).sale_id
           : Array.isArray(data) && (data[0] as any)?.sale_id
-          ? (data[0] as any).sale_id // Caso 3: Array, buscando en el primer elemento
-          : (data as any)?.id // Fallback: Si el backend cambia y vuelve a usar 'id'
+          ? (data[0] as any).sale_id
+          : (data as any)?.id
           ? (data as any).id
           : Array.isArray(data) && (data[0] as any)?.id
-          ? (data[0] as any).id // Fallback: Array con 'id'
-          : null; // Si todo falla, asignar null
+          ? (data[0] as any).id
+          : null;
+
+      // ✅ NUEVO: Extraer invoice_number generado por el backend
+      const invoiceNumber =
+        (data as any)?.invoice_number ||
+        (Array.isArray(data) && (data[0] as any)?.invoice_number) ||
+        null;
 
       if (!saleId) {
-        if (activeReservation) {
-          revertInvoiceState(activeReservation.previousState);
-        }
         console.error('No se recibió un identificador válido para la venta:', data);
         toast({
           title: "Error de identificación",
@@ -1950,114 +1669,41 @@ export default function POS() {
       // Establecer estado de venta completada
       setIsSaleConfirmedAndCompleted(true);
       
-      // Mostrar toast de éxito INMEDIATAMENTE
+      // ✅ NUEVO: El invoice_number ya viene en la respuesta del RPC
+      // Si no viene, lo obtenemos de la base de datos como fallback
+      let finalInvoiceNumber = invoiceNumber;
+      
+      // Fallback: Si el RPC no retornó el invoice_number, obtenerlo de la base de datos
+      if (!finalInvoiceNumber) {
+        try {
+          const saleRowResponse = await supabase
+            .from('sales')
+            .select('invoice_number')
+            .eq('id', saleId)
+            .maybeSingle();
+
+          if (!saleRowResponse.error && saleRowResponse.data && !('code' in saleRowResponse.data)) {
+            finalInvoiceNumber = (saleRowResponse.data as { invoice_number: string | null }).invoice_number || null;
+          }
+        } catch (fetchError) {
+          console.warn('No se pudo obtener el número de factura (no crítico):', fetchError);
+        }
+      }
+
+      // Mostrar toast de éxito
       toast({
         variant: "success",
         title: "Venta completada",
-        description: `Venta procesada exitosamente. Asignando número de factura...`,
+        description: finalInvoiceNumber 
+          ? `Venta procesada exitosamente. Factura: ${finalInvoiceNumber}`
+          : `Venta procesada exitosamente.`,
         duration: 3000,
       });
 
       // ====================================================================================
-      // 🔒 BLINDAJE DE OPERACIONES SECUNDARIAS
+      // OPERACIÓN SECUNDARIA: Obtención de Datos de Tienda (Información Fiscal)
       // ====================================================================================
-      // Todas las operaciones asíncronas posteriores están envueltas en try/catch internos
-      // para que NO interrumpan el flujo de éxito ya declarado.
-      // ====================================================================================
-
-      let finalInvoiceNumber = invoiceNumber;
       let storeInfo: any = {};
-
-      // ====================================================================================
-      // OPERACIÓN SECUNDARIA 1: Asignación de Factura Correlativa
-      // ====================================================================================
-      if (activeReservation) {
-        try {
-          const applyInvoiceToSale = async (reservation: ReservedInvoice) => {
-            const payload: Database['public']['Tables']['sales']['Update'] = {
-              invoice_number: reservation.invoiceNumber,
-            };
-            const { error: updateError } = await supabase
-              .from('sales')
-              .update(payload as any)
-              .eq('id', saleId);
-            return updateError;
-          };
-
-          let updateError = await applyInvoiceToSale(activeReservation);
-
-          if (updateError) {
-            console.warn('No se pudo asignar la factura reservada. Intentando nuevamente con otro correlativo.', updateError);
-            revertInvoiceState(activeReservation.previousState);
-
-            try {
-              activeReservation = await reserveInvoiceNumber();
-              if (activeReservation) {
-                updateError = await applyInvoiceToSale(activeReservation);
-                
-                if (updateError) {
-                  console.error('No se pudo asignar un número de factura tras reintento:', updateError);
-                  // NO hacer return aquí - solo mostrar advertencia
-                  toast({
-                    title: "⚠️ Advertencia",
-                    description: "La venta fue procesada exitosamente, pero no se pudo asignar un número de factura correlativo. Contacta al administrador.",
-                    variant: "warning",
-                    duration: 5000,
-                  });
-                } else {
-                  commitInvoiceState(invoiceTrackerRef.current);
-                  invoiceCommitted = true;
-                  reservedInvoice = activeReservation;
-                  finalInvoiceNumber = activeReservation.invoiceNumber;
-                }
-              }
-            } catch (retryError) {
-              console.error('Fallo generando un nuevo correlativo tras el error:', retryError);
-              toast({
-                title: "⚠️ Advertencia",
-                description: "La venta fue procesada exitosamente, pero no se pudo asignar un número de factura correlativo. Contacta al administrador.",
-                variant: "warning",
-                duration: 5000,
-              });
-            }
-          } else {
-            commitInvoiceState(invoiceTrackerRef.current);
-            invoiceCommitted = true;
-            finalInvoiceNumber = activeReservation.invoiceNumber;
-          }
-        } catch (invoiceError) {
-          console.warn('Error en asignación de factura (no crítico):', invoiceError);
-          toast({
-            title: "⚠️ Advertencia",
-            description: "La venta fue procesada exitosamente, pero hubo un problema al asignar el número de factura. Contacta al administrador si es necesario.",
-            variant: "warning",
-            duration: 5000,
-          });
-        }
-      }
-
-      // ====================================================================================
-      // OPERACIÓN SECUNDARIA 2: Verificación de Factura Almacenada
-      // ====================================================================================
-      try {
-        const saleRowResponse = await supabase
-          .from('sales')
-          .select('invoice_number')
-          .eq('id', saleId)
-          .maybeSingle();
-
-        if (saleRowResponse.error) {
-          console.warn('No se pudo verificar la factura almacenada:', saleRowResponse.error);
-        } else {
-          const saleRow = saleRowResponse.data as Database['public']['Tables']['sales']['Row'] | null;
-          if (saleRow?.invoice_number) {
-            finalInvoiceNumber = saleRow.invoice_number;
-          }
-        }
-      } catch (fetchError) {
-        console.warn('No se pudo verificar la factura almacenada (no crítico):', fetchError);
-        // No mostrar toast - ya tenemos el número de factura de la reserva
-      }
 
       // ====================================================================================
       // OPERACIÓN SECUNDARIA 3: Obtención de Datos de Tienda (Información Fiscal)
@@ -2164,12 +1810,7 @@ export default function POS() {
       
     } catch (error) {
       // Este catch solo debe capturar errores del RPC principal o errores inesperados
-      // NO debe capturar errores de operaciones secundarias (ya están blindadas)
       console.error('Error crítico al procesar la venta:', error);
-      
-      if (reservedInvoice && !invoiceCommitted) {
-        revertInvoiceState(reservedInvoice.previousState);
-      }
       
       toast({
         title: "Error al procesar venta",
