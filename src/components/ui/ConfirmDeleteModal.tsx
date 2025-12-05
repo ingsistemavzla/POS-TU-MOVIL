@@ -66,7 +66,7 @@ export function ConfirmDeleteModal({
           </DialogDescription>
         </DialogHeader>
 
-        {saleData && (
+        {saleData ? (
           <Card className="border border-border bg-card">
             <CardContent className="p-4">
               <div className="space-y-4">
@@ -100,6 +100,22 @@ export function ConfirmDeleteModal({
                       </Badge>
                     </div>
                   )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-2 border-green-500 bg-green-50">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5 text-green-600 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-green-800">
+                    Información de venta no disponible
+                  </p>
+                  <p className="text-xs text-green-700 mt-1">
+                    Los datos de la venta se cargarán al confirmar la eliminación.
+                  </p>
                 </div>
               </div>
             </CardContent>
