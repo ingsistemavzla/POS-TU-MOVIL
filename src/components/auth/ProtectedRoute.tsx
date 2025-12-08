@@ -28,7 +28,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   }
 
   if (!user || !userProfile) {
-    return null; // Will be handled by App.tsx redirect
+    // Redirigir al login si no hay usuario o perfil
+    return <Navigate to="/" replace />;
   }
 
   // Check role permissions

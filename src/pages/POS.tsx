@@ -976,7 +976,22 @@ export default function POS() {
   
   // Crear nuevo cliente (para panel inline)
   const createNewCustomer = async () => {
-    if (!userProfile?.company_id || !newCustomer.name.trim()) return;
+    if (!userProfile?.company_id || !newCustomer.name.trim()) {
+      console.error('❌ No se puede crear cliente:', { 
+        hasUserProfile: !!userProfile, 
+        company_id: userProfile?.company_id,
+        hasName: !!newCustomer.name.trim() 
+      });
+      toast({
+        title: "Error",
+        description: "No se puede registrar el cliente. Verifica que estés autenticado correctamente.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    const companyId = userProfile.company_id;
+    console.log('✅ Creando cliente con company_id:', companyId);
     
     try {
       const { data, error } = await supabase
@@ -987,7 +1002,7 @@ export default function POS() {
           email: newCustomer.email.trim() || null,
           phone: newCustomer.phone.trim() || null,
           address: newCustomer.address.trim() || null,
-          company_id: userProfile.company_id, // ✅ CRÍTICO: Incluir company_id
+          company_id: companyId, // ✅ CRÍTICO: Incluir company_id
         } as any)
         .select('id, name, id_number, email, phone, address')
         .single();
