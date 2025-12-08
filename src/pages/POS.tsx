@@ -983,10 +983,11 @@ export default function POS() {
         .from('customers')
         .insert({
           name: newCustomer.name.trim(),
-          id_number: newCustomer.id_number.trim(),
+          id_number: newCustomer.id_number.trim() || null,
           email: newCustomer.email.trim() || null,
           phone: newCustomer.phone.trim() || null,
           address: newCustomer.address.trim() || null,
+          company_id: userProfile.company_id, // ✅ CRÍTICO: Incluir company_id
         } as any)
         .select('id, name, id_number, email, phone, address')
         .single();
@@ -1005,11 +1006,11 @@ export default function POS() {
           description: `${(data as Customer).name} ha sido registrado exitosamente`,
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating customer:', error);
       toast({
         title: "Error",
-        description: "Error al registrar el cliente",
+        description: error?.message || "Error al registrar el cliente. Verifica que todos los campos requeridos estén completos.",
         variant: "destructive"
       });
     }
