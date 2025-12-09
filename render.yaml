@@ -15,4 +15,8 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+      # Asegurar que 404.html se use para errores
+      - type: rewrite
+        source: /404
+        destination: /404.html
 

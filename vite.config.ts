@@ -12,17 +12,28 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
-    // Plugin para copiar _redirects a dist después del build
+    // Plugin para copiar _redirects y 404.html a dist después del build
     {
       name: 'copy-redirects',
       closeBundle() {
-        const src = join(__dirname, 'public', '_redirects');
-        const dest = join(__dirname, 'dist', '_redirects');
+        // Copiar _redirects
+        const redirectsSrc = join(__dirname, 'public', '_redirects');
+        const redirectsDest = join(__dirname, 'dist', '_redirects');
         try {
-          copyFileSync(src, dest);
+          copyFileSync(redirectsSrc, redirectsDest);
           console.log('✅ _redirects copiado a dist/');
         } catch (error) {
           console.warn('⚠️ No se pudo copiar _redirects:', error);
+        }
+        
+        // Copiar 404.html
+        const notFoundSrc = join(__dirname, 'public', '404.html');
+        const notFoundDest = join(__dirname, 'dist', '404.html');
+        try {
+          copyFileSync(notFoundSrc, notFoundDest);
+          console.log('✅ 404.html copiado a dist/');
+        } catch (error) {
+          console.warn('⚠️ No se pudo copiar 404.html:', error);
         }
       },
     },
