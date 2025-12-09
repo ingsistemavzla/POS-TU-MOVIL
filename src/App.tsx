@@ -148,8 +148,25 @@ const AppRoutes = () => {
     return <LoadingFallback />;
   }
 
-  // ✅ Si no hay usuario O no hay perfil, mostrar login o redirigir según la ruta
-  // Esto asegura que después de un hard refresh, si la sesión se perdió, se redirija al login
+  // ✅ Limpiar URL cuando no hay sesión (quita /articulos, /dashboard, etc. de la URL)
+  const urlCleanedRef = useRef(false);
+  useEffect(() => {
+    if (!user && !userProfile && !loading && !urlCleanedRef.current) {
+      // Solo limpiar si NO estamos ya en la raíz
+      if (window.location.pathname !== '/') {
+        urlCleanedRef.current = true;
+        // ✅ window.location.replace limpia la URL completamente sin dejar historial
+        window.location.replace('/');
+        return;
+      }
+    }
+    // Resetear el flag si el usuario vuelve a loguearse
+    if (user && userProfile) {
+      urlCleanedRef.current = false;
+    }
+  }, [user, userProfile, loading]);
+
+  // ✅ Si no hay usuario O no hay perfil, mostrar login
   if (!user || !userProfile) {
     return (
       <Routes>
