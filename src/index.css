@@ -154,6 +154,17 @@
     @apply bg-app-background text-main-text font-sans;
     background: var(--gradient-diagonal);
   }
+
+  /* Ocultar flechas (spinners) de inputs numéricos */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
 }
 
 @layer components {

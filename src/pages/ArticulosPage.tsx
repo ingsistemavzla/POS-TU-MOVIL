@@ -657,10 +657,22 @@ export const ArticulosPage: React.FC = () => {
                                         <Input
                                           id={`edit-qty-${inv.store_id}`}
                                           type="number"
-                                          min="0"
+                                          step="1"
                                           value={editQty}
-                                          onChange={(e) => setEditQty(parseInt(e.target.value) || 0)}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            // Permitir escribir libremente (incluyendo vacío)
+                                            if (val === '') {
+                                              setEditQty(0);
+                                            } else {
+                                              const num = parseInt(val, 10);
+                                              if (!isNaN(num)) {
+                                                setEditQty(num);
+                                              }
+                                            }
+                                          }}
                                           className="w-full"
+                                          placeholder="0"
                                         />
                                       </div>
                                       <div className="flex items-center gap-2">
@@ -755,17 +767,31 @@ export const ArticulosPage: React.FC = () => {
                                           <Input
                                             id={`transfer-qty-${inv.store_id}`}
                                             type="number"
-                                            min="1"
-                                            max={inv.qty}
-                                            value={transfer?.qty || 0}
+                                            step="1"
+                                            value={transfer?.qty || ''}
                                             onChange={(e) => {
-                                              setTransferring(prev => ({
-                                                ...prev,
-                                                [product.id]: { 
-                                                  ...(prev[product.id] || { from: inv.store_id, to: '', qty: 0 }), 
-                                                  qty: parseInt(e.target.value) || 0 
-                                                },
-                                              }));
+                                              const val = e.target.value;
+                                              // Permitir escribir libremente (incluyendo vacío)
+                                              if (val === '') {
+                                                setTransferring(prev => ({
+                                                  ...prev,
+                                                  [product.id]: { 
+                                                    ...(prev[product.id] || { from: inv.store_id, to: '', qty: 0 }), 
+                                                    qty: 0 
+                                                  },
+                                                }));
+                                              } else {
+                                                const num = parseInt(val, 10);
+                                                if (!isNaN(num)) {
+                                                  setTransferring(prev => ({
+                                                    ...prev,
+                                                    [product.id]: { 
+                                                      ...(prev[product.id] || { from: inv.store_id, to: '', qty: 0 }), 
+                                                      qty: num 
+                                                    },
+                                                  }));
+                                                }
+                                              }
                                             }}
                                             className="w-full"
                                             placeholder="Cantidad a transferir"

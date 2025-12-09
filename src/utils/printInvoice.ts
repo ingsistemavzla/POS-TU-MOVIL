@@ -64,9 +64,6 @@ export const printInvoice = (saleData: SaleData, taxRate?: number, receiptFooter
     <head>
       <meta charset="utf-8">
       <title>Factura ${saleData.invoice_number}</title>
-      <link rel="preconnect" href="https://fonts.googleapis.com">
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-      <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
       <style>
         @media print {
           @page {
@@ -86,7 +83,7 @@ export const printInvoice = (saleData: SaleData, taxRate?: number, receiptFooter
         }
         
         body {
-          font-family: 'Courier Prime', monospace;
+          font-family: 'Lucida Console', 'Consolas', 'Monaco', 'Courier New', monospace;
           font-size: 16px;
           font-weight: normal;
           line-height: 1.1;
@@ -256,6 +253,28 @@ export const printInvoice = (saleData: SaleData, taxRate?: number, receiptFooter
           font-weight: normal;
           white-space: pre-line;
         }
+        
+        .warranty-text {
+          font-size: 9px;
+          line-height: 1.3;
+          text-align: left;
+          margin-top: 2mm;
+          padding-top: 1mm;
+          border-top: 1px dotted #ccc;
+          color: #333;
+        }
+        
+        .warranty-title {
+          font-weight: normal;
+          font-size: 10px;
+          margin-bottom: 0.5mm;
+          text-align: center;
+        }
+        
+        .warranty-item {
+          margin: 0.3mm 0;
+          padding-left: 2mm;
+        }
       </style>
     </head>
     <body>
@@ -314,6 +333,15 @@ export const printInvoice = (saleData: SaleData, taxRate?: number, receiptFooter
       
       <div class="footer">
         <div>${(receiptFooter || '¡Gracias por su compra!').replace(/\n/g, '\n')}</div>
+      </div>
+      
+      <div class="warranty-text">
+        <div class="warranty-title">Garantía</div>
+        <div class="warranty-item">- Duración: 1 año (solo por defectos de fábrica).</div>
+        <div class="warranty-item">- Cambio inmediato: Aplica solo durante los primeros 7 días, previa revisión técnica.</div>
+        <div class="warranty-item">- Servicio técnico (Reparación): Aplica después de los 7 días (ya no hay cambio inmediato).</div>
+        <div class="warranty-item">- Tiempo de diagnóstico: Máximo 15 días hábiles.</div>
+        <div class="warranty-item">- Exclusiones (No cubre): Pantalla, batería, cámara, pin de carga y accesorios.</div>
       </div>
     </body>
     </html>

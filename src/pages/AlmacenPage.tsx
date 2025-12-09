@@ -773,14 +773,21 @@ export const AlmacenPage: React.FC = () => {
                                                 <div className="flex items-center gap-2">
                                                   <Input
                                                     type="number"
-                                                    min="0"
-                                                    value={inv.tempQty || 0}
+                                                    step="1"
+                                                    value={inv.tempQty || ''}
                                                     onChange={(e) => {
+                                                      const val = e.target.value;
                                                       setStoreInventories(prev => {
                                                         const updated = { ...prev };
                                                         updated[product.id] = updated[product.id].map(i => {
                                                           if (i.store_id === inv.store_id) {
-                                                            return { ...i, tempQty: parseInt(e.target.value) || 0 };
+                                                            // Permitir escribir libremente (incluyendo vacío)
+                                                            if (val === '') {
+                                                              return { ...i, tempQty: 0 };
+                                                            } else {
+                                                              const num = parseInt(val, 10);
+                                                              return { ...i, tempQty: isNaN(num) ? 0 : num };
+                                                            }
                                                           }
                                                           return i;
                                                         });
@@ -829,14 +836,25 @@ export const AlmacenPage: React.FC = () => {
                                                   </Select>
                                                   <Input
                                                     type="number"
-                                                    min="1"
-                                                    max={inv.qty}
-                                                    value={transfer.qty}
+                                                    step="1"
+                                                    value={transfer.qty || ''}
                                                     onChange={(e) => {
-                                                      setTransferring(prev => ({
-                                                        ...prev,
-                                                        [product.id]: { ...transfer, qty: parseInt(e.target.value) || 0 },
-                                                      }));
+                                                      const val = e.target.value;
+                                                      // Permitir escribir libremente (incluyendo vacío)
+                                                      if (val === '') {
+                                                        setTransferring(prev => ({
+                                                          ...prev,
+                                                          [product.id]: { ...transfer, qty: 0 },
+                                                        }));
+                                                      } else {
+                                                        const num = parseInt(val, 10);
+                                                        if (!isNaN(num)) {
+                                                          setTransferring(prev => ({
+                                                            ...prev,
+                                                            [product.id]: { ...transfer, qty: num },
+                                                          }));
+                                                        }
+                                                      }
                                                     }}
                                                     className="w-24"
                                                     placeholder="Cantidad"
