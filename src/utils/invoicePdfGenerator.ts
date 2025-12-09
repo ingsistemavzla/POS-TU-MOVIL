@@ -262,7 +262,7 @@ export const generateInvoicePDF = (invoiceData: InvoiceData): void => {
   yPosition += 8;
   
   const totalSubtotal = invoiceData.items.reduce((sum, item) => sum + item.subtotal_usd, 0);
-  const taxAmount = totalSubtotal * 0.16; // 16% IVA
+  const taxAmount = 0; // IVA eliminado - siempre 0
   
   // Crear una tabla de totales centrada
   const totalsStartX = pageWidth / 2 - 60;
@@ -276,8 +276,7 @@ export const generateInvoicePDF = (invoiceData: InvoiceData): void => {
   doc.text(`$${totalSubtotal.toFixed(2)}`, totalsStartX + 80, yPosition);
   yPosition += 5;
   
-  // IVA
- 
+  // IVA eliminado - no se muestra
   
   // Total USD
   doc.setFont('helvetica', 'normal');

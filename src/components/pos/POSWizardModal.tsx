@@ -220,9 +220,9 @@ export const POSWizardModal: React.FC<POSWizardModalProps> = ({
 
   // Calculated values
   const cartSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const taxRate = 0.16; // 16% IVA
-  const taxAmount = cartSubtotal * taxRate;
-  const totalUSD = cartSubtotal + taxAmount;
+  const taxRate = 0; // IVA eliminado - siempre 0
+  const taxAmount = 0; // IVA eliminado - siempre 0
+  const totalUSD = cartSubtotal; // Total = Subtotal (sin IVA)
   const totalBs = totalUSD * bcvRate;
 
   // Search products function
@@ -1232,10 +1232,7 @@ export const POSWizardModal: React.FC<POSWizardModalProps> = ({
                     <span>Subtotal:</span>
                     <span>${cartSubtotal.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span>IVA (16%):</span>
-                    <span>${taxAmount.toFixed(2)}</span>
-                  </div>
+                  {/* IVA eliminado - no se muestra */}
                   <div className="flex justify-between text-lg font-bold">
                     <span>Total USD:</span>
                     <span className="text-green-600">${totalUSD.toFixed(2)}</span>

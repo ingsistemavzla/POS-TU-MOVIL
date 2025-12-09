@@ -62,7 +62,7 @@ export function useSystemSettings() {
     try {
       const defaultSettings = {
         company_id: userProfile.company_id,
-        tax_rate: 16, // Default IVA rate is 16%
+        tax_rate: 0, // IVA eliminado - siempre 0
         currency: 'USD',
         timezone: 'America/Caracas',
         language: 'es',
@@ -112,7 +112,7 @@ export function useSystemSettings() {
   };
 
   const getTaxRate = () => {
-    const rate = settings?.tax_rate ?? 16; // Default IVA rate is 16% (but allow 0)
+    const rate = settings?.tax_rate ?? 0; // IVA eliminado - siempre retorna 0
     console.log('getTaxRate Debug:', {
       settings: settings,
       tax_rate: settings?.tax_rate,

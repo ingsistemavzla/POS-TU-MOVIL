@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect } from "react";
+import { Suspense, lazy, useEffect, useRef } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -138,7 +138,7 @@ const CashierRouteGuard = ({ children }: { children: React.ReactNode }) => {
 
 // Protected App Routes Component
 const AppRoutes = () => {
-  const { user, loading } = useAuth();
+  const { user, userProfile, loading } = useAuth();
 
   // ✅ ESTRATEGIA OPTIMISTIC UI:
   // Solo bloqueamos si REALMENTE no sabemos quién es el usuario (carga inicial fría)
@@ -148,8 +148,9 @@ const AppRoutes = () => {
     return <LoadingFallback />;
   }
 
-  // Si no hay usuario, mostrar login o redirigir según la ruta
-  if (!user) {
+  // ✅ Si no hay usuario O no hay perfil, mostrar login o redirigir según la ruta
+  // Esto asegura que después de un hard refresh, si la sesión se perdió, se redirija al login
+  if (!user || !userProfile) {
     return (
       <Routes>
         <Route path="/" element={

@@ -898,9 +898,9 @@ export default function POS() {
   };
 
   const subtotalUSD = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const taxRate = getTaxRate() / 100; // Convertir porcentaje a decimal
-  const taxUSD = subtotalUSD * taxRate;
-  const totalUSD = subtotalUSD + taxUSD;
+  const taxRate = 0; // IVA eliminado - siempre 0
+  const taxUSD = 0; // IVA eliminado - siempre 0
+  const totalUSD = subtotalUSD; // Total = Subtotal (sin IVA)
   const totalBs = totalUSD * bcvRate;
 
   // Debug tax rate calculation
@@ -1573,7 +1573,7 @@ export default function POS() {
         p_customer_id_number: selectedCustomer?.id_number ? String(selectedCustomer.id_number).trim() : null,
         p_items: saleItems,
         p_notes: (isKreceEnabled || isCasheaEnabled) ? (isKreceEnabled ? 'financing_type:krece' : 'financing_type:cashea') : null,
-        p_tax_rate: Number(getTaxRate()) / 100,
+        p_tax_rate: 0, // IVA eliminado - siempre 0
         p_krece_enabled: Boolean(isKreceEnabled || isCasheaEnabled),
         p_krece_initial_amount_usd: Number(isKreceEnabled ? kreceInitialAmount : (isCasheaEnabled ? casheaInitialAmount : 0)) || 0,
         p_krece_financed_amount_usd: isKreceEnabled ? Number(cartSubtotal - kreceInitialAmount) || 0 :
@@ -1854,7 +1854,6 @@ ${saleData.items.map((item: any) =>
 
 ================
 Subtotal: Bs ${saleData.total_bs ? (saleData.subtotal_usd * saleData.bcv_rate).toFixed(2) : (saleData.subtotal_usd * bcvRate).toFixed(2)}
-                IVA ({getTaxRate()}%): Bs ${saleData.total_bs ? (saleData.tax_amount_usd * saleData.bcv_rate).toFixed(2) : (saleData.tax_amount_usd * bcvRate).toFixed(2)}
 TOTAL: Bs ${saleData.total_bs ? saleData.total_bs.toFixed(2) : (saleData.total_usd * bcvRate).toFixed(2)}
 
 Tasa BCV: Bs ${saleData.bcv_rate || bcvRate}
@@ -3217,7 +3216,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
               <Card className="p-3 glass-card">
                 <div className="space-y-1 text-xs">
                   <div className="flex justify-between"><span>Subtotal:</span><span>${subtotalUSD.toFixed(2)}</span></div>
-                  <div className="flex justify-between"><span>IVA ({getTaxRate()}%):</span><span>${taxUSD.toFixed(2)}</span></div>
+                  {/* IVA eliminado - no se muestra */}
                 </div>
                 <div className="pt-1 mt-1">
                   <div className="flex justify-between font-semibold text-sm"><span>Total USD:</span><span className="text-success">${totalUSD.toFixed(2)}</span></div>
@@ -3354,10 +3353,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                     <span>Subtotal:</span>
                     <span className="font-semibold">${subtotalUSD.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span>IVA ({getTaxRate()}%):</span>
-                    <span className="font-semibold">${taxUSD.toFixed(2)}</span>
-                  </div>
+                  {/* IVA eliminado - no se muestra */}
                 </div>
                 <div className="border-l pl-4">
                   <div className="flex justify-between items-center mb-2">
@@ -3507,10 +3503,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                       <span>Subtotal:</span>
                       <span className="font-semibold">${subtotalUSD.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span>IVA ({getTaxRate()}%):</span>
-                      <span className="font-semibold">${taxUSD.toFixed(2)}</span>
-                    </div>
+                    {/* IVA eliminado - no se muestra */}
                     <div className="border-t border-green-500/30 pt-2 mt-2 space-y-1">
                       <div className="flex justify-between font-bold">
                         <span>Total USD:</span>

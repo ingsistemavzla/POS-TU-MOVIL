@@ -736,7 +736,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    // ✅ LOGOUT COMPLETO: Limpiar navegador y sistema
+    try {
+      // Cerrar sesión en Supabase
+      await supabase.auth.signOut();
+      
+      // Limpiar localStorage (excepto preferencias)
+      const keysToKeep = ['theme', 'language'];
+      const allKeys = Object.keys(localStorage);
+      allKeys.forEach(key => {
+        if (!keysToKeep.includes(key)) {
+          localStorage.removeItem(key);
+        }
+      });
+      
+      // Limpiar sessionStorage completamente
+      sessionStorage.clear();
+      
+      // Limpiar cache de Supabase Auth
+      const supabaseKeys = Object.keys(localStorage).filter(key => 
+        key.includes('supabase') || key.includes('sb-')
+      );
+      supabaseKeys.forEach(key => {
+        localStorage.removeItem(key);
+      });
+    } catch (error) {
+      console.error('[Auth] Error en logout completo:', error);
+    }
+    
+    // Limpiar estado de React
     setUser(null);
     setSession(null);
     setUserProfile(null);
@@ -752,6 +780,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const initializeAuth = async () => {
       try {
+        // ✅ DETECCIÓN DE HARD REFRESH DESHABILITADA: Causaba loop infinito
+        // La detección automática de hard refresh causaba problemas de recarga constante
+        // Se manejará solo cuando no hay sesión válida después de cargar
+
         // Limpiar cache de autenticación al inicio si es la primera vez en esta sesión
         const cacheCleared = sessionStorage.getItem('auth_cache_cleared');
         if (!cacheCleared) {
@@ -760,6 +792,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           sessionStorage.setItem('auth_cache_cleared', 'true');
         }
         
+        // ✅ CORRECCIÓN #3: Verificar sesión UNA vez al inicio, decidir rápidamente
+        // 1. Obtener Sesión PRIMERO (antes de establecer timeout)
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (!mounted) {
+          return;
+        }
+        
+        if (sessionError) {
+          console.error('Error getting session:', sessionError);
+          setLoading(false);
+          isInitialized = true;
+          return;
+        }
+        
+        // ✅ CORRECCIÓN #2: Si NO hay sesión, establecer loading = false INMEDIATAMENTE
+        if (!session) {
+          // ✅ No hay sesión después de refresh - forzar logout y limpiar estado
+          console.log('[Auth] No hay sesión después de refresh. Limpiando estado y redirigiendo al login INMEDIATAMENTE.');
+          setUser(null);
+          setUserProfile(null);
+          setCompany(null);
+          setSession(null);
+          setLoading(false); // ✅ QUITAR loading INMEDIATAMENTE
+          sessionKeepAlive.stop();
+          profileCacheRef.current.clear();
+          isInitialized = true;
+          // ✅ NO establecer timeout si no hay sesión
+          return;
+        }
+        
+        // ✅ CORRECCIÓN #1: El timeout SOLO debe ejecutarse si HAY sesión
         timeoutId = setTimeout(async () => {
           if (mounted && !isInitialized) {
             console.warn('[Auth] Timeout de inicialización alcanzado (5s). Forzando estado.');
@@ -794,32 +858,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               isInitialized = true;
             }
           }
-        }, 5000); // ✅ 5 segundos (suficiente para UX moderna)
-
-        // 1. Obtener Sesión (Siempre necesario)
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
-        if (!mounted) {
-          clearTimeout(timeoutId);
-          return;
-        }
-        
-        if (sessionError) {
-          console.error('Error getting session:', sessionError);
-          setLoading(false);
-          clearTimeout(timeoutId);
-          isInitialized = true;
-          return;
-        }
-        
-        if (!session) {
-          // No hay sesión, mostrar login inmediatamente
-          setLoading(false);
-          sessionKeepAlive.stop();
-          isInitialized = true;
-          clearTimeout(timeoutId);
-          return;
-        }
+        }, 5000); // ✅ 5 segundos (solo si hay sesión)
         
         setSession(session);
         setUser(session.user);

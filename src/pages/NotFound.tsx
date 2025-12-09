@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const NotFound = () => {
   const location = useLocation();
-  const { user, loading } = useAuth();
+  const { user, userProfile, loading } = useAuth();
 
   useEffect(() => {
     console.error(
@@ -13,11 +13,13 @@ const NotFound = () => {
     );
   }, [location.pathname]);
 
-  // Si no hay usuario o está cargando, redirigir al login
-  if (loading || !user) {
+  // ✅ SIEMPRE redirigir al login si no hay usuario o perfil
+  // Esto asegura que después de un hard refresh, si la sesión se perdió, se redirija al login
+  if (!user || !userProfile) {
     return <Navigate to="/" replace />;
   }
 
+  // Solo mostrar 404 si hay sesión válida
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <div className="text-center">

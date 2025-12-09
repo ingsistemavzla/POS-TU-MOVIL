@@ -391,10 +391,7 @@ export const SaleCompletionModal: React.FC<SaleCompletionModalProps> = ({
                 <span>Subtotal:</span>
                 <span>{formatCurrency(saleData.subtotal_usd, 'USD')}</span>
               </div>
-              <div className="flex justify-between text-gray-700">
-                <span>IVA ({getTaxRate()}%):</span>
-                <span>{formatCurrency(saleData.tax_amount_usd, 'USD')}</span>
-              </div>
+              {/* IVA eliminado - no se muestra */}
               <div className="flex justify-between text-lg font-semibold text-gray-900 border-t pt-2">
                 <span>Total USD:</span>
                 <span>{formatCurrency(saleData.total_usd, 'USD')}</span>

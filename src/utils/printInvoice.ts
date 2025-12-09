@@ -305,10 +305,7 @@ export const printInvoice = (saleData: SaleData, taxRate?: number, receiptFooter
           <span>Subtotal:</span>
           <span>Bs ${(saleData.subtotal_usd * saleData.bcv_rate).toFixed(2)}</span>
         </div>
-        <div class="total-line">
-          <span>IVA (${taxRate || 0}%):</span>
-          <span>Bs ${(saleData.tax_amount_usd * saleData.bcv_rate).toFixed(2)}</span>
-        </div>
+        <!-- IVA eliminado - no se muestra -->
         <div class="total-line total-final">
           <span>TOTAL:</span>
           <span>Bs ${saleData.total_bs.toFixed(2)}</span>
