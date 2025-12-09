@@ -32,6 +32,8 @@ export default defineConfig(({ mode }) => ({
       },
     },
     chunkSizeWarningLimit: 1000,
+    // Copy _redirects file to dist for Render
+    copyPublicDir: true,
   },
   test: {
     globals: true,
