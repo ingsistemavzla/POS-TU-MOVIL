@@ -140,14 +140,7 @@ const CashierRouteGuard = ({ children }: { children: React.ReactNode }) => {
 const AppRoutes = () => {
   const { user, userProfile, loading } = useAuth();
 
-  // ✅ ESTRATEGIA OPTIMISTIC UI:
-  // Solo bloqueamos si REALMENTE no sabemos quién es el usuario (carga inicial fría)
-  // Si "loading" es true por una revalidación en segundo plano, dejamos al usuario ver la app
-  if (loading && !user) {
-    // Solo bloqueamos si REALMENTE no sabemos quién es el usuario (carga inicial fría)
-    return <LoadingFallback />;
-  }
-
+  // ✅ CORRECCIÓN: Mover hooks ANTES de cualquier return condicional (reglas de React Hooks)
   // ✅ Limpiar URL cuando no hay sesión (quita /articulos, /dashboard, etc. de la URL)
   const urlCleanedRef = useRef(false);
   useEffect(() => {
@@ -165,6 +158,14 @@ const AppRoutes = () => {
       urlCleanedRef.current = false;
     }
   }, [user, userProfile, loading]);
+
+  // ✅ ESTRATEGIA OPTIMISTIC UI:
+  // Solo bloqueamos si REALMENTE no sabemos quién es el usuario (carga inicial fría)
+  // Si "loading" es true por una revalidación en segundo plano, dejamos al usuario ver la app
+  if (loading && !user) {
+    // Solo bloqueamos si REALMENTE no sabemos quién es el usuario (carga inicial fría)
+    return <LoadingFallback />;
+  }
 
   // ✅ Si no hay usuario O no hay perfil, mostrar login
   if (!user || !userProfile) {

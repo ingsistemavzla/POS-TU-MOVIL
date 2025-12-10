@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   DollarSign, 
@@ -9,7 +9,10 @@ import {
   BarChart3,
   PieChart as PieChartIcon,
   CreditCard,
-  RefreshCw
+  RefreshCw,
+  Wallet,
+  Clock,
+  TrendingDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDashboardData } from '@/hooks/useDashboardData';
@@ -18,8 +21,11 @@ import { usePaymentMethodsData } from '@/hooks/usePaymentMethodsData';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency } from '@/utils/currency';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { LiquidityDonutChart } from '@/components/charts/LiquidityDonutChart';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { DashboardStoreTable } from '@/components/dashboard/DashboardStoreTable';
+import { Progress } from '@/components/ui/progress';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 type PeriodType = 'today' | 'yesterday' | 'thisMonth';
 
@@ -45,6 +51,10 @@ export default function Dashboard() {
   
   const loading = authLoading || dashboardLoading;
   
+  // ✅ FIX: Extraer IDs estables para evitar bucle infinito
+  const userProfileId = userProfile?.id;
+  const companyId = company?.id;
+  
   // Timeout de seguridad
   useEffect(() => {
     if (loading && userProfile && company) {
@@ -55,7 +65,7 @@ export default function Dashboard() {
     } else {
       setForceShow(false);
     }
-  }, [loading, userProfile, company]);
+  }, [loading, userProfileId, companyId]); // ✅ FIX: Usar IDs estables en lugar de objetos completos
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -101,6 +111,12 @@ export default function Dashboard() {
 
   const periodData = getPeriodData();
 
+  // ✅ FIX: Obtener financialHealth según el período seleccionado
+  const currentFinancialHealth = 
+    selectedPeriod === 'today' ? dashboardData?.financialHealth?.today :
+    selectedPeriod === 'yesterday' ? dashboardData?.financialHealth?.yesterday :
+    dashboardData?.financialHealth?.thisMonth;
+
   // Calcular porcentaje de cambio
   const calculateChange = (current: number, previous: number) => {
     if (previous === 0) return current > 0 ? 100 : 0;
@@ -117,25 +133,108 @@ export default function Dashboard() {
       : store.netIncomeByPeriod.thisMonth
   })) || [];
 
-  // Preparar datos para gráfico de métodos de pago
-  const paymentChartData = paymentData?.methods?.map((method: any) => ({
-    name: method.method === 'zelle' ? 'Zelle' : 
-          method.method === 'cash_usd' ? 'Efectivo USD' :
-          method.method === 'cash_bs' ? 'Efectivo BS' :
-          method.method === 'card_usd' ? 'Tarjeta USD' :
-          method.method === 'card_bs' ? 'Tarjeta BS' :
-          method.method === 'transfer_usd' ? 'Transferencia USD' :
-          method.method === 'transfer_bs' ? 'Transferencia BS' :
-          method.method === 'binance' ? 'Binance' :
-          method.method === 'krece_initial' ? 'Krece Inicial' : method.method,
-    value: method.totalUSD || 0,
-    percentage: paymentData?.totalUSD > 0 ? ((method.totalUSD || 0) / paymentData.totalUSD) * 100 : 0,
-    color: '#30D96B'
-  })) || [];
+  // Preparar datos para gráfico de métodos de pago (incluyendo Cashea y Krece)
+  const paymentChartData = [
+    ...(paymentData?.methods?.map((method: any) => ({
+      name: method.method === 'zelle' ? 'Zelle' : 
+            method.method === 'cash_usd' ? 'Efectivo USD' :
+            method.method === 'cash_bs' ? 'Efectivo BS' :
+            method.method === 'card_usd' ? 'Tarjeta USD' :
+            method.method === 'card_bs' ? 'Tarjeta BS' :
+            method.method === 'transfer_usd' ? 'Transferencia USD' :
+            method.method === 'transfer_bs' ? 'Transferencia BS' :
+            method.method === 'binance' ? 'Binance' :
+            method.method === 'krece_initial' ? 'Krece Inicial' : method.method,
+      value: method.totalUSD || 0,
+      percentage: paymentData?.totalUSD > 0 ? ((method.totalUSD || 0) / paymentData.totalUSD) * 100 : 0,
+      color: '#30D96B'
+    })) || []),
+    // ✅ NUEVO: Agregar Cashea y Krece como segmentos separados
+    ...(currentFinancialHealth?.receivables_breakdown?.cashea_usd && currentFinancialHealth.receivables_breakdown.cashea_usd > 0 ? [{
+      name: 'Cashea Financiado',
+      value: currentFinancialHealth.receivables_breakdown.cashea_usd,
+      percentage: paymentData?.totalUSD > 0 ? (currentFinancialHealth.receivables_breakdown.cashea_usd / paymentData.totalUSD) * 100 : 0,
+      color: '#6366f1' // Índigo para Cashea
+    }] : []),
+    ...(currentFinancialHealth?.receivables_breakdown?.krece_usd && currentFinancialHealth.receivables_breakdown.krece_usd > 0 ? [{
+      name: 'Krece Financiado',
+      value: currentFinancialHealth.receivables_breakdown.krece_usd,
+      percentage: paymentData?.totalUSD > 0 ? (currentFinancialHealth.receivables_breakdown.krece_usd / paymentData.totalUSD) * 100 : 0,
+      color: '#3b82f6' // Azul para Krece
+    }] : [])
+  ];
 
   const totalPaymentUSD = paymentData?.totalUSD || 0;
 
-  // Loading state con LoadingScreen
+  // ✅ NUEVO: Componente Skeleton para KPIs del Dashboard
+  const DashboardKPISkeleton = () => (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {[1, 2, 3, 4].map((i) => (
+        <Card key={i} className="p-4 border-l-4 border-gray-300">
+          <div className="flex items-center space-x-2">
+            <Skeleton className="h-5 w-5 rounded" />
+            <div className="flex-1">
+              <Skeleton className="h-4 w-24 mb-2" />
+              <Skeleton className="h-8 w-32" />
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+
+  // ✅ NUEVO: Componente Skeleton para Cards Secundarios
+  const DashboardSecondarySkeleton = () => (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {[1, 2, 3].map((i) => (
+        <Card key={i} className="p-6">
+          <CardHeader>
+            <Skeleton className="h-6 w-48 mb-2" />
+            <Skeleton className="h-4 w-32" />
+          </CardHeader>
+          <CardContent>
+            <Skeleton className="h-12 w-full mb-4" />
+            <Skeleton className="h-4 w-24" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+
+  // ✅ NUEVO: Componente Skeleton para Gráfica
+  const DashboardChartSkeleton = () => (
+    <Card className="p-6">
+      <CardHeader>
+        <Skeleton className="h-6 w-48 mb-2" />
+        <Skeleton className="h-4 w-64" />
+      </CardHeader>
+      <CardContent>
+        <Skeleton className="h-[300px] w-full" />
+      </CardContent>
+    </Card>
+  );
+
+  // ✅ NUEVO: Componente Skeleton para Resumen Ejecutivo
+  const DashboardSummarySkeleton = () => (
+    <Card className="bg-gradient-to-r from-slate-50 to-blue-50 border-2 border-slate-200">
+      <CardHeader>
+        <Skeleton className="h-6 w-64 mb-2" />
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="p-4 bg-white rounded-lg border">
+              <Skeleton className="h-4 w-32 mb-2" />
+              <Skeleton className="h-8 w-40 mb-2" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  // Loading state con Skeleton (solo si forceShow está activo, sino LoadingScreen)
   if (loading && userProfile && company && !forceShow) {
     return <LoadingScreen message="Cargando datos del dashboard..." />;
   }
@@ -221,20 +320,76 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* KPIs Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Facturado */}
-        <Card className="border-l-4 border-brand-primary">
+      {/* ✅ NUEVO: Stats Cards (Movidas desde Reports) */}
+      {loading && forceShow ? (
+        <DashboardKPISkeleton />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card className="p-4 border-l-4 border-blue-500">
+            <div className="flex items-center space-x-2">
+              <DollarSign className="h-5 w-5 text-blue-600" />
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Total Facturado</p>
+                <p className="text-2xl font-bold">{formatCurrency(periodData?.sales || 0)}</p>
+              </div>
+            </div>
+          </Card>
+          
+          <Card className="p-4 border-l-4 border-green-500">
+            <div className="flex items-center space-x-2">
+              <ShoppingCart className="h-5 w-5 text-green-600" />
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Total Órdenes</p>
+                <p className="text-2xl font-bold">{periodData?.orders || 0}</p>
+              </div>
+            </div>
+          </Card>
+          
+          <Card className="p-4 border-l-4 border-purple-500">
+            <div className="flex items-center space-x-2">
+              <TrendingUp className="h-5 w-5 text-purple-600" />
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Promedio por Orden</p>
+                <p className="text-2xl font-bold">
+                  {formatCurrency(
+                    periodData?.orders && periodData.orders > 0
+                      ? (periodData.sales / periodData.orders)
+                      : 0
+                  )}
+                </p>
+              </div>
+            </div>
+          </Card>
+          
+          <Card className="p-4 border-l-4 border-orange-500">
+            <div className="flex items-center space-x-2">
+              <CreditCard className="h-5 w-5 text-orange-600" />
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Financiamiento Krece</p>
+                <p className="text-2xl font-bold">{formatCurrency(kreceStats.totalFinancedAmountUSD || 0)}</p>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* KPIs Grid - Salud Financiera Real */}
+      {loading && forceShow ? (
+        <DashboardSecondarySkeleton />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Tarjeta 1: Venta Bruta */}
+        <Card className="border-l-4 border-blue-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-legacy-text">Total Facturado</CardTitle>
-            <DollarSign className="h-4 w-4 text-brand-primary" />
+            <CardTitle className="text-sm font-medium text-legacy-text">Venta Bruta</CardTitle>
+            <DollarSign className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-legacy-text">
               {formatCurrency(periodData?.sales || 0)}
             </div>
             <p className="text-xs text-gray-600 mt-1">
-              Ventas totales • {periodData?.periodLabel}
+              Volumen total transaccionado • {periodData?.periodLabel}
             </p>
             {periodData && (
               <p className="text-xs text-gray-500 mt-1">
@@ -244,80 +399,171 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Ingreso Neto */}
-        <Card className="border-l-4 border-brand-primary">
+        {/* Tarjeta 2: Ingreso Neto (Caja) */}
+        <Card className="border-l-4 border-green-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-legacy-text">Ingreso Neto</CardTitle>
-            <ShoppingCart className="h-4 w-4 text-brand-primary" />
+            <CardTitle className="text-sm font-medium text-legacy-text">Ingreso Neto (Caja)</CardTitle>
+            <Wallet className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-legacy-text">
-              {formatCurrency(totalPaymentUSD)}
+            <div className="text-2xl font-bold text-green-600">
+              {formatCurrency(currentFinancialHealth?.net_income_usd || 0)}
             </div>
             <p className="text-xs text-gray-600 mt-1">
-              Ingreso real • {periodData?.periodLabel}
+              Disponible real • {periodData?.periodLabel}
             </p>
-            {previousPaymentData && (
-              <p className="text-xs text-gray-500 mt-1">
-                {calculateChange(totalPaymentUSD, previousPaymentData.totalUSD || 0).toFixed(1)}% vs {selectedPeriod === 'today' ? 'ayer' : selectedPeriod === 'yesterday' ? 'hoy' : 'hoy'}
+            <p className="text-xs text-green-600 mt-1 font-medium">
+              {periodData?.sales && periodData.sales > 0 
+                ? ((currentFinancialHealth?.net_income_usd || 0) / periodData.sales * 100).toFixed(1)
+                : '0'}% del total
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Tarjeta 3: Crédito Pendiente */}
+        <Card className="border-l-4 border-orange-500">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-legacy-text">Crédito Pendiente</CardTitle>
+            <Clock className="h-4 w-4 text-orange-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-600">
+              {formatCurrency(currentFinancialHealth?.receivables_usd || 0)}
+            </div>
+            <p className="text-xs text-gray-600 mt-1">
+              Cashea + Krece • {periodData?.periodLabel}
+            </p>
+            {currentFinancialHealth?.receivables_breakdown && (
+              <p className="text-xs text-orange-600 mt-1 font-medium">
+                Krece: {formatCurrency(currentFinancialHealth.receivables_breakdown.krece_usd)} • 
+                Cashea: {formatCurrency(currentFinancialHealth.receivables_breakdown.cashea_usd)}
               </p>
             )}
           </CardContent>
         </Card>
+        </div>
+      )}
 
+      {/* ✅ NUEVO: Termómetro de Liquidez (Gráfico de Dona) */}
+      {(() => {
+        const totalSales = periodData?.sales || 0;
+        const netIncome = currentFinancialHealth?.net_income_usd || 0;
+        const receivables = currentFinancialHealth?.receivables_usd || 0;
+        const liquidityPercentage = totalSales > 0 ? (netIncome / totalSales) * 100 : 0;
+        const creditPercentage = totalSales > 0 ? (receivables / totalSales) * 100 : 0;
+        
+        // Determinar color y estado según salud
+        const getHealthConfig = () => {
+          if (liquidityPercentage >= 70) {
+            return { label: 'Excelente', borderColor: 'border-green-500' };
+          }
+          if (liquidityPercentage >= 50) {
+            return { label: 'Buena', borderColor: 'border-yellow-500' };
+          }
+          return { label: 'Atención', borderColor: 'border-orange-500' };
+        };
+
+        const health = getHealthConfig();
+
+        return (
+          <Card className={`border-l-4 ${health.borderColor}`}>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium text-legacy-text flex items-center gap-2">
+                <TrendingUp className="w-4 h-4" />
+                Salud de Liquidez (Cash Flow vs Deuda)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <LiquidityDonutChart
+                netIncomePercentage={liquidityPercentage}
+                receivablesPercentage={creditPercentage}
+                className="h-[200px]"
+              />
+            </CardContent>
+          </Card>
+        );
+      })()}
+
+      {/* KPIs Secundarios - Financiamiento Detallado */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Financiamiento Krece */}
-        <Card className="border-l-4 border-brand-primary">
+        <Card className="border-l-4 border-blue-400">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-legacy-text">Financiamiento Krece</CardTitle>
-            <CreditCard className="h-4 w-4 text-brand-primary" />
+            <CreditCard className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-legacy-text">
               {formatCurrency(kreceStats.totalFinancedAmountUSD || 0)}
             </div>
             <p className="text-xs text-gray-600 mt-1">{periodData?.periodLabel}</p>
-            {kreceStats.lastMonthFinancedAmount !== undefined && (
-              <p className="text-xs text-gray-500 mt-1">
-                {calculateChange(
-                  kreceStats.totalFinancedAmountUSD,
-                  selectedPeriod === 'today' ? kreceStats.lastMonthFinancedAmount :
-                  selectedPeriod === 'yesterday' ? kreceStats.thisMonthFinancedAmount :
-                  kreceStats.lastMonthFinancedAmount
-                ).toFixed(1)}% vs {selectedPeriod === 'today' ? 'mes anterior' : selectedPeriod === 'yesterday' ? 'este mes' : 'mes anterior'}
-              </p>
-            )}
+            <p className="text-xs text-blue-600 mt-1">
+              {currentFinancialHealth?.sales_by_method_count?.krece || 0} transacciones
+            </p>
           </CardContent>
         </Card>
 
         {/* Ingreso por Krece */}
-        <Card className="border-l-4 border-brand-primary">
+        <Card className="border-l-4 border-blue-400">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-legacy-text">Ingreso por Krece</CardTitle>
-            <TrendingUp className="h-4 w-4 text-brand-primary" />
+            <TrendingUp className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-legacy-text">
               {formatCurrency(kreceStats.totalInitialAmountUSD || 0)}
             </div>
             <p className="text-xs text-gray-600 mt-1">{periodData?.periodLabel}</p>
-            {kreceStats.lastMonthInitialAmount !== undefined && (
-              <p className="text-xs text-gray-500 mt-1">
-                {calculateChange(
-                  kreceStats.totalInitialAmountUSD,
-                  selectedPeriod === 'today' ? kreceStats.lastMonthInitialAmount :
-                  selectedPeriod === 'yesterday' ? kreceStats.thisMonthInitialAmount :
-                  kreceStats.lastMonthInitialAmount
-                ).toFixed(1)}% vs {selectedPeriod === 'today' ? 'mes anterior' : selectedPeriod === 'yesterday' ? 'este mes' : 'mes anterior'}
-              </p>
-            )}
+            <p className="text-xs text-blue-600 mt-1">
+              Iniciales recibidas
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Financiamiento Cashea */}
+        <Card className="border-l-4 border-indigo-400">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-legacy-text">Financiamiento Cashea</CardTitle>
+            <CreditCard className="h-4 w-4 text-indigo-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-legacy-text">
+              {formatCurrency(currentFinancialHealth?.receivables_breakdown?.cashea_usd || 0)}
+            </div>
+            <p className="text-xs text-gray-600 mt-1">{periodData?.periodLabel}</p>
+            <p className="text-xs text-indigo-600 mt-1">
+              {currentFinancialHealth?.sales_by_method_count?.cashea || 0} transacciones
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Ventas Contado */}
+        <Card className="border-l-4 border-green-400">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-legacy-text">Ventas Contado</CardTitle>
+            <ShoppingCart className="h-4 w-4 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-legacy-text">
+              {currentFinancialHealth?.sales_by_method_count?.cash || 0}
+            </div>
+            <p className="text-xs text-gray-600 mt-1">Transacciones • {periodData?.periodLabel}</p>
+            <p className="text-xs text-green-600 mt-1">
+              {periodData?.orders && periodData.orders > 0
+                ? ((currentFinancialHealth?.sales_by_method_count?.cash || 0) / periodData.orders * 100).toFixed(1)
+                : '0'}% del total
+            </p>
           </CardContent>
         </Card>
       </div>
 
       {/* Gráficos Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Bar Chart - Resumen por Tienda */}
-        <Card>
+      {loading && forceShow ? (
+        <DashboardChartSkeleton />
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Bar Chart - Resumen por Tienda */}
+          <Card>
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-legacy-text flex items-center gap-2">
               <BarChart3 className="w-5 h-5" />
@@ -369,36 +615,72 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             {paymentChartData.length > 0 && totalPaymentUSD > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={paymentChartData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ percentage }) => `${percentage.toFixed(0)}%`}
-                    outerRadius={80}
-                    innerRadius={50}
-                    fill="#30D96B"
-                    dataKey="value"
-                  >
-                    {paymentChartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    formatter={(value: number) => formatCurrency(value)}
-                    contentStyle={{
-                      backgroundColor: '#fff',
-                      borderColor: '#e5e7eb',
-                      borderRadius: '8px',
-                      color: '#000'
-                    }}
-                    itemStyle={{ color: '#000' }}
-                  />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
+              <>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={paymentChartData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ percentage }) => `${percentage.toFixed(0)}%`}
+                      outerRadius={80}
+                      innerRadius={50}
+                      fill="#30D96B"
+                      dataKey="value"
+                    >
+                      {paymentChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value: number) => formatCurrency(value)}
+                      contentStyle={{
+                        backgroundColor: '#fff',
+                        borderColor: '#e5e7eb',
+                        borderRadius: '8px',
+                        color: '#000'
+                      }}
+                      itemStyle={{ color: '#000' }}
+                    />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+                {/* ✅ NUEVO: Resumen de Financiamiento */}
+                {currentFinancialHealth?.receivables_usd && currentFinancialHealth.receivables_usd > 0 && (
+                  <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">Resumen de Crédito Pendiente:</p>
+                    <div className="space-y-1 text-xs text-gray-600">
+                      <div className="flex justify-between">
+                        <span>Total Crédito:</span>
+                        <span className="font-semibold">{formatCurrency(currentFinancialHealth.receivables_usd)}</span>
+                      </div>
+                      {currentFinancialHealth.receivables_breakdown.krece_usd > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-blue-600">Krece:</span>
+                          <span className="font-medium text-blue-600">
+                            {formatCurrency(currentFinancialHealth.receivables_breakdown.krece_usd)} (
+                            {currentFinancialHealth.receivables_usd > 0
+                              ? ((currentFinancialHealth.receivables_breakdown.krece_usd / currentFinancialHealth.receivables_usd) * 100).toFixed(1)
+                              : '0'}%)
+                          </span>
+                        </div>
+                      )}
+                      {currentFinancialHealth.receivables_breakdown.cashea_usd > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-indigo-600">Cashea:</span>
+                          <span className="font-medium text-indigo-600">
+                            {formatCurrency(currentFinancialHealth.receivables_breakdown.cashea_usd)} (
+                            {currentFinancialHealth.receivables_usd > 0
+                              ? ((currentFinancialHealth.receivables_breakdown.cashea_usd / currentFinancialHealth.receivables_usd) * 100).toFixed(1)
+                              : '0'}%)
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="flex items-center justify-center h-[300px] text-gray-500">
                 <p>No hay datos de pagos</p>
@@ -406,7 +688,84 @@ export default function Dashboard() {
             )}
           </CardContent>
         </Card>
-      </div>
+        </div>
+      )}
+
+      {/* ✅ NUEVO: Resumen de Cierre de Caja */}
+      {loading && forceShow ? (
+        <DashboardSummarySkeleton />
+      ) : (
+        <Card className="bg-gradient-to-r from-slate-50 to-blue-50 border-2 border-slate-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg font-semibold text-legacy-text">
+            <Wallet className="w-5 h-5 text-green-600" />
+            Resumen Ejecutivo para Cierre - {periodData?.periodLabel}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Columna 1: Debe haber en Caja */}
+            <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+              <div className="flex items-center gap-2 mb-2">
+                <Wallet className="w-4 h-4 text-green-600" />
+                <span className="text-sm font-medium text-green-800">Debe haber en Caja</span>
+              </div>
+                <div className="text-2xl font-bold text-green-700">
+                  {formatCurrency(currentFinancialHealth?.net_income_usd || 0)}
+                </div>
+              <p className="text-xs text-green-600 mt-1">
+                Ingreso real disponible
+              </p>
+            </div>
+
+            {/* Columna 2: Crédito Otorgado */}
+            <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
+              <div className="flex items-center gap-2 mb-2">
+                <Clock className="w-4 h-4 text-orange-600" />
+                <span className="text-sm font-medium text-orange-800">Crédito Otorgado {periodData?.periodLabel}</span>
+              </div>
+              <div className="text-2xl font-bold text-orange-700">
+                {formatCurrency(currentFinancialHealth?.receivables_usd || 0)}
+              </div>
+              <p className="text-xs text-orange-600 mt-1">
+                {currentFinancialHealth?.receivables_breakdown && (
+                  <>
+                    Krece: {formatCurrency(currentFinancialHealth.receivables_breakdown.krece_usd)} • 
+                    Cashea: {formatCurrency(currentFinancialHealth.receivables_breakdown.cashea_usd)}
+                  </>
+                )}
+              </p>
+            </div>
+
+            {/* Columna 3: Total Transaccionado */}
+            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="flex items-center gap-2 mb-2">
+                <DollarSign className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-medium text-blue-800">Total Transaccionado</span>
+              </div>
+              <div className="text-2xl font-bold text-blue-700">
+                {formatCurrency(periodData?.sales || 0)}
+              </div>
+              <p className="text-xs text-blue-600 mt-1">
+                Volumen total del período
+              </p>
+            </div>
+          </div>
+
+          {/* Resumen adicional */}
+          <div className="mt-4 pt-4 border-t border-slate-200">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Ratio de Caja:</span>
+              <span className="font-semibold text-green-600">
+                {periodData?.sales && periodData.sales > 0
+                  ? ((currentFinancialHealth?.net_income_usd || 0) / periodData.sales * 100).toFixed(1)
+                  : '0'}%
+              </span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+      )}
 
       {/* Tablas Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

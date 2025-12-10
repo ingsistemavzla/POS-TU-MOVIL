@@ -24,7 +24,12 @@ import {
   Building2,
   AlertTriangle,
   CheckCircle,
-  RefreshCw
+  RefreshCw,
+  ShieldCheck,
+  X,
+  CheckCircle2,
+  HelpCircle,
+  Info
 } from "lucide-react";
 import { useReportsData } from "@/hooks/useReportsData";
 import { usePaymentMethodsData } from "@/hooks/usePaymentMethodsData";
@@ -42,11 +47,33 @@ import { useToast } from "@/hooks/use-toast";
 import { ScheduledReportsCard } from "@/components/reports/ScheduledReportsCard";
 import { ReportsHistoryCard } from "@/components/reports/ReportsHistoryCard";
 import { GenerateReportModal } from '@/components/reports/GenerateReportModal';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export default function ReportsNew() {
   const { toast } = useToast();
   const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'yesterday' | 'thisMonth'>('today');
-  const { salesData, profitabilityData, inventoryData, loading, error } = useReportsData(selectedPeriod);
+  const { salesData, profitabilityData, inventoryData, loading, error, fetchCurrencyAuditData } = useReportsData(selectedPeriod);
   const { data: paymentMethodsData } = usePaymentMethodsData(selectedPeriod);
   const [generatingPDF, setGeneratingPDF] = useState(false);
   const { company, userProfile } = useAuth();
@@ -54,6 +81,14 @@ export default function ReportsNew() {
   const [selectedReportType, setSelectedReportType] = useState<'sales' | 'profitability' | 'inventory' | null>(null);
   const [stores, setStores] = useState<Array<{ id: string; name: string }>>([]);
   const [loadingStores, setLoadingStores] = useState(false);
+  
+  // ✅ NUEVO: Estado para Auditoría Cambiaria
+  const [showCurrencyAudit, setShowCurrencyAudit] = useState(false);
+  const [currencyAuditData, setCurrencyAuditData] = useState<any[]>([]);
+  const [loadingAudit, setLoadingAudit] = useState(false);
+  const [auditDateFrom, setAuditDateFrom] = useState<string>('');
+  const [auditDateTo, setAuditDateTo] = useState<string>('');
+  const [auditStoreId, setAuditStoreId] = useState<string>('all');
 
   // Load stores on component mount
   useEffect(() => {
@@ -648,51 +683,6 @@ export default function ReportsNew() {
         </div>
       </div>
 
-      {/* Stats Cards */}
-      {salesData && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="p-4">
-            <div className="flex items-center space-x-2">
-              <FileText className="h-5 w-5 text-blue-600" />
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Total Facturado</p>
-                <p className="text-2xl font-bold">{formatCurrency(salesData.totalSales)}</p>
-              </div>
-            </div>
-          </Card>
-          
-          <Card className="p-4">
-            <div className="flex items-center space-x-2">
-              <BarChart3 className="h-5 w-5 text-green-600" />
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Total Órdenes</p>
-                <p className="text-2xl font-bold">{salesData.totalOrders}</p>
-              </div>
-            </div>
-          </Card>
-          
-          <Card className="p-4">
-            <div className="flex items-center space-x-2">
-              <TrendingUp className="h-5 w-5 text-purple-600" />
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Promedio por Orden</p>
-                <p className="text-2xl font-bold">{formatCurrency(salesData.averageOrderValue)}</p>
-              </div>
-            </div>
-          </Card>
-          
-          <Card className="p-4">
-            <div className="flex items-center space-x-2">
-              <DollarSign className="h-5 w-5 text-orange-600" />
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Financiamiento Krece</p>
-                <p className="text-2xl font-bold">{formatCurrency(salesData.totalKreceFinancing)}</p>
-              </div>
-            </div>
-          </Card>
-        </div>
-      )}
-
       {/* Report Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6">
         {/* Sales Report */}
@@ -887,22 +877,368 @@ export default function ReportsNew() {
               <p className="text-sm font-medium text-muted-foreground mb-1">
                 Datos del período: {periodLabels[selectedPeriod]}
               </p>
-              <p className="font-semibold">Próximamente</p>
+              <p className="font-semibold">Herramientas de Auditoría</p>
             </div>
 
             <div className="flex space-x-2">
               <Button 
+                variant="outline"
                 className="flex-1" 
-                onClick={() => toast({ title: "Próximamente", description: "Este reporte estará disponible pronto." })}
-                disabled
+                onClick={() => {
+                  // Establecer fechas por defecto (este mes)
+                  const now = new Date();
+                  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                  
+                  setAuditDateFrom(startOfMonth.toISOString().split('T')[0]);
+                  setAuditDateTo(endOfMonth.toISOString().split('T')[0]);
+                  setShowCurrencyAudit(true);
+                }}
               >
-                <FileText className="mr-2 h-4 w-4" />
-                Generar Reporte
+                <ShieldCheck className="mr-2 h-4 w-4" />
+                Auditar Tasas
               </Button>
             </div>
           </div>
         </Card>
       </div>
+
+      {/* ✅ NUEVO: Modal de Auditoría Cambiaria */}
+      <TooltipProvider>
+        <Dialog open={showCurrencyAudit} onOpenChange={setShowCurrencyAudit}>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5" />
+                Auditoría de Integridad Cambiaria
+              </DialogTitle>
+              <DialogDescription>
+                Valida matemáticamente si los Bolívares guardados coinciden con la Tasa BCV del día
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex-1 overflow-hidden flex flex-col space-y-4">
+            {/* Filtros */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pb-4 border-b">
+              <div>
+                <label className="text-sm font-medium mb-1 block">Fecha Desde</label>
+                <Input
+                  type="date"
+                  value={auditDateFrom}
+                  onChange={(e) => setAuditDateFrom(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">Fecha Hasta</label>
+                <Input
+                  type="date"
+                  value={auditDateTo}
+                  onChange={(e) => setAuditDateTo(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">Sucursal</label>
+                <Select value={auditStoreId} onValueChange={setAuditStoreId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Todas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas las sucursales</SelectItem>
+                    {stores.map((store) => (
+                      <SelectItem key={store.id} value={store.id}>
+                        {store.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-end">
+                <Button
+                  onClick={async () => {
+                    if (!auditDateFrom || !auditDateTo) {
+                      toast({
+                        title: "Fechas requeridas",
+                        description: "Por favor, selecciona un rango de fechas",
+                        variant: "destructive"
+                      });
+                      return;
+                    }
+
+                    try {
+                      setLoadingAudit(true);
+                      const startDate = new Date(`${auditDateFrom}T00:00:00`);
+                      const endDate = new Date(`${auditDateTo}T23:59:59`);
+                      const data = await fetchCurrencyAuditData(
+                        startDate,
+                        endDate,
+                        auditStoreId !== 'all' ? auditStoreId : undefined
+                      );
+                      setCurrencyAuditData(data);
+                    } catch (error) {
+                      toast({
+                        title: "Error",
+                        description: error instanceof Error ? error.message : "Error al cargar datos de auditoría",
+                        variant: "destructive"
+                      });
+                    } finally {
+                      setLoadingAudit(false);
+                    }
+                  }}
+                  disabled={loadingAudit || !auditDateFrom || !auditDateTo}
+                  className="w-full"
+                >
+                  {loadingAudit ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Cargando...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Consultar
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            {/* Resumen Superior */}
+            {currencyAuditData.length > 0 && (() => {
+              const totalDiscrepancy = currencyAuditData
+                .filter(r => r.status === 'MISMATCH')
+                .reduce((sum, r) => sum + Math.abs(r.difference), 0);
+              const mismatchCount = currencyAuditData.filter(r => r.status === 'MISMATCH').length;
+              const matchCount = currencyAuditData.filter(r => r.status === 'MATCH').length;
+              const legacyCount = currencyAuditData.filter(r => r.status === 'LEGACY').length;
+
+              return (
+                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Total Discrepancia Detectada</p>
+                      <p className="text-2xl font-bold text-red-600">
+                        Bs. {totalDiscrepancy.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Descuadres</p>
+                      <p className="text-2xl font-bold text-red-600">{mismatchCount}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Exactos</p>
+                      <p className="text-2xl font-bold text-green-600">{matchCount}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Antiguos</p>
+                      <p className="text-2xl font-bold text-gray-600">{legacyCount}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ✅ NUEVO: Leyenda Visual (Guía de Lectura) */}
+            {currencyAuditData.length > 0 && (
+              <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">Guía de Lectura:</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-green-800">Correcto (Exacto)</p>
+                      <p className="text-xs text-green-700">El monto guardado coincide con la tasa del día.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-orange-800">Discrepancia (Descuadre)</p>
+                      <p className="text-xs text-orange-700">Hay una diferencia matemática. Requiere revisión.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Clock className="w-5 h-5 text-gray-500 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">Sin Tasa (Antiguo)</p>
+                      <p className="text-xs text-gray-600">Venta antigua sin registro de tasa BCV.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tabla Scrollable */}
+            <div className="flex-1 overflow-hidden border rounded-lg">
+              <div className="h-full overflow-y-auto max-h-[60vh]">
+                {loadingAudit ? (
+                  <div className="flex items-center justify-center h-64">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : currencyAuditData.length === 0 ? (
+                  <div className="flex items-center justify-center h-64 text-muted-foreground">
+                    <p>Selecciona un rango de fechas y haz clic en "Consultar" para ver los datos</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader className="sticky top-0 bg-background z-10">
+                      <TableRow>
+                        <TableHead className="w-[100px]">Fecha</TableHead>
+                        <TableHead className="w-[120px]">Factura</TableHead>
+                        <TableHead className="w-[100px]">Tasa del Día</TableHead>
+                        <TableHead className="w-[120px]">Venta ($)</TableHead>
+                        <TableHead className="w-[130px]">Registrado (Bs)</TableHead>
+                        <TableHead className="w-[130px]">
+                          <div className="flex items-center gap-1">
+                            Calculado (Bs)
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <HelpCircle className="w-3 h-3 text-muted-foreground cursor-help hover:text-foreground transition-colors" />
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                <p>Este es el valor matemático ideal: Dólares multiplicados por la Tasa del BCV de ese momento.</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TableHead>
+                        <TableHead className="w-[130px]">Diferencia</TableHead>
+                        <TableHead className="w-[100px]">Veredicto</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {currencyAuditData.map((record) => {
+                        const getRowStyle = () => {
+                          switch (record.status) {
+                            case 'MISMATCH':
+                              return 'bg-red-50 hover:bg-red-100';
+                            case 'MATCH':
+                              return 'hover:bg-green-50';
+                            case 'LEGACY':
+                              return 'bg-gray-50 hover:bg-gray-100 italic';
+                            default:
+                              return '';
+                          }
+                        };
+
+                        const getStatusBadge = () => {
+                          switch (record.status) {
+                            case 'MISMATCH':
+                              return (
+                                <Badge variant="destructive" className="flex items-center gap-1 w-fit">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  Descuadre
+                                </Badge>
+                              );
+                            case 'MATCH':
+                              return (
+                                <Badge className="bg-green-600 flex items-center gap-1 w-fit">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  Exacto
+                                </Badge>
+                              );
+                            case 'LEGACY':
+                              return (
+                                <Badge variant="secondary" className="flex items-center gap-1 w-fit">
+                                  <Clock className="w-3 h-3" />
+                                  Antiguo
+                                </Badge>
+                              );
+                            default:
+                              return null;
+                          }
+                        };
+
+                        return (
+                          <TableRow key={record.id} className={getRowStyle()}>
+                            <TableCell className="font-medium">
+                              {new Date(record.created_at).toLocaleDateString('es-VE', {
+                                year: 'numeric',
+                                month: '2-digit',
+                                day: '2-digit'
+                              })}
+                            </TableCell>
+                            <TableCell>{record.invoice_number}</TableCell>
+                            <TableCell>
+                              {record.bcv_rate_used
+                                ? record.bcv_rate_used.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                : 'N/A'}
+                            </TableCell>
+                            <TableCell>{formatCurrency(record.total_usd)}</TableCell>
+                            <TableCell>
+                              {record.total_bs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </TableCell>
+                            <TableCell>
+                              {record.theoretical_bs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </TableCell>
+                            <TableCell className={record.difference !== 0 ? 'font-semibold' : ''}>
+                              <span className={record.difference > 0 ? 'text-green-600' : record.difference < 0 ? 'text-red-600' : ''}>
+                                {record.difference > 0 ? '+' : ''}
+                                {record.difference.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              {getStatusBadge()}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+            </div>
+
+            {/* Footer con Exportación */}
+            {currencyAuditData.length > 0 && (
+              <div className="flex justify-between items-center pt-4 border-t">
+                <p className="text-sm text-muted-foreground">
+                  Total de registros: {currencyAuditData.length}
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    // Generar CSV
+                    const headers = ['Fecha', 'Factura', 'Tasa BCV', 'Total USD', 'BS Guardado', 'BS Teórico', 'Diferencia', 'Estado'];
+                    const rows = currencyAuditData.map(record => [
+                      new Date(record.created_at).toLocaleDateString('es-VE'),
+                      record.invoice_number,
+                      record.bcv_rate_used?.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || 'N/A',
+                      record.total_usd.toFixed(2),
+                      record.total_bs.toFixed(2),
+                      record.theoretical_bs.toFixed(2),
+                      record.difference.toFixed(2),
+                      record.status
+                    ]);
+
+                    const csvContent = [
+                      headers.join(','),
+                      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+                    ].join('\n');
+
+                    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement('a');
+                    const url = URL.createObjectURL(blob);
+                    link.setAttribute('href', url);
+                    link.setAttribute('download', `auditoria_cambiaria_${auditDateFrom}_${auditDateTo}.csv`);
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+
+                    toast({
+                      title: "CSV descargado",
+                      description: "El reporte de auditoría se ha descargado exitosamente"
+                    });
+                  }}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Descargar CSV
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+      </TooltipProvider>
 
       {/* Generate Report Modal */}
       <GenerateReportModal

@@ -1,33 +1,53 @@
 -- ============================================================================
--- Migration: Eliminar cálculo de IVA/Impuesto (tax_rate = 0 siempre)
--- Fecha: 2025-01-25
--- Descripción: Elimina el cálculo de IVA de process_sale, estableciendo
---              tax_rate = 0 siempre. PRESERVA la lógica blindada de stock
---              (qty >= v_qty) de la migración anterior.
+-- Migration: Persistencia Financiera Dual (USD y Bolívares) - Zero Downtime
+-- Fecha: 2025-01-26
+-- Descripción: Corrige la persistencia de montos en Bolívares usando el
+--              principio "Lo que el cajero ve es la VERDAD INMUTABLE".
+--              Agrega columnas y parámetros para financiamiento dual manteniendo
+--              compatibilidad con frontend viejo (DEFAULT NULL).
 -- ============================================================================
 
--- PASO 1: Eliminar TODAS las versiones existentes de process_sale de forma segura
--- Esto asegura que la nueva versión sea la única activa
+-- ============================================================================
+-- FASE A: CAMBIOS DE SCHEMA (Zero Downtime)
+-- ============================================================================
+
+-- 1. Permitir NULL en total_bs para evitar bloqueos durante migración
+--    (Las ventas existentes mantienen su valor, nuevas pueden ser NULL temporalmente)
+ALTER TABLE public.sales 
+ALTER COLUMN total_bs DROP NOT NULL;
+
+-- 2. Agregar columnas de financiamiento en Bolívares (NULLABLE para compatibilidad)
+ALTER TABLE public.sales 
+ADD COLUMN IF NOT EXISTS krece_initial_amount_bs NUMERIC(15,2),
+ADD COLUMN IF NOT EXISTS krece_financed_amount_bs NUMERIC(15,2);
+
+-- Comentarios de documentación
+COMMENT ON COLUMN public.sales.krece_initial_amount_bs IS 
+'Inicial de financiamiento en Bolívares (valor exacto visto por el cajero). Si NULL, se calcula usando krece_initial_amount_usd * bcv_rate_used.';
+
+COMMENT ON COLUMN public.sales.krece_financed_amount_bs IS 
+'Monto financiado en Bolívares (valor exacto visto por el cajero). Si NULL, se calcula usando krece_financed_amount_usd * bcv_rate_used.';
+
+-- ============================================================================
+-- FASE B: ACTUALIZACIÓN DE RPC (process_sale)
+-- ============================================================================
+
+-- Eliminar versiones anteriores de forma segura
 DO $$ 
 DECLARE
     r RECORD;
     func_signature TEXT;
 BEGIN
-    -- Buscar todas las funciones process_sale en el esquema public
     FOR r IN 
         SELECT 
             oid, 
             proname, 
-            pg_get_function_identity_arguments(oid) as args,
-            pg_get_function_result(oid) as returns
+            pg_get_function_identity_arguments(oid) as args
         FROM pg_proc 
         WHERE proname = 'process_sale'
         AND pronamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')
     LOOP
-        -- Construir la firma completa de la función
         func_signature := 'public.process_sale(' || r.args || ')';
-        
-        -- Eliminar la función específica
         BEGIN
             EXECUTE 'DROP FUNCTION IF EXISTS ' || func_signature || ' CASCADE';
             RAISE NOTICE 'Eliminada función: %', func_signature;
@@ -38,7 +58,7 @@ BEGIN
     END LOOP;
 END $$;
 
--- PASO 2: Crear la función sin cálculo de IVA (tax_rate = 0 siempre)
+-- Crear función actualizada con persistencia financiera dual
 CREATE OR REPLACE FUNCTION public.process_sale(
     p_company_id UUID,
     p_store_id UUID,
@@ -57,7 +77,11 @@ CREATE OR REPLACE FUNCTION public.process_sale(
     p_krece_initial_percentage NUMERIC DEFAULT 0,
     p_is_mixed_payment BOOLEAN DEFAULT false,
     p_mixed_payments JSONB DEFAULT '[]'::jsonb,
-    p_subtotal_usd NUMERIC DEFAULT 0
+    p_subtotal_usd NUMERIC DEFAULT 0,
+    -- ✅ NUEVOS PARÁMETROS: Montos en Bolívares (DEFAULT NULL para compatibilidad)
+    p_total_bs NUMERIC DEFAULT NULL,
+    p_krece_initial_amount_bs NUMERIC DEFAULT NULL,
+    p_krece_financed_amount_bs NUMERIC DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -79,9 +103,23 @@ DECLARE
     v_product_sku_db TEXT;
     v_sale_price_usd NUMERIC;
     v_new_stock NUMERIC;
+    -- ✅ NUEVAS VARIABLES: Valores finales en Bolívares
+    v_total_bs_final NUMERIC;
+    v_krece_initial_bs_final NUMERIC;
+    v_krece_financed_bs_final NUMERIC;
 BEGIN
     -- ✅ ELIMINACIÓN DE IVA: Anular cualquier parámetro de tax_rate que envíe el frontend
     p_tax_rate := 0;
+
+    -- ========================================================================
+    -- VALIDACIÓN DE INTEGRIDAD FINANCIERA (NUEVA)
+    -- ========================================================================
+    -- Prevenir montos negativos en Bolívares (seguridad crítica)
+    IF (p_total_bs IS NOT NULL AND p_total_bs < 0) OR 
+       (p_krece_initial_amount_bs IS NOT NULL AND p_krece_initial_amount_bs < 0) OR
+       (p_krece_financed_amount_bs IS NOT NULL AND p_krece_financed_amount_bs < 0) THEN
+        RAISE EXCEPTION 'Error de Integridad: Los montos financieros en Bolívares no pueden ser negativos.';
+    END IF;
 
     -- 1. VALIDACIONES INICIALES (preservadas de la función original)
     IF p_company_id IS NULL THEN
@@ -130,6 +168,26 @@ BEGIN
     -- ✅ ELIMINACIÓN DE IVA: Total = Subtotal (sin impuestos)
     v_total_calculado := v_subtotal_calculado;
 
+    -- ========================================================================
+    -- CÁLCULO DE VALORES EN BOLÍVARES (COALESCE CORREGIDO)
+    -- ========================================================================
+    -- ✅ REGLA DE ORO: Usar v_total_calculado (fuente de verdad) en lugar de parámetros
+    -- Si el frontend envía el valor, usarlo. Si no, calcular usando la variable interna.
+    v_total_bs_final := COALESCE(
+        p_total_bs, 
+        v_total_calculado * COALESCE(p_bcv_rate, 41.73)
+    );
+
+    v_krece_initial_bs_final := COALESCE(
+        p_krece_initial_amount_bs,
+        p_krece_initial_amount_usd * COALESCE(p_bcv_rate, 41.73)
+    );
+
+    v_krece_financed_bs_final := COALESCE(
+        p_krece_financed_amount_bs,
+        p_krece_financed_amount_usd * COALESCE(p_bcv_rate, 41.73)
+    );
+
     -- 4. GENERAR NÚMERO DE FACTURA (lógica original preservada)
     BEGIN
         v_invoice_number := generate_invoice_number(p_company_id);
@@ -138,18 +196,22 @@ BEGIN
             v_invoice_number := 'FAC-' || to_char(now(), 'YYYYMMDD') || '-' || substr(gen_random_uuid()::text, 1, 8);
     END;
 
-    -- 5. INSERTAR CABECERA DE VENTA (estructura original preservada)
+    -- 5. INSERTAR CABECERA DE VENTA (✅ CORREGIDO: Incluye total_bs y montos de financiamiento)
     -- ✅ ELIMINACIÓN DE IVA: tax_rate siempre se guarda como 0
     INSERT INTO sales (
         company_id, store_id, cashier_id, customer_id, customer_name, 
         customer_id_number, bcv_rate_used, is_mixed_payment,
-        subtotal_usd, total_usd, payment_method, notes, krece_enabled, 
-        krece_initial_amount_usd, krece_financed_amount_usd, status, tax_rate, invoice_number
+        subtotal_usd, total_usd, total_bs, payment_method, notes, krece_enabled, 
+        krece_initial_amount_usd, krece_financed_amount_usd,
+        krece_initial_amount_bs, krece_financed_amount_bs,
+        status, tax_rate, invoice_number
     ) VALUES (
         p_company_id, p_store_id, p_cashier_id, p_customer_id, p_customer_name, 
         p_customer_id_number, COALESCE(p_bcv_rate, 0), COALESCE(p_is_mixed_payment, false),
-        v_subtotal_calculado, v_total_calculado, p_payment_method, p_notes, p_krece_enabled, 
-        COALESCE(p_krece_initial_amount_usd, 0), COALESCE(p_krece_financed_amount_usd, 0), 
+        v_subtotal_calculado, v_total_calculado, v_total_bs_final, 
+        p_payment_method, p_notes, p_krece_enabled, 
+        COALESCE(p_krece_initial_amount_usd, 0), COALESCE(p_krece_financed_amount_usd, 0),
+        v_krece_initial_bs_final, v_krece_financed_bs_final,
         'completed', 0, v_invoice_number  -- ✅ tax_rate siempre 0
     ) RETURNING id INTO new_sale_id;
 
@@ -179,8 +241,6 @@ BEGIN
         -- ========================================================================
         -- PASO 1: Validación Previa (Lectura Sucia para UX rápida)
         -- ========================================================================
-        -- Esto es solo para dar un error rápido si es obvio que no hay stock,
-        -- pero la validación REAL ocurre en el UPDATE (Paso 2).
         SELECT qty INTO v_current_stock
         FROM inventories 
         WHERE company_id = p_company_id 
@@ -203,9 +263,6 @@ BEGIN
         -- ========================================================================
         -- PASO 2: Ejecución Atómica y Bloqueante (El corazón del blindaje)
         -- ========================================================================
-        -- ✅ PRESERVADO INTACTO: La validación qty >= v_qty se mantiene sin cambios
-        -- Al poner la condición en el WHERE, Postgres bloquea la fila y asegura consistencia.
-        -- CLAVE: qty >= v_qty permite llegar a 0 exacto, pero evita negativos.
         UPDATE inventories
         SET
             qty = qty - v_qty,
@@ -219,10 +276,7 @@ BEGIN
         -- ========================================================================
         -- PASO 3: Verificación de Integridad Post-Update
         -- ========================================================================
-        -- Si el UPDATE no afectó ninguna fila, significa que entre el paso 1 y el 2
-        -- alguien más se llevó el stock (Concurrency Check).
         IF NOT FOUND THEN
-            -- Obtener el stock actual para el mensaje de error
             SELECT qty INTO v_current_stock
             FROM inventories
             WHERE company_id = p_company_id 
@@ -236,24 +290,19 @@ BEGIN
         -- ========================================================================
         -- PASO 4: Retorno de Datos (Opcional - para confirmación)
         -- ========================================================================
-        -- Obtener el nuevo stock para confirmar al frontend que todo está sincronizado
         SELECT qty INTO v_new_stock
         FROM inventories
         WHERE company_id = p_company_id 
           AND store_id = p_store_id 
           AND product_id = v_product_id;
         
-        -- Verificar que el stock no es negativo (doble verificación de seguridad)
         IF v_new_stock < 0 THEN
             RAISE EXCEPTION 'Error crítico de integridad: El stock quedó negativo después de la actualización. Producto: %, Stock resultante: %', 
                 v_product_name, v_new_stock;
         END IF;
 
         -- ✅ NUEVO: Registrar movimiento de inventario para auditoría (OPCIONAL - NO CRÍTICO)
-        -- Si esta inserción falla, la venta continúa normalmente
-        -- Esto es solo para el panel de auditoría del master admin
         BEGIN
-            -- Verificar que la tabla inventory_movements existe antes de insertar
             IF EXISTS (SELECT 1 FROM information_schema.tables 
                       WHERE table_schema = 'public' 
                       AND table_name = 'inventory_movements') THEN
@@ -269,8 +318,7 @@ BEGIN
             END IF;
         EXCEPTION
             WHEN OTHERS THEN
-                -- Si falla la inserción de movimiento, continuar (NO CRÍTICO)
-                NULL;
+                NULL; -- Si falla, continuar (NO CRÍTICO)
         END;
 
     END LOOP;
@@ -285,9 +333,9 @@ BEGIN
                 new_sale_id,
                 p_company_id,
                 COALESCE(item->>'payment_method', 'cash_usd'),
-                COALESCE((item->>'amount_usd')::NUMERIC, 0), -- amount (columna original)
-                COALESCE((item->>'amount_usd')::NUMERIC, 0), -- amount_usd
-                COALESCE((item->>'amount_bs')::NUMERIC, 0)   -- amount_bs
+                COALESCE((item->>'amount_usd')::NUMERIC, 0),
+                COALESCE((item->>'amount_usd')::NUMERIC, 0),
+                COALESCE((item->>'amount_bs')::NUMERIC, 0)
             );
         END LOOP;
     -- 7.2. PAGO ÚNICO
@@ -298,9 +346,9 @@ BEGIN
             new_sale_id,
             p_company_id,
             p_payment_method,
-            v_total_calculado, -- amount (columna original)
-            v_total_calculado, -- amount_usd
-            v_total_calculado * COALESCE(p_bcv_rate, 41.73) -- amount_bs
+            v_total_calculado,
+            v_total_calculado,
+            v_total_bs_final  -- ✅ Usar valor final calculado
         );
     END IF;
 
@@ -324,23 +372,69 @@ BEGIN
         'data', new_sale_id,
         'invoice_number', v_invoice_number,
         'subtotal', v_subtotal_calculado,
-        'total', v_total_calculado
+        'total', v_total_calculado,
+        'total_bs', v_total_bs_final  -- ✅ NUEVO: Incluir total_bs en respuesta
     );
     
 EXCEPTION 
     WHEN OTHERS THEN
-        -- Log detallado del error (mejora segura)
         RAISE EXCEPTION 'Error al procesar la venta: % (Company: %, Store: %, Cashier: %)', 
             SQLERRM, p_company_id, p_store_id, p_cashier_id;
 END;
 $$;
 
--- Grant execute permission (preservado)
+-- Grant execute permission
 GRANT EXECUTE ON FUNCTION process_sale(
     UUID, UUID, UUID, UUID, TEXT, TEXT, NUMERIC, TEXT, JSONB, TEXT, NUMERIC, 
-    BOOLEAN, NUMERIC, NUMERIC, NUMERIC, BOOLEAN, JSONB, NUMERIC
+    BOOLEAN, NUMERIC, NUMERIC, NUMERIC, BOOLEAN, JSONB, NUMERIC,
+    NUMERIC, NUMERIC, NUMERIC  -- ✅ Nuevos parámetros
 ) TO authenticated;
 
-COMMENT ON FUNCTION process_sale IS 'Procesa una venta sin cálculo de IVA (tax_rate = 0 siempre). Preserva la validación blindada de stock en 3 pasos que permite ventas hasta stock = 0. Validación atómica con qty >= v_qty en UPDATE para prevenir race conditions y garantizar que el stock nunca sea negativo.';
+COMMENT ON FUNCTION process_sale IS 
+'Procesa una venta con persistencia financiera dual (USD y Bolívares). 
+Principio de Integridad: "Lo que el cajero ve es la VERDAD INMUTABLE".
+- Si el frontend envía montos en BS, se guardan tal cual.
+- Si no los envía (frontend viejo), se calculan usando v_total_calculado * bcv_rate.
+- Preserva validación blindada de stock (qty >= v_qty) que permite ventas hasta stock = 0.
+- Validación atómica para prevenir race conditions y garantizar stock nunca negativo.';
+
+-- ============================================================================
+-- FASE C: ACTUALIZAR VENTAS EXISTENTES (OPCIONAL - Backfill)
+-- ============================================================================
+-- Nota: Esto es opcional. Las ventas existentes mantendrán total_bs = NULL
+-- o su valor anterior. Si se desea backfill, ejecutar este bloque:
+
+/*
+-- Backfill: Calcular total_bs para ventas que lo tengan NULL
+UPDATE public.sales
+SET total_bs = total_usd * bcv_rate_used
+WHERE total_bs IS NULL
+AND bcv_rate_used IS NOT NULL
+AND bcv_rate_used > 0;
+
+-- Backfill: Calcular montos de financiamiento en BS
+UPDATE public.sales
+SET 
+    krece_initial_amount_bs = krece_initial_amount_usd * bcv_rate_used,
+    krece_financed_amount_bs = krece_financed_amount_usd * bcv_rate_used
+WHERE (krece_initial_amount_bs IS NULL OR krece_financed_amount_bs IS NULL)
+AND krece_enabled = true
+AND bcv_rate_used IS NOT NULL
+AND bcv_rate_used > 0
+AND (krece_initial_amount_usd > 0 OR krece_financed_amount_usd > 0);
+*/
+
+-- ============================================================================
+-- VERIFICACIÓN FINAL
+-- ============================================================================
+DO $$
+BEGIN
+    RAISE NOTICE '✅ Migración completada exitosamente';
+    RAISE NOTICE '   - Columnas agregadas: krece_initial_amount_bs, krece_financed_amount_bs';
+    RAISE NOTICE '   - total_bs ahora permite NULL (compatibilidad con frontend viejo)';
+    RAISE NOTICE '   - Función process_sale actualizada con 3 nuevos parámetros (DEFAULT NULL)';
+    RAISE NOTICE '   - Validación de integridad financiera implementada';
+    RAISE NOTICE '   - COALESCE usa v_total_calculado (fuente de verdad)';
+END $$;
 
 

@@ -612,6 +612,101 @@ export function useReportsData(period: PeriodType = 'today', customRange?: DateR
     // Implementar lógica de generación de reportes
   };
 
+  // ✅ NUEVO: Función para Auditoría Cambiaria Histórica
+  interface CurrencyAuditRecord {
+    id: string;
+    created_at: string;
+    invoice_number: string;
+    total_usd: number;
+    total_bs: number;
+    bcv_rate_used: number | null;
+    theoretical_bs: number;
+    difference: number;
+    status: 'LEGACY' | 'MATCH' | 'MISMATCH';
+  }
+
+  const fetchCurrencyAuditData = async (
+    startDate: Date,
+    endDate: Date,
+    storeId?: string
+  ): Promise<CurrencyAuditRecord[]> => {
+    if (!userProfile?.company_id) {
+      throw new Error('No company ID available');
+    }
+
+    try {
+      let query = (supabase as any)
+        .from('sales')
+        .select(`
+          id,
+          invoice_number,
+          created_at,
+          total_usd,
+          total_bs,
+          bcv_rate_used,
+          store_id
+        `)
+        .eq('company_id', userProfile.company_id)
+        .eq('status', 'completed')
+        .gte('created_at', startDate.toISOString())
+        .lte('created_at', endDate.toISOString())
+        .order('created_at', { ascending: false });
+
+      // Filtrar por tienda si se especifica
+      if (storeId && storeId !== 'all') {
+        query = query.eq('store_id', storeId);
+      }
+
+      const { data: salesData, error: salesError } = await query;
+
+      if (salesError) throw salesError;
+
+      if (!salesData || salesData.length === 0) {
+        return [];
+      }
+
+      // Procesar datos y calcular estados
+      const auditRecords: CurrencyAuditRecord[] = (salesData as any[]).map((sale: any) => {
+        const totalUSD = parseFloat(sale.total_usd) || 0;
+        const totalBS = parseFloat(sale.total_bs) || 0;
+        const bcvRate = sale.bcv_rate_used ? parseFloat(sale.bcv_rate_used) : null;
+
+        // Calcular BS teórico
+        const theoreticalBS = bcvRate && bcvRate > 0 ? totalUSD * bcvRate : 0;
+
+        // Calcular diferencia
+        const difference = totalBS - theoreticalBS;
+
+        // Determinar estado
+        let status: 'LEGACY' | 'MATCH' | 'MISMATCH';
+        if (!bcvRate || bcvRate === 0) {
+          status = 'LEGACY';
+        } else if (Math.abs(difference) < 0.50) {
+          status = 'MATCH';
+        } else {
+          status = 'MISMATCH';
+        }
+
+        return {
+          id: sale.id,
+          created_at: sale.created_at,
+          invoice_number: sale.invoice_number || 'N/A',
+          total_usd: totalUSD,
+          total_bs: totalBS,
+          bcv_rate_used: bcvRate,
+          theoretical_bs: theoreticalBS,
+          difference: difference,
+          status: status,
+        };
+      });
+
+      return auditRecords;
+    } catch (error) {
+      console.error('Error fetching currency audit data:', error);
+      throw error;
+    }
+  };
+
   return {
     salesData,
     profitabilityData,
@@ -622,6 +717,7 @@ export function useReportsData(period: PeriodType = 'today', customRange?: DateR
     error,
     refetch: fetchReports,
     getAllStores,
-    generateReport
+    generateReport,
+    fetchCurrencyAuditData
   };
 }

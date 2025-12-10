@@ -41,6 +41,7 @@ import { sanitizeInventoryData } from '@/utils/inventoryValidation';
 import { InventoryFinancialHeader } from '@/components/inventory/InventoryFinancialHeader';
 import { BranchStockMatrix } from '@/components/inventory/BranchStockMatrix';
 import { InventoryDashboardHeader } from '@/components/inventory/InventoryDashboardHeader';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 interface Product {
   id: string;
@@ -556,16 +557,19 @@ export const AlmacenPage: React.FC = () => {
     return (product.total_stock || 0) * product.sale_price_usd;
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-md h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Cargando almacén...</p>
-        </div>
-      </div>
-    );
-  }
+  // ✅ NUEVO: Componente Skeleton para filas de tabla
+  const TableRowSkeleton = () => (
+    <tr className="border-b">
+      <td className="py-4 px-4"><Skeleton className="h-4 w-20" /></td>
+      <td className="py-4 px-4"><Skeleton className="h-4 w-48" /></td>
+      <td className="py-4 px-4"><Skeleton className="h-5 w-24 rounded-full" /></td>
+      <td className="py-4 px-4 text-right"><Skeleton className="h-4 w-16 ml-auto" /></td>
+      <td className="py-4 px-4 text-right"><Skeleton className="h-4 w-16 ml-auto" /></td>
+      <td className="py-4 px-4 text-right"><Skeleton className="h-4 w-12 ml-auto" /></td>
+      <td className="py-4 px-4 text-center"><Skeleton className="h-5 w-16 rounded-full mx-auto" /></td>
+      <td className="py-4 px-4 text-center"><Skeleton className="h-8 w-24 rounded mx-auto" /></td>
+    </tr>
+  );
 
   return (
     <div className="container mx-auto p-6 space-y-6 bg-gray-50 min-h-screen">
@@ -615,13 +619,20 @@ export const AlmacenPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredProducts.map((product) => {
-                  const isExpanded = expandedProducts.has(product.id);
-                  const inventories = storeInventories[product.id] || [];
-                  const transfer = transferring[product.id];
+                {loading ? (
+                  <>
+                    {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+                      <TableRowSkeleton key={i} />
+                    ))}
+                  </>
+                ) : (
+                  filteredProducts.map((product) => {
+                    const isExpanded = expandedProducts.has(product.id);
+                    const inventories = storeInventories[product.id] || [];
+                    const transfer = transferring[product.id];
 
-                  return (
-                    <React.Fragment key={product.id}>
+                    return (
+                      <React.Fragment key={product.id}>
                       <tr className="border-b hover:bg-muted/50">
                         <td className="py-4 px-4 font-mono text-sm">{product.sku}</td>
                         <td className="py-4 px-4 font-medium">{product.name}</td>
@@ -920,9 +931,10 @@ export const AlmacenPage: React.FC = () => {
                           </td>
                         </tr>
                       )}
-                    </React.Fragment>
-                  );
-                })}
+                      </React.Fragment>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>

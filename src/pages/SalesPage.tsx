@@ -31,6 +31,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { 
   Receipt,
   Search,
@@ -119,7 +120,8 @@ export default function SalesPage() {
   const [expandedSaleItems, setExpandedSaleItems] = useState<Record<string, Array<{
     id: string;
     product_name: string;
-    product_sku: string;
+    product_sku?: string;
+    sku?: string; // ✅ NUEVO: SKU corregido de products
     quantity: number;
     unit_price_usd: number;
     total_price_usd: number;
@@ -730,12 +732,19 @@ export default function SalesPage() {
             return {
               id: item.id,
               product_id: item.product_id,
-              product_name: item.product_name || 'Producto sin nombre',
-              product_sku: item.product_sku || 'N/A',
-              quantity: Number(item.qty) || 0,
-              unit_price_usd: Number(item.price_usd) || 0,
-              total_price_usd: Number(item.subtotal_usd) || 0,
-              category: product?.category || undefined,
+              // ✅ NUEVO: Usar campos de la RPC si están disponibles
+              sku: item.sku || item.product_sku || 'N/A',
+              name: item.name || item.product_name || 'Producto sin nombre',
+              qty: item.qty || Number(item.qty) || 0,
+              price: item.price || Number(item.price_usd) || 0,
+              subtotal: item.subtotal || Number(item.subtotal_usd) || 0,
+              // Campos legacy para compatibilidad
+              product_name: item.name || item.product_name || 'Producto sin nombre',
+              product_sku: item.sku || item.product_sku || 'N/A',
+              quantity: item.qty || Number(item.qty) || 0,
+              unit_price_usd: item.price || Number(item.price_usd) || 0,
+              total_price_usd: item.subtotal || Number(item.subtotal_usd) || 0,
+              category: item.category || product?.category || undefined,
             };
           });
 
@@ -813,6 +822,80 @@ export default function SalesPage() {
         variant: "destructive",
       });
     }
+  };
+
+  // ✅ NUEVO: Función para formatear el método de pago (instrumento real)
+  // NOTA: La RPC ya devuelve los valores formateados, pero mantenemos esta función por compatibilidad
+  const formatPaymentMethod = (method: string | null | undefined): string => {
+    if (!method) return 'N/A';
+    
+    const methodMap: Record<string, string> = {
+      'cash_usd': 'Efectivo USD',
+      'cash_bs': 'Efectivo BS',
+      'card': 'Punto de Venta',
+      'transfer': 'Transferencia',
+      'pago_movil': 'Pago Móvil',
+      'biopago': 'Biopago',
+      'zelle': 'Zelle',
+      'binance': 'Binance',
+      'krece': 'KRECE',
+      'cashea': 'CASHEA',
+    };
+    
+    return methodMap[method.toLowerCase()] || method;
+  };
+
+  // ✅ NUEVO: Función para obtener el color del badge según el método de pago (compatible con valores en español de la RPC)
+  // 🎨 DISEÑO: Paleta de ALTO CONTRASTE y vibrante, SIN grises ni verdes apagados
+  const getMethodBadgeColor = (method: string | null | undefined, isMixed: boolean): string => {
+    if (isMixed) return 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200'; // Mixto -> Fucsia
+    
+    if (!method) return 'bg-amber-100 text-amber-800 border-amber-200'; // Fallback -> Amarillo (atención)
+    
+    const m = method.toLowerCase();
+    
+    // Biopago -> Rojo (RED) - Diferenciación máxima
+    if (m.includes('biopago')) {
+      return 'bg-red-100 text-red-800 border-red-200';
+    }
+    
+    // Punto de Venta (POS/Tarjeta) -> Naranja (ORANGE) - Alta visibilidad
+    if (m.includes('punto') || m.includes('tarjeta') || m.includes('pos') || m.includes('card')) {
+      return 'bg-orange-100 text-orange-800 border-orange-200';
+    }
+    
+    // Zelle -> Morado (PURPLE) - Color de marca
+    if (m.includes('zelle')) {
+      return 'bg-purple-100 text-purple-800 border-purple-200';
+    }
+    
+    // Transferencia -> Índigo (INDIGO) - Oscuro y distinto al morado de Zelle
+    if (m.includes('transferencia') || m.includes('transfer')) {
+      return 'bg-indigo-100 text-indigo-800 border-indigo-200';
+    }
+    
+    // Efectivo USD -> Verde Manzana Intenso (LIME-300) - Destaca mucho
+    if (m.includes('efectivo') && m.includes('usd')) {
+      return 'bg-lime-300 text-lime-900 border-lime-400';
+    }
+    
+    // Efectivo BS -> Terracota (ORANGE tierra) - Color terracota
+    if (m.includes('efectivo') && (m.includes('bs') || m.includes('bolívares') || m.includes('bolivares'))) {
+      return 'bg-orange-200 text-orange-900 border-orange-300';
+    }
+    
+    // Efectivo Genérico (Fallback) -> Terracota
+    if (m.includes('efectivo') || m.includes('cash')) {
+      return 'bg-orange-200 text-orange-900 border-orange-300';
+    }
+    
+    // Pago Móvil -> Cian (CYAN) - Tono digital
+    if (m.includes('pago móvil') || m.includes('pago movil')) {
+      return 'bg-cyan-100 text-cyan-800 border-cyan-200';
+    }
+    
+    // Fallback -> Amarillo (AMBER) - Atención, método no reconocido
+    return 'bg-amber-100 text-amber-800 border-amber-200';
   };
 
   const getPaymentMethodBadge = (method: string, isMixed: boolean) => {
@@ -915,10 +998,22 @@ export default function SalesPage() {
     try {
       console.log('📦 Cargando items de venta:', saleId);
 
-      // Fetch sale items - OPTIMIZADO: Select Minimal
+      // ✅ CORRECCIÓN: Fetch sale items con JOIN a products para obtener SKU correcto
       const { data: itemsData, error: itemsError } = await supabase
         .from('sale_items')
-        .select('id, product_id, product_name, qty, price_usd, subtotal_usd')
+        .select(`
+          id, 
+          product_id, 
+          product_name, 
+          product_sku,
+          qty, 
+          price_usd, 
+          subtotal_usd,
+          products (
+            sku,
+            barcode
+          )
+        `)
         .eq('sale_id', saleId);
 
       if (itemsError) {
@@ -928,17 +1023,26 @@ export default function SalesPage() {
 
       console.log(`📋 Items obtenidos de Supabase para venta ${saleId}:`, itemsData?.length || 0, itemsData);
 
-      // Obtener categorías de los productos si hay items
-      let itemsWithCategory = (itemsData || []).map((item: any) => ({
-        id: item.id,
-        product_name: item.product_name || 'Producto',
-        product_sku: item.product_sku || '',
-        quantity: Number(item.qty) || 0,
-        unit_price_usd: Number(item.price_usd) || 0,
-        total_price_usd: Number(item.subtotal_usd) || 0,
-        product_id: item.product_id,
-        category: undefined as string | undefined, // Se llenará después si hay product_id
-      }));
+      // ✅ CORRECCIÓN: Obtener SKU correcto de products (similar a la lógica de la RPC)
+      let itemsWithCategory = (itemsData || []).map((item: any) => {
+        const product = Array.isArray(item.products) ? item.products[0] : item.products;
+        // ✅ Lógica de SKU: usar product_sku si existe, sino sku de products, sino barcode, sino 'N/A'
+        const sku = item.product_sku && item.product_sku !== '' && item.product_sku !== 'N/A'
+          ? item.product_sku
+          : product?.sku || product?.barcode || 'N/A';
+        
+        return {
+          id: item.id,
+          product_name: item.product_name || 'Producto',
+          product_sku: item.product_sku || '', // Mantener para compatibilidad
+          sku: sku, // ✅ SKU corregido (prioridad: product_sku > products.sku > products.barcode > 'N/A')
+          quantity: Number(item.qty) || 0,
+          unit_price_usd: Number(item.price_usd) || 0,
+          total_price_usd: Number(item.subtotal_usd) || 0,
+          product_id: item.product_id,
+          category: undefined as string | undefined, // Se llenará después si hay product_id
+        };
+      });
 
       console.log(`📦 Items transformados (antes de categorías) para venta ${saleId}:`, itemsWithCategory.length, itemsWithCategory);
 
@@ -1692,11 +1796,44 @@ export default function SalesPage() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="flex items-center space-x-2">
-                <RefreshCw className="w-5 h-5 animate-spin" />
-                <span>Cargando ventas...</span>
-              </div>
+            <div className="rounded-sm shadow-md shadow-green-500/50 overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Factura</TableHead>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Tienda</TableHead>
+                    <TableHead>Total USD</TableHead>
+                    <TableHead>Total BS</TableHead>
+                    <TableHead>MÉTODO</TableHead>
+                    <TableHead>TIPO</TableHead>
+                    <TableHead>Productos</TableHead>
+                    <TableHead>Detalles</TableHead>
+                    <TableHead>Eliminar</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+                    <TableRow key={i}>
+                      <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                      <TableCell>
+                        <Skeleton className="h-4 w-32 mb-1" />
+                        <Skeleton className="h-3 w-24" />
+                      </TableCell>
+                      <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-12" /></TableCell>
+                      <TableCell><Skeleton className="h-8 w-8 rounded" /></TableCell>
+                      <TableCell><Skeleton className="h-8 w-8 rounded" /></TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           ) : (
             <>
@@ -1710,8 +1847,8 @@ export default function SalesPage() {
                       <TableHead>Tienda</TableHead>
                       <TableHead>Total USD</TableHead>
                       <TableHead>Total BS</TableHead>
-                      <TableHead>Método de Pago</TableHead>
-                      <TableHead>KRECE</TableHead>
+                      <TableHead>MÉTODO</TableHead>
+                      <TableHead>TIPO</TableHead>
                       <TableHead>Productos</TableHead>
                       <TableHead>Detalles</TableHead>
                       <TableHead>Eliminar</TableHead>
@@ -1732,30 +1869,56 @@ export default function SalesPage() {
                               {sale.invoice_number}
                             </TableCell>
                             <TableCell>
-                              {formatDate(sale.created_at)}
+                              {sale.created_at_fmt || formatDate(sale.created_at)}
                             </TableCell>
                             <TableCell>
+                              {/* ✅ CORRECCIÓN: Usar client_name y client_doc de la RPC */}
                               <div>
-                                <div className="font-medium">{sale.customer_name}</div>
-                                {sale.customer_id_number && (
+                                <div className="font-medium">{sale.client_name || sale.customer_name || 'Sin Cliente'}</div>
+                                {(sale.client_doc || sale.customer_id_number) && (
                                   <div className="text-sm text-muted-foreground">
-                                    {sale.customer_id_number}
+                                    {sale.client_doc || sale.customer_id_number}
                                   </div>
                                 )}
                               </div>
                             </TableCell>
-                            <TableCell>{sale.store_name}</TableCell>
+                            <TableCell>
+                              {/* ✅ CORRECCIÓN: Usar store_name directamente (ya viene de la RPC o se carga por separado) */}
+                              {sale.store_name && sale.store_name !== 'Cargando...' ? sale.store_name : 'N/A'}
+                            </TableCell>
                             <TableCell className="font-medium">
-                              {formatCurrency(sale.total_usd)}
+                              {/* ✅ Mostrar solo USD (negrita) - BS se muestra en columna separada */}
+                              <div className="font-bold">{formatCurrency(sale.total_usd)}</div>
                             </TableCell>
                             <TableCell>
-                              Bs {sale.total_bs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
+                              {/* Mantener columna BS separada para compatibilidad */}
+                              <span className="text-sm text-muted-foreground">
+                                Bs {sale.total_bs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
+                              </span>
                             </TableCell>
                             <TableCell>
-                              {getPaymentMethodBadge(sale.payment_method, sale.is_mixed_payment)}
+                              {/* ✅ NUEVO: Columna MÉTODO - Muestra el instrumento de pago real (ya viene formateado de la RPC) */}
+                              <Badge variant="outline" className={getMethodBadgeColor(sale.payment_method, sale.is_mixed_payment)}>
+                                {sale.is_mixed_payment 
+                                  ? 'Mixto' 
+                                  : formatPaymentMethod(sale.payment_method)}
+                              </Badge>
                             </TableCell>
                             <TableCell>
-                              {getKreceBadge(sale)}
+                              {/* ✅ ACTUALIZADO: Columna TIPO - Muestra badges con colores específicos para Cashea/Krece */}
+                              {sale.cashea_enabled ? (
+                                <Badge variant="outline" className="bg-indigo-100 text-indigo-800 border-indigo-200 font-medium">
+                                  CASHEA
+                                </Badge>
+                              ) : sale.krece_enabled ? (
+                                <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200 font-medium">
+                                  {sale.financing_label || 'KRECE'}
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
+                                  CONTADO
+                                </Badge>
+                              )}
                             </TableCell>
                             <TableCell>
                               <Button
@@ -1833,10 +1996,12 @@ export default function SalesPage() {
                                           {itemsToDisplay.map((item) => (
                                             <tr key={item.id} className="border-b last:border-b-0">
                                               <td className="py-2 px-3 font-mono text-xs text-muted-foreground">
-                                                {item.product_sku || 'N/A'}
+                                                {/* ✅ CORRECCIÓN: Priorizar sku (viene de RPC o de fetchSaleItems corregido) */}
+                                                {item.sku || item.product_sku || 'N/A'}
                                               </td>
                                               <td className="py-2 px-3 font-medium">
-                                                {item.product_name || 'Producto sin nombre'}
+                                                {/* ✅ NUEVO: Usar name de la RPC */}
+                                                {item.name || item.product_name || 'Producto sin nombre'}
                                               </td>
                                               <td className="py-2 px-3">
                                                 {item.category ? (
@@ -1848,13 +2013,16 @@ export default function SalesPage() {
                                                 )}
                                               </td>
                                               <td className="py-2 px-3 text-right font-medium">
-                                                {item.quantity || 0}
+                                                {/* ✅ NUEVO: Usar qty de la RPC */}
+                                                {item.qty || item.quantity || 0}
                                               </td>
                                               <td className="py-2 px-3 text-right">
-                                                {formatCurrency(item.unit_price_usd || 0)}
+                                                {/* ✅ NUEVO: Usar price de la RPC */}
+                                                {formatCurrency(item.price || item.unit_price_usd || 0)}
                                               </td>
                                               <td className="py-2 px-3 text-right font-medium text-green-600">
-                                                {formatCurrency(item.total_price_usd || 0)}
+                                                {/* ✅ NUEVO: Usar subtotal de la RPC */}
+                                                {formatCurrency(item.subtotal || item.total_price_usd || 0)}
                                               </td>
                                             </tr>
                                           ))}

@@ -123,7 +123,7 @@ export const MasterAuditDashboardPage: React.FC = () => {
   const [storeFilter, setStoreFilter] = useState<string>('all');
   const [productFilter, setProductFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [dateFilter, setDateFilter] = useState<string>('today');
+  const [dateFilter, setDateFilter] = useState<string>('all'); // Cambiado de 'today' a 'all' para ver todos los datos
   const [searchTerm, setSearchTerm] = useState('');
   
   // Pagination
@@ -192,32 +192,37 @@ export const MasterAuditDashboardPage: React.FC = () => {
 
       const { data, error } = await query;
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Error fetching movements:', error);
+        throw error;
+      }
+
+      console.log('✅ Movements fetched:', data?.length || 0);
 
       const formattedMovements: InventoryMovement[] = (data || []).map((m: any) => ({
         id: m.id,
         product_id: m.product_id,
-        product_name: m.products?.name,
-        product_sku: m.products?.sku,
+        product_name: m.products?.name || 'Producto N/A',
+        product_sku: m.products?.sku || 'N/A',
         type: m.type,
         qty: m.qty,
         store_from_id: m.store_from_id,
-        store_from_name: m.stores_from?.name,
+        store_from_name: m.stores_from?.name || 'N/A',
         store_to_id: m.store_to_id,
-        store_to_name: m.stores_to?.name,
+        store_to_name: m.stores_to?.name || 'N/A',
         reason: m.reason,
         user_id: m.user_id,
-        user_name: m.users?.name,
+        user_name: m.users?.name || 'Usuario N/A',
         company_id: m.company_id,
         created_at: m.created_at,
       }));
 
       setMovements(formattedMovements);
     } catch (error: any) {
-      console.error('Error fetching movements:', error);
+      console.error('❌ Error fetching movements:', error);
       toast({
         title: "Error",
-        description: "No se pudieron cargar los movimientos de inventario",
+        description: error.message || "No se pudieron cargar los movimientos de inventario",
         variant: "destructive",
       });
     }
@@ -226,6 +231,9 @@ export const MasterAuditDashboardPage: React.FC = () => {
   // Fetch inventory transfers
   const fetchTransfers = async () => {
     try {
+      console.log('🔄 [fetchTransfers] Iniciando carga de transferencias...');
+      
+      // Intentar query simple primero (sin JOINs complejos)
       let query = supabase
         .from('inventory_transfers')
         .select('*')
@@ -257,31 +265,164 @@ export const MasterAuditDashboardPage: React.FC = () => {
 
       const { data, error } = await query;
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Error fetching transfers:', error);
+        throw error;
+      }
 
-      const formattedTransfers: InventoryTransfer[] = (data || []).map((t: any) => ({
-        id: t.id,
-        product_id: t.product_id,
-        product_name: t.products?.name,
-        product_sku: t.products?.sku,
-        from_store_id: t.from_store_id,
-        from_store_name: t.stores_from?.name,
-        to_store_id: t.to_store_id,
-        to_store_name: t.stores_to?.name,
-        quantity: t.quantity,
-        transferred_by: t.transferred_by,
-        transferred_by_name: t.users?.name,
-        company_id: t.company_id,
-        status: t.status,
-        created_at: t.created_at,
-      }));
+      console.log('✅ Transfers fetched:', data?.length || 0);
+      if (data && data.length > 0) {
+        console.log('🔍 DEBUG - First transfer raw data:', JSON.stringify(data[0], null, 2));
+      }
+
+      // Extraer IDs únicos para queries separadas si los JOINs fallan
+      const productIds = [...new Set((data || []).map((t: any) => t.product_id).filter(Boolean))];
+      const storeIds = [...new Set((data || []).flatMap((t: any) => [t.from_store_id, t.to_store_id]).filter(Boolean))];
+      const userIds = [...new Set((data || []).map((t: any) => t.transferred_by).filter(Boolean))];
+
+      console.log('🔍 [fetchTransfers] IDs extraídos:', {
+        productIds: productIds.length,
+        storeIds: storeIds.length,
+        userIds: userIds.length,
+        sampleProductId: productIds[0],
+        sampleStoreId: storeIds[0],
+        sampleUserId: userIds[0],
+      });
+
+      // Hacer queries separadas para obtener nombres si los JOINs no funcionaron
+      let productsData = { data: [], error: null };
+      let storesData = { data: [], error: null };
+      let usersData = { data: [], error: null };
+
+      try {
+        if (productIds.length > 0) {
+          console.log('🔄 [fetchTransfers] Consultando products...', productIds);
+          productsData = await supabase.from('products').select('id, name, sku').in('id', productIds);
+          if (productsData.error) {
+            console.error('❌ [fetchTransfers] Error fetching products:', productsData.error);
+          } else {
+            console.log('✅ [fetchTransfers] Products obtenidos:', productsData.data?.length || 0);
+          }
+        }
+      } catch (err) {
+        console.error('❌ [fetchTransfers] Excepción al consultar products:', err);
+      }
+
+      try {
+        if (storeIds.length > 0) {
+          console.log('🔄 [fetchTransfers] Consultando stores...', storeIds);
+          storesData = await supabase.from('stores').select('id, name').in('id', storeIds);
+          if (storesData.error) {
+            console.error('❌ [fetchTransfers] Error fetching stores:', storesData.error);
+          } else {
+            console.log('✅ [fetchTransfers] Stores obtenidos:', storesData.data?.length || 0);
+          }
+        }
+      } catch (err) {
+        console.error('❌ [fetchTransfers] Excepción al consultar stores:', err);
+      }
+
+      try {
+        if (userIds.length > 0) {
+          console.log('🔄 [fetchTransfers] Consultando users...', userIds);
+          usersData = await supabase.from('users').select('id, name, email').in('id', userIds);
+          if (usersData.error) {
+            console.error('❌ [fetchTransfers] Error fetching users:', usersData.error);
+          } else {
+            console.log('✅ [fetchTransfers] Users obtenidos:', usersData.data?.length || 0);
+          }
+        }
+      } catch (err) {
+        console.error('❌ [fetchTransfers] Excepción al consultar users:', err);
+      }
+
+      console.log('✅ [fetchTransfers] Queries separadas completadas:', {
+        products: productsData.data?.length || 0,
+        stores: storesData.data?.length || 0,
+        users: usersData.data?.length || 0,
+      });
+
+      // Crear mapas para búsqueda rápida
+      const productsMap = new Map((productsData.data || []).map((p: any) => [p.id, p]));
+      const storesMap = new Map((storesData.data || []).map((s: any) => [s.id, s]));
+      const usersMap = new Map((usersData.data || []).map((u: any) => [u.id, u]));
+
+      console.log('🗺️ [fetchTransfers] Mapas creados:', {
+        productsMapSize: productsMap.size,
+        storesMapSize: storesMap.size,
+        usersMapSize: usersMap.size,
+      });
+
+      const formattedTransfers: InventoryTransfer[] = (data || []).map((t: any, index: number) => {
+        // Obtener datos de los mapas (las queries separadas)
+        const product = productsMap.get(t.product_id);
+        const fromStore = storesMap.get(t.from_store_id);
+        const toStore = storesMap.get(t.to_store_id);
+        const user = usersMap.get(t.transferred_by);
+
+        // Debug para el primer elemento
+        if (index === 0) {
+          console.log('🔍 [fetchTransfers] Mapeando primer transfer:', {
+            transferId: t.id,
+            productId: t.product_id,
+            productFromMap: productsMap.get(t.product_id),
+            productExists: !!product,
+            productName: product?.name,
+            fromStoreId: t.from_store_id,
+            fromStoreFromMap: storesMap.get(t.from_store_id),
+            fromStoreExists: !!fromStore,
+            fromStoreName: fromStore?.name,
+            toStoreId: t.to_store_id,
+            toStoreFromMap: storesMap.get(t.to_store_id),
+            toStoreExists: !!toStore,
+            toStoreName: toStore?.name,
+            userId: t.transferred_by,
+            userFromMap: usersMap.get(t.transferred_by),
+            userExists: !!user,
+            userName: user?.name || user?.email,
+            // Debug de los mapas
+            productsMapKeys: Array.from(productsMap.keys()),
+            storesMapKeys: Array.from(storesMap.keys()),
+            usersMapKeys: Array.from(usersMap.keys()),
+          });
+        }
+
+        const formatted = {
+          id: t.id,
+          product_id: t.product_id,
+          product_name: product?.name || 'Producto N/A',
+          product_sku: product?.sku || 'N/A',
+          from_store_id: t.from_store_id,
+          from_store_name: fromStore?.name || 'Tienda Origen N/A',
+          to_store_id: t.to_store_id,
+          to_store_name: toStore?.name || 'Tienda Destino N/A',
+          quantity: t.quantity,
+          transferred_by: t.transferred_by,
+          transferred_by_name: user?.name || user?.email || 'Usuario N/A',
+          company_id: t.company_id,
+          status: t.status,
+          created_at: t.created_at,
+        };
+
+        // Debug del resultado formateado para el primer elemento
+        if (index === 0) {
+          console.log('📋 [fetchTransfers] Transfer formateado:', formatted);
+        }
+
+        return formatted;
+      });
+
+      console.log('✅ [fetchTransfers] Transferencias formateadas:', formattedTransfers.length);
+      if (formattedTransfers.length > 0) {
+        console.log('📋 [fetchTransfers] Primera transferencia formateada:', formattedTransfers[0]);
+      }
 
       setTransfers(formattedTransfers);
     } catch (error: any) {
-      console.error('Error fetching transfers:', error);
+      console.error('❌ Error fetching transfers:', error);
       toast({
         title: "Error",
-        description: "No se pudieron cargar las transferencias",
+        description: error.message || "No se pudieron cargar las transferencias",
         variant: "destructive",
       });
     }
@@ -290,9 +431,20 @@ export const MasterAuditDashboardPage: React.FC = () => {
   // Fetch recent sales
   const fetchRecentSales = async () => {
     try {
+      console.log('🔄 [fetchRecentSales] Iniciando carga de ventas...');
+      
+      // Query simple sin JOINs complejos
       let query = supabase
         .from('sales')
-        .select('id, invoice_number, store_id, customer_name, total_usd, cashier_id, created_at')
+        .select(`
+          id,
+          invoice_number,
+          store_id,
+          customer_name,
+          total_usd,
+          cashier_id,
+          created_at
+        `)
         .order('created_at', { ascending: false })
         .limit(pageSize)
         .range((salesPage - 1) * pageSize, salesPage * pageSize - 1);
@@ -317,27 +469,120 @@ export const MasterAuditDashboardPage: React.FC = () => {
 
       const { data, error } = await query;
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Error fetching sales:', error);
+        throw error;
+      }
 
-      const formattedSales: Sale[] = (data || []).map((s: any) => ({
-        id: s.id,
-        invoice_number: s.invoice_number,
-        store_id: s.store_id,
-        store_name: s.stores?.name,
-        customer_name: s.customer_name,
-        total_usd: s.total_usd,
-        cashier_id: s.cashier_id,
-        cashier_name: s.users?.name,
-        created_at: s.created_at,
-        sale_items: s.sale_items || [],
-      }));
+      console.log('✅ Sales fetched:', data?.length || 0);
+
+      // Extraer IDs únicos para queries separadas
+      const storeIds = [...new Set((data || []).map((s: any) => s.store_id).filter(Boolean))];
+      const cashierIds = [...new Set((data || []).map((s: any) => s.cashier_id).filter(Boolean))];
+      const saleIds = [...new Set((data || []).map((s: any) => s.id).filter(Boolean))];
+
+      console.log('🔍 [fetchRecentSales] IDs extraídos:', {
+        storeIds: storeIds.length,
+        cashierIds: cashierIds.length,
+        saleIds: saleIds.length,
+      });
+
+      // Hacer queries separadas
+      let storesData = { data: [], error: null };
+      let usersData = { data: [], error: null };
+      let saleItemsData = { data: [], error: null };
+
+      try {
+        if (storeIds.length > 0) {
+          console.log('🔄 [fetchRecentSales] Consultando stores...', storeIds);
+          storesData = await supabase.from('stores').select('id, name').in('id', storeIds);
+          if (storesData.error) {
+            console.error('❌ [fetchRecentSales] Error fetching stores:', storesData.error);
+          } else {
+            console.log('✅ [fetchRecentSales] Stores obtenidos:', storesData.data?.length || 0);
+          }
+        }
+      } catch (err) {
+        console.error('❌ [fetchRecentSales] Excepción al consultar stores:', err);
+      }
+
+      try {
+        if (cashierIds.length > 0) {
+          console.log('🔄 [fetchRecentSales] Consultando users (cashiers)...', cashierIds);
+          usersData = await supabase.from('users').select('id, name, email').in('id', cashierIds);
+          if (usersData.error) {
+            console.error('❌ [fetchRecentSales] Error fetching users:', usersData.error);
+          } else {
+            console.log('✅ [fetchRecentSales] Users obtenidos:', usersData.data?.length || 0);
+          }
+        }
+      } catch (err) {
+        console.error('❌ [fetchRecentSales] Excepción al consultar users:', err);
+      }
+
+      try {
+        if (saleIds.length > 0) {
+          console.log('🔄 [fetchRecentSales] Consultando sale_items...', saleIds);
+          saleItemsData = await supabase.from('sale_items').select('sale_id, product_name, qty').in('sale_id', saleIds);
+          if (saleItemsData.error) {
+            console.error('❌ [fetchRecentSales] Error fetching sale_items:', saleItemsData.error);
+          } else {
+            console.log('✅ [fetchRecentSales] Sale items obtenidos:', saleItemsData.data?.length || 0);
+          }
+        }
+      } catch (err) {
+        console.error('❌ [fetchRecentSales] Excepción al consultar sale_items:', err);
+      }
+
+      // Crear mapas para búsqueda rápida
+      const storesMap = new Map((storesData.data || []).map((s: any) => [s.id, s]));
+      const usersMap = new Map((usersData.data || []).map((u: any) => [u.id, u]));
+      const saleItemsMap = new Map<string, any[]>();
+      
+      // Agrupar sale_items por sale_id
+      (saleItemsData.data || []).forEach((item: any) => {
+        if (!saleItemsMap.has(item.sale_id)) {
+          saleItemsMap.set(item.sale_id, []);
+        }
+        saleItemsMap.get(item.sale_id)!.push(item);
+      });
+
+      console.log('🗺️ [fetchRecentSales] Mapas creados:', {
+        storesMapSize: storesMap.size,
+        usersMapSize: usersMap.size,
+        saleItemsMapSize: saleItemsMap.size,
+      });
+
+      const formattedSales: Sale[] = (data || []).map((s: any) => {
+        const store = storesMap.get(s.store_id);
+        const cashier = usersMap.get(s.cashier_id);
+        const items = saleItemsMap.get(s.id) || [];
+
+        return {
+          id: s.id,
+          invoice_number: s.invoice_number,
+          store_id: s.store_id,
+          store_name: store?.name || 'Tienda N/A',
+          customer_name: s.customer_name || 'Cliente General',
+          total_usd: s.total_usd,
+          cashier_id: s.cashier_id,
+          cashier_name: cashier?.name || cashier?.email || 'Cajero N/A',
+          created_at: s.created_at,
+          sale_items: items.map((item: any) => ({
+            product_name: item.product_name || 'Producto N/A',
+            qty: item.qty || 0,
+          })),
+        };
+      });
+
+      console.log('✅ [fetchRecentSales] Ventas formateadas:', formattedSales.length);
 
       setRecentSales(formattedSales);
     } catch (error: any) {
-      console.error('Error fetching sales:', error);
+      console.error('❌ Error fetching sales:', error);
       toast({
         title: "Error",
-        description: "No se pudieron cargar las ventas",
+        description: error.message || "No se pudieron cargar las ventas",
         variant: "destructive",
       });
     }
@@ -345,18 +590,36 @@ export const MasterAuditDashboardPage: React.FC = () => {
 
   // Fetch all data
   const fetchAllData = async () => {
+    console.log('🔄 [fetchAllData] Iniciando carga de todos los datos...');
     setLoading(true);
-    await Promise.all([
-      fetchMovements(),
-      fetchTransfers(),
-      fetchRecentSales(),
-    ]);
-    setLoading(false);
+    try {
+      await Promise.all([
+        fetchMovements(),
+        fetchTransfers(),
+        fetchRecentSales(),
+      ]);
+      console.log('✅ [fetchAllData] Todos los datos cargados exitosamente');
+    } catch (error) {
+      console.error('❌ [fetchAllData] Error al cargar datos:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Real-time subscription
   useEffect(() => {
-    if (!userProfile || userProfile.role !== 'master_admin') return;
+    console.log('🔄 [useEffect] MasterAuditDashboard - Verificando userProfile...', {
+      hasUserProfile: !!userProfile,
+      role: userProfile?.role,
+      isMasterAdmin: userProfile?.role === 'master_admin',
+    });
+    
+    if (!userProfile || userProfile.role !== 'master_admin') {
+      console.log('⚠️ [useEffect] No se ejecuta fetchAllData - userProfile o role incorrecto');
+      return;
+    }
+    
+    console.log('✅ [useEffect] Ejecutando fetchAllData...');
 
     // Subscribe to inventory_movements changes
     const movementsChannel = supabase
@@ -684,48 +947,70 @@ export const MasterAuditDashboardPage: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {transfers.map((transfer) => (
-                    <div
-                      key={transfer.id}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-                    >
-                      <div className="flex items-center gap-4 flex-1">
-                        <ArrowRightLeft className="w-5 h-5 text-blue-500" />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-semibold">{transfer.product_name}</span>
-                            <span className="text-sm text-muted-foreground">({transfer.product_sku})</span>
-                            <Badge className="bg-blue-500">{transfer.quantity} unidades</Badge>
+                  {transfers.map((transfer, idx) => {
+                    // Debug: Log del primer transfer para ver qué datos tiene
+                    if (idx === 0) {
+                      console.log('🔍 [RENDER] Primer transfer en renderizado:', {
+                        id: transfer.id,
+                        product_id: transfer.product_id,
+                        product_name: transfer.product_name,
+                        product_sku: transfer.product_sku,
+                        from_store_id: transfer.from_store_id,
+                        from_store_name: transfer.from_store_name,
+                        to_store_id: transfer.to_store_id,
+                        to_store_name: transfer.to_store_name,
+                        quantity: transfer.quantity,
+                        transferred_by: transfer.transferred_by,
+                        transferred_by_name: transfer.transferred_by_name,
+                      });
+                    }
+                    
+                    return (
+                      <div
+                        key={transfer.id}
+                        className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-4 flex-1">
+                          <ArrowRightLeft className="w-5 h-5 text-blue-500" />
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-semibold">{transfer.product_name || 'Producto N/A'}</span>
+                              <span className="text-sm text-muted-foreground">({transfer.product_sku || 'N/A'})</span>
+                              <Badge className="bg-blue-500">{transfer.quantity} unidades</Badge>
+                            <Badge variant={transfer.status === 'completed' ? 'default' : 'secondary'}>
+                              {transfer.status === 'completed' ? 'Completada' : transfer.status === 'pending' ? 'Pendiente' : 'Cancelada'}
+                            </Badge>
                           </div>
                           <div className="text-sm text-muted-foreground space-y-1">
+                            <div className="flex items-center gap-4 flex-wrap">
+                              <span className="flex items-center gap-1">
+                                <Store className="w-3 h-3 text-red-500" />
+                                <span className="font-medium">Desde:</span> {transfer.from_store_name || 'Tienda Origen N/A'}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <ArrowRightLeft className="w-3 h-3 text-blue-500" />
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Store className="w-3 h-3 text-green-500" />
+                                <span className="font-medium">Hacia:</span> {transfer.to_store_name || 'Tienda Destino N/A'}
+                              </span>
+                            </div>
                             <div className="flex items-center gap-4">
                               <span className="flex items-center gap-1">
-                                <Store className="w-3 h-3" />
-                                Desde: {transfer.from_store_name}
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <Store className="w-3 h-3" />
-                                Hacia: {transfer.to_store_name}
-                              </span>
-                              <span className="flex items-center gap-1">
                                 <User className="w-3 h-3" />
-                                {transfer.transferred_by_name || 'N/A'}
+                                <span className="font-medium">Transferido por:</span> {transfer.transferred_by_name || 'Usuario N/A'}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                {format(new Date(transfer.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: es })}
                               </span>
                             </div>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <Badge variant={transfer.status === 'completed' ? 'default' : 'secondary'}>
-                            {transfer.status}
-                          </Badge>
-                          <div className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                            <Clock className="w-3 h-3" />
-                            {format(new Date(transfer.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: es })}
-                          </div>
-                        </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
@@ -781,9 +1066,23 @@ export const MasterAuditDashboardPage: React.FC = () => {
                                 Cajero: {sale.cashier_name || 'N/A'}
                               </span>
                             </div>
-                            {sale.sale_items && sale.sale_items.length > 0 && (
-                              <div className="text-xs">
-                                Productos: {sale.sale_items.map(item => `${item.product_name} (${item.qty})`).join(', ')}
+                            {sale.sale_items && sale.sale_items.length > 0 ? (
+                              <div className="text-xs space-y-1 mt-2">
+                                <div className="font-medium text-foreground">Productos vendidos:</div>
+                                <div className="pl-2 space-y-0.5">
+                                  {sale.sale_items.map((item, idx) => (
+                                    <div key={idx} className="flex items-center gap-2">
+                                      <span>• {item.product_name || 'Producto N/A'}</span>
+                                      <Badge variant="outline" className="text-xs">
+                                        Cantidad: {item.qty || 0}
+                                      </Badge>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-xs text-muted-foreground italic mt-2">
+                                No hay detalles de productos disponibles
                               </div>
                             )}
                           </div>

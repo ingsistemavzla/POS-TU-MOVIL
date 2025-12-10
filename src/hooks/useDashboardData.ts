@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -111,6 +111,37 @@ export interface DashboardData {
     averageOrderValue: number;
     percentage: number;
   }>;
+  
+  // ✅ NUEVO: Métricas Financieras (Salud Financiera Real) - Por Período
+  financialHealth: {
+    today: {
+      receivables_usd: number;
+      net_income_usd: number;
+      sales_by_method_count: { cash: number; krece: number; cashea: number };
+      receivables_breakdown: { krece_usd: number; cashea_usd: number };
+      avg_ticket_cash: number;
+      avg_ticket_krece: number;
+      avg_ticket_cashea: number;
+    };
+    yesterday: {
+      receivables_usd: number;
+      net_income_usd: number;
+      sales_by_method_count: { cash: number; krece: number; cashea: number };
+      receivables_breakdown: { krece_usd: number; cashea_usd: number };
+      avg_ticket_cash: number;
+      avg_ticket_krece: number;
+      avg_ticket_cashea: number;
+    };
+    thisMonth: {
+      receivables_usd: number;
+      net_income_usd: number;
+      sales_by_method_count: { cash: number; krece: number; cashea: number };
+      receivables_breakdown: { krece_usd: number; cashea_usd: number };
+      avg_ticket_cash: number;
+      avg_ticket_krece: number;
+      avg_ticket_cashea: number;
+    };
+  };
 }
 
 // Helper: convertir cualquier valor a número seguro
@@ -205,6 +236,15 @@ const getEmptyData = (): DashboardData => ({
   dailySales: [],
   storesSummary: [],
   salesByCategory: [],
+  financialHealth: {
+    receivables_usd: 0,
+    net_income_usd: 0,
+    sales_by_method_count: { cash: 0, krece: 0, cashea: 0 },
+    receivables_breakdown: { krece_usd: 0, cashea_usd: 0 },
+    avg_ticket_cash: 0,
+    avg_ticket_krece: 0,
+    avg_ticket_cashea: 0,
+  },
 });
 
 export function useDashboardData() {
@@ -212,6 +252,13 @@ export function useDashboardData() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // ✅ FIX: Extraer IDs estables para evitar bucle infinito
+  // Los objetos userProfile y company pueden cambiar de referencia en cada render
+  // pero sus IDs son estables, así que usamos solo los IDs como dependencias
+  const userProfileId = userProfile?.id;
+  const companyId = company?.id;
+  const userCompanyId = userProfile?.company_id;
 
   useEffect(() => {
     const fetchData = async () => {
@@ -609,7 +656,113 @@ export function useDashboardData() {
         }
 
         // ============================================
-        // 11. CONSTRUIR RESPUESTA FINAL
+        // 11. SALUD FINANCIERA REAL (Nuevo) - Por Período
+        // ============================================
+        // ✅ FIX: Función helper para calcular financialHealth para un período específico
+        const calculateFinancialHealthForPeriod = async (
+          startDate: Date,
+          endDate: Date,
+          totalGross: number
+        ): Promise<DashboardData['financialHealth']['today']> => {
+          const defaultHealth = {
+            receivables_usd: 0,
+            net_income_usd: 0,
+            sales_by_method_count: { cash: 0, krece: 0, cashea: 0 },
+            receivables_breakdown: { krece_usd: 0, cashea_usd: 0 },
+            avg_ticket_cash: 0,
+            avg_ticket_krece: 0,
+            avg_ticket_cashea: 0,
+          };
+
+          try {
+            const { data: financialSalesData, error: financialError } = await supabase
+              .from('sales')
+              .select(`
+                id,
+                total_usd,
+                krece_enabled,
+                krece_financed_amount_usd,
+                cashea_enabled,
+                cashea_financed_amount_usd
+              `)
+              .eq('status', 'completed')
+              .gte('created_at', startDate.toISOString())
+              .lte('created_at', endDate.toISOString());
+
+            if (financialError || !financialSalesData) {
+              return defaultHealth;
+            }
+
+            let totalReceivables = 0;
+            let totalKreceReceivables = 0;
+            let totalCasheaReceivables = 0;
+            const methodCount = { cash: 0, krece: 0, cashea: 0 };
+            const methodTotals = { cash: 0, krece: 0, cashea: 0 };
+
+            (financialSalesData as any[]).forEach((sale: any) => {
+              const totalUSD = safeNum(sale.total_usd);
+
+              // Contar por método y acumular totales
+              if (sale.cashea_enabled) {
+                methodCount.cashea += 1;
+                methodTotals.cashea += totalUSD;
+                const casheaFinanced = safeNum(sale.cashea_financed_amount_usd || 0);
+                totalCasheaReceivables += casheaFinanced;
+                totalReceivables += casheaFinanced;
+              } else if (sale.krece_enabled) {
+                methodCount.krece += 1;
+                methodTotals.krece += totalUSD;
+                const kreceFinanced = safeNum(sale.krece_financed_amount_usd || 0);
+                totalKreceReceivables += kreceFinanced;
+                totalReceivables += kreceFinanced;
+              } else {
+                methodCount.cash += 1;
+                methodTotals.cash += totalUSD;
+              }
+            });
+
+            // Calcular ticket promedio por método
+            const avgTicketCash = methodCount.cash > 0 ? methodTotals.cash / methodCount.cash : 0;
+            const avgTicketKrece = methodCount.krece > 0 ? methodTotals.krece / methodCount.krece : 0;
+            const avgTicketCashea = methodCount.cashea > 0 ? methodTotals.cashea / methodCount.cashea : 0;
+
+            // ✅ FIX: MÉTODO DE SUSTRACCIÓN SEGURO (Infalible)
+            // El dinero en caja es simplemente lo que vendí MENOS lo que me deben
+            const netIncome = totalGross - totalReceivables;
+
+            return {
+              receivables_usd: totalReceivables,
+              net_income_usd: Math.max(0, netIncome), // Asegurar que no sea negativo (por seguridad)
+              sales_by_method_count: methodCount,
+              receivables_breakdown: {
+                krece_usd: totalKreceReceivables,
+                cashea_usd: totalCasheaReceivables,
+              },
+              avg_ticket_cash: avgTicketCash,
+              avg_ticket_krece: avgTicketKrece,
+              avg_ticket_cashea: avgTicketCashea,
+            };
+          } catch (err) {
+            console.warn('Error calculating financial health for period:', err);
+            return defaultHealth;
+          }
+        };
+
+        // ✅ FIX: Calcular financialHealth para cada período en paralelo
+        const [financialHealthToday, financialHealthYesterday, financialHealthMonth] = await Promise.all([
+          calculateFinancialHealthForPeriod(dates.today, dates.todayEnd, todaySales.total || 0),
+          calculateFinancialHealthForPeriod(dates.yesterday, dates.yesterdayEnd, yesterdaySales.total || 0),
+          calculateFinancialHealthForPeriod(dates.startOfMonth, dates.todayEnd, thisMonthSales.total || 0),
+        ]);
+
+        const financialHealth: DashboardData['financialHealth'] = {
+          today: financialHealthToday,
+          yesterday: financialHealthYesterday,
+          thisMonth: financialHealthMonth,
+        };
+
+        // ============================================
+        // 12. CONSTRUIR RESPUESTA FINAL
         // ============================================
         const dashboardData: DashboardData = {
           totalSales: {
@@ -643,6 +796,7 @@ export function useDashboardData() {
           dailySales,
           storesSummary,
           salesByCategory,
+          financialHealth, // ✅ NUEVO: Salud Financiera Real
         };
 
         setData(dashboardData);
@@ -664,7 +818,7 @@ export function useDashboardData() {
     return () => {
       // El timeout se limpiará automáticamente si fetchData completa
     };
-  }, [userProfile, company]);
+  }, [userProfileId, companyId, userCompanyId]); // ✅ FIX: Usar IDs estables en lugar de objetos completos
 
   return { data, loading, error };
 }

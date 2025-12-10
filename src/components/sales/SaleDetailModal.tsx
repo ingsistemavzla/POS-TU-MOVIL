@@ -72,6 +72,19 @@ interface SaleDetail {
   customer_id_number?: string;
   cashier_name?: string;
   items?: SaleItem[];
+  // ✅ NUEVO: Campos financieros
+  krece_enabled?: boolean;
+  krece_initial_amount_usd?: number;
+  krece_financed_amount_usd?: number;
+  krece_initial_amount_bs?: number;
+  krece_financed_amount_bs?: number;
+  cashea_enabled?: boolean;
+  cashea_initial_amount_usd?: number;
+  cashea_financed_amount_usd?: number;
+  cashea_initial_amount_bs?: number;
+  cashea_financed_amount_bs?: number;
+  subtotal_usd?: number;
+  tax_amount_usd?: number;
 }
 
 export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: SaleDetailModalProps) {
@@ -96,10 +109,18 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
     try {
       console.log('Fetching sale details for ID:', id);
 
-      // First, fetch the basic sale information - OPTIMIZADO: Select Minimal
+      // First, fetch the basic sale information - ✅ ACTUALIZADO: Incluir campos financieros
       const { data: saleData, error: saleError } = await supabase
         .from('sales')
-        .select('id, company_id, store_id, customer_id, cashier_id, total_usd, total_bs, bcv_rate_used, payment_method, status, created_at')
+        .select(`
+          id, company_id, store_id, customer_id, cashier_id, 
+          total_usd, total_bs, bcv_rate_used, payment_method, status, created_at,
+          subtotal_usd, tax_amount_usd,
+          krece_enabled, krece_initial_amount_usd, krece_financed_amount_usd,
+          krece_initial_amount_bs, krece_financed_amount_bs,
+          cashea_enabled, cashea_initial_amount_usd, cashea_financed_amount_usd,
+          cashea_initial_amount_bs, cashea_financed_amount_bs
+        `)
         .eq('id', id)
         .eq('company_id', userProfile.company_id)
         .single();
@@ -211,6 +232,19 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
         customer_id_number: customerData?.id_number,
         cashier_name: cashierData?.email || 'Cajero N/A',
         items: items,
+        // ✅ NUEVO: Campos financieros
+        subtotal_usd: saleData.subtotal_usd,
+        tax_amount_usd: saleData.tax_amount_usd,
+        krece_enabled: saleData.krece_enabled || false,
+        krece_initial_amount_usd: saleData.krece_initial_amount_usd || 0,
+        krece_financed_amount_usd: saleData.krece_financed_amount_usd || 0,
+        krece_initial_amount_bs: saleData.krece_initial_amount_bs || 0,
+        krece_financed_amount_bs: saleData.krece_financed_amount_bs || 0,
+        cashea_enabled: saleData.cashea_enabled || false,
+        cashea_initial_amount_usd: saleData.cashea_initial_amount_usd || 0,
+        cashea_financed_amount_usd: saleData.cashea_financed_amount_usd || 0,
+        cashea_initial_amount_bs: saleData.cashea_initial_amount_bs || 0,
+        cashea_financed_amount_bs: saleData.cashea_financed_amount_bs || 0,
       };
 
       console.log('Transformed sale:', transformedSale);
@@ -592,6 +626,86 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
                 </div>
               </CardContent>
             </Card>
+
+            {/* ✅ NUEVO: Desglose Financiero */}
+            {(sale.krece_enabled || sale.cashea_enabled) && (
+              <Card className={sale.cashea_enabled ? "border-indigo-200 bg-indigo-50/30" : "border-blue-200 bg-blue-50/30"}>
+                <CardHeader>
+                  <CardTitle className="flex items-center text-lg">
+                    <DollarSign className="w-5 h-5 mr-2" />
+                    {sale.cashea_enabled ? 'Financiamiento Cashea' : 'Financiamiento Krece'}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {sale.cashea_enabled ? (
+                    <>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="font-medium">Inicial:</span>
+                        <div className="text-right">
+                          <div className="font-semibold">{formatCurrency(sale.cashea_initial_amount_usd || 0)}</div>
+                          <div className="text-sm text-muted-foreground">
+                            (Bs. {(sale.cashea_initial_amount_bs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center py-2">
+                        <span className="font-medium">Financiado:</span>
+                        <div className="text-right">
+                          <div className="font-semibold">{formatCurrency(sale.cashea_financed_amount_usd || 0)}</div>
+                          <div className="text-sm text-muted-foreground">
+                            (Bs. {(sale.cashea_financed_amount_bs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : sale.krece_enabled ? (
+                    <>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="font-medium">Inicial:</span>
+                        <div className="text-right">
+                          <div className="font-semibold">{formatCurrency(sale.krece_initial_amount_usd || 0)}</div>
+                          <div className="text-sm text-muted-foreground">
+                            (Bs. {(sale.krece_initial_amount_bs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center py-2">
+                        <span className="font-medium">Financiado:</span>
+                        <div className="text-right">
+                          <div className="font-semibold">{formatCurrency(sale.krece_financed_amount_usd || 0)}</div>
+                          <div className="text-sm text-muted-foreground">
+                            (Bs. {(sale.krece_financed_amount_bs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ✅ NUEVO: Desglose Contado (si no es financiado) */}
+            {!sale.krece_enabled && !sale.cashea_enabled && (
+              <Card className="border-green-200 bg-green-50/30">
+                <CardHeader>
+                  <CardTitle className="flex items-center text-lg">
+                    <DollarSign className="w-5 h-5 mr-2" />
+                    Desglose Financiero
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex justify-between items-center py-2">
+                    <span className="font-medium">Pago Único:</span>
+                    <div className="text-right">
+                      <div className="font-semibold">{formatCurrency(sale.total_usd)}</div>
+                      <div className="text-sm text-muted-foreground">
+                        (Bs. {sale.total_bs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Items */}
             <Card>

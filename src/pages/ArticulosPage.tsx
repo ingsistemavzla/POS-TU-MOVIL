@@ -43,6 +43,7 @@ import { useToast } from '@/hooks/use-toast';
 import { PRODUCT_CATEGORIES, getCategoryLabel } from '@/constants/categories';
 import { sanitizeInventoryData } from '@/utils/inventoryValidation';
 import { ArticlesStatsRow } from '@/components/inventory/ArticlesStatsRow';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 interface Product {
   id: string;
@@ -466,16 +467,30 @@ export const ArticulosPage: React.FC = () => {
     return (product.total_stock || 0) * product.sale_price_usd;
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-md h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Cargando artículos...</p>
+  // ✅ NUEVO: Componente Skeleton para cards de productos
+  const ProductCardSkeleton = () => (
+    <Card className="p-4">
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex-1">
+          <Skeleton className="h-5 w-32 mb-2" />
+          <Skeleton className="h-4 w-24 mb-1" />
+          <Skeleton className="h-4 w-16" />
+        </div>
+        <Skeleton className="h-8 w-8 rounded" />
+      </div>
+      <div className="grid grid-cols-2 gap-3 mb-3">
+        <div>
+          <Skeleton className="h-3 w-16 mb-1" />
+          <Skeleton className="h-4 w-20" />
+        </div>
+        <div>
+          <Skeleton className="h-3 w-16 mb-1" />
+          <Skeleton className="h-4 w-20" />
         </div>
       </div>
-    );
-  }
+      <Skeleton className="h-10 w-full rounded" />
+    </Card>
+  );
 
   return (
     <div className="container mx-auto p-6 space-y-6 bg-gray-50 min-h-screen">
@@ -546,7 +561,13 @@ export const ArticulosPage: React.FC = () => {
       </Card>
 
       {/* Grid de Tarjetas */}
-      {filteredProducts.length === 0 ? (
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+            <ProductCardSkeleton key={i} />
+          ))}
+        </div>
+      ) : filteredProducts.length === 0 ? (
         <div className="p-8 text-center text-muted-foreground">
           <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
           <p>No se encontraron productos</p>

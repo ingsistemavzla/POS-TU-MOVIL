@@ -15,10 +15,16 @@ import {
   Headphones,
   Wrench,
   BarChart3,
-  ShoppingCart
+  ShoppingCart,
+  Wallet,
+  Zap,
+  ShoppingBag
 } from 'lucide-react';
 import { getCategoryLabel } from '@/constants/categories';
 import { sanitizeInventoryData } from '@/utils/inventoryValidation';
+import { useDashboardData } from '@/hooks/useDashboardData';
+import { formatCurrency } from '@/utils/currency';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 interface StoreStats {
   storeName: string;
@@ -50,6 +56,7 @@ interface InventorySummary {
 
 export const EstadisticasPage: React.FC = () => {
   const { userProfile } = useAuth();
+  const { data: dashboardData } = useDashboardData();
   const [loading, setLoading] = useState(true);
   const [storeStats, setStoreStats] = useState<Record<string, StoreStats>>({});
   const [inventorySummary, setInventorySummary] = useState<InventorySummary>({
@@ -637,6 +644,161 @@ export const EstadisticasPage: React.FC = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* ✅ NUEVO: Análisis de Financiamiento */}
+      {(() => {
+        // ✅ FIX: Usar financialHealth.thisMonth para estadísticas (mes completo)
+        const financialHealth = dashboardData?.financialHealth?.thisMonth;
+        
+        if (!financialHealth) {
+          return null;
+        }
+
+        return (
+          <Card className="shadow-lg shadow-green-500/50 border border-green-500/40">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="w-5 h-5" />
+                Análisis de Financiamiento
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Comparativa de ticket promedio y distribución por método de pago (Este Mes)
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* A) Tarjetas de Ticket Promedio */}
+              <div>
+                <h3 className="text-sm font-semibold text-muted-foreground mb-4">Ticket Promedio por Método</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Tarjeta Contado */}
+                  <Card className="border-l-4 border-green-500">
+                    <CardContent className="pt-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Wallet className="w-4 h-4 text-green-600" />
+                        <span className="text-sm font-medium text-muted-foreground">Contado</span>
+                      </div>
+                      <p className="text-2xl font-bold text-green-700">
+                        {formatCurrency(financialHealth.avg_ticket_cash || 0)}
+                      </p>
+                      <p className="text-xs text-green-600 mt-1">
+                        {financialHealth.sales_by_method_count?.cash || 0} transacciones
+                      </p>
+                    </CardContent>
+                  </Card>
+
+                  {/* Tarjeta Krece */}
+                  <Card className="border-l-4 border-blue-500">
+                    <CardContent className="pt-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Zap className="w-4 h-4 text-blue-600" />
+                        <span className="text-sm font-medium text-muted-foreground">Krece</span>
+                      </div>
+                      <p className="text-2xl font-bold text-blue-700">
+                        {formatCurrency(financialHealth.avg_ticket_krece || 0)}
+                      </p>
+                      <p className="text-xs text-blue-600 mt-1">
+                        {financialHealth.sales_by_method_count?.krece || 0} transacciones
+                      </p>
+                    </CardContent>
+                  </Card>
+
+                  {/* Tarjeta Cashea */}
+                  <Card className="border-l-4 border-indigo-500">
+                    <CardContent className="pt-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <ShoppingBag className="w-4 h-4 text-indigo-600" />
+                        <span className="text-sm font-medium text-muted-foreground">Cashea</span>
+                      </div>
+                      <p className="text-2xl font-bold text-indigo-700">
+                        {formatCurrency(financialHealth.avg_ticket_cashea || 0)}
+                      </p>
+                      <p className="text-xs text-indigo-600 mt-1">
+                        {financialHealth.sales_by_method_count?.cashea || 0} transacciones
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+
+              {/* B) Gráfico "Comparativa de Gigantes" (Stacked Bar Chart) */}
+              <div>
+                <h3 className="text-sm font-semibold text-muted-foreground mb-4">Distribución por Método de Financiamiento</h3>
+                {(() => {
+                  // Calcular totales por método (ticket promedio * cantidad de transacciones)
+                  const cashTotal = (financialHealth.sales_by_method_count?.cash || 0) * (financialHealth.avg_ticket_cash || 0);
+                  const kreceTotal = (financialHealth.sales_by_method_count?.krece || 0) * (financialHealth.avg_ticket_krece || 0);
+                  const casheaTotal = (financialHealth.sales_by_method_count?.cashea || 0) * (financialHealth.avg_ticket_cashea || 0);
+
+                // Preparar datos para el gráfico apilado
+                // Si hay múltiples tiendas, mostrar por tienda; si no, mostrar total del período
+                const chartData = dashboardData.storesSummary && dashboardData.storesSummary.length > 1
+                  ? dashboardData.storesSummary.map(store => ({
+                      name: store.name.length > 12 ? store.name.substring(0, 12) + '...' : store.name,
+                      Contado: cashTotal / dashboardData.storesSummary.length, // Distribución aproximada
+                      Krece: kreceTotal / dashboardData.storesSummary.length,
+                      Cashea: casheaTotal / dashboardData.storesSummary.length,
+                    }))
+                  : [
+                      {
+                        name: 'Total del Período',
+                        Contado: cashTotal,
+                        Krece: kreceTotal,
+                        Cashea: casheaTotal,
+                      }
+                    ];
+
+                const hasData = cashTotal > 0 || kreceTotal > 0 || casheaTotal > 0;
+
+                return hasData ? (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart
+                      data={chartData}
+                      margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <XAxis 
+                        dataKey="name" 
+                        stroke="#6b7280" 
+                        tick={{ fill: '#0D0D0D', fontSize: 12 }}
+                        angle={chartData.length > 1 ? -45 : 0}
+                        textAnchor={chartData.length > 1 ? 'end' : 'middle'}
+                        height={chartData.length > 1 ? 80 : 30}
+                      />
+                      <YAxis 
+                        stroke="#6b7280" 
+                        tick={{ fill: '#0D0D0D', fontSize: 12 }}
+                        tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
+                      />
+                      <Tooltip
+                        formatter={(value: number, name: string) => [
+                          formatCurrency(value),
+                          name
+                        ]}
+                        contentStyle={{
+                          backgroundColor: '#fff',
+                          borderColor: '#e5e7eb',
+                          borderRadius: '8px',
+                          color: '#000'
+                        }}
+                        itemStyle={{ color: '#000' }}
+                      />
+                      <Legend />
+                      <Bar dataKey="Contado" stackId="a" fill="#22c55e" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="Krece" stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="Cashea" stackId="a" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-[300px] text-gray-500">
+                    <p>No hay datos de financiamiento para mostrar</p>
+                  </div>
+                );
+              })()}
+            </div>
+          </CardContent>
+        </Card>
+        );
+      })()}
     </div>
   );
 };

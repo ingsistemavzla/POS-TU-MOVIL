@@ -29,3 +29,4 @@ END $$;
 
 COMMENT ON COLUMN sales.tax_rate IS 'Tasa de impuesto (siempre 0 después de la migración 20250125000002). Las ventas antiguas fueron actualizadas a 0.';
 
+
