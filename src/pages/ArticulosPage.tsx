@@ -43,7 +43,7 @@ import { useToast } from '@/hooks/use-toast';
 import { PRODUCT_CATEGORIES, getCategoryLabel } from '@/constants/categories';
 import { sanitizeInventoryData } from '@/utils/inventoryValidation';
 import { ArticlesStatsRow } from '@/components/inventory/ArticlesStatsRow';
-import { Skeleton } from '@/components/ui/Skeleton';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface Product {
   id: string;

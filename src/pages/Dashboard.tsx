@@ -25,7 +25,7 @@ import { LiquidityDonutChart } from '@/components/charts/LiquidityDonutChart';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { DashboardStoreTable } from '@/components/dashboard/DashboardStoreTable';
 import { Progress } from '@/components/ui/progress';
-import { Skeleton } from '@/components/ui/Skeleton';
+import { Skeleton } from '@/components/ui/skeleton';
 
 type PeriodType = 'today' | 'yesterday' | 'thisMonth';
 

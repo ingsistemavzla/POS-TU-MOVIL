@@ -41,7 +41,7 @@ import { sanitizeInventoryData } from '@/utils/inventoryValidation';
 import { InventoryFinancialHeader } from '@/components/inventory/InventoryFinancialHeader';
 import { BranchStockMatrix } from '@/components/inventory/BranchStockMatrix';
 import { InventoryDashboardHeader } from '@/components/inventory/InventoryDashboardHeader';
-import { Skeleton } from '@/components/ui/Skeleton';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface Product {
   id: string;
