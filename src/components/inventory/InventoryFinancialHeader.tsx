@@ -9,10 +9,12 @@ import {
   Loader2
 } from 'lucide-react';
 import { useInventoryFinancialSummary } from '@/hooks/useInventoryFinancialSummary';
+import { useStore } from '@/contexts/StoreContext';
 import { formatCurrency } from '@/utils/currency';
 
 export const InventoryFinancialHeader: React.FC = () => {
-  const { data, loading, error } = useInventoryFinancialSummary();
+  const { selectedStoreId } = useStore();
+  const { data, loading, error } = useInventoryFinancialSummary(selectedStoreId);
 
   // Skeleton de carga
   if (loading) {

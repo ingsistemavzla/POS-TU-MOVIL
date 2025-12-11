@@ -24,7 +24,7 @@ export interface FinancialSummary {
   message?: string;
 }
 
-export function useInventoryFinancialSummary() {
+export function useInventoryFinancialSummary(storeId?: string | null) {
   const { userProfile, company } = useAuth();
   const [data, setData] = useState<FinancialSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,11 +42,15 @@ export function useInventoryFinancialSummary() {
         setError(null);
 
         const companyId = company?.id || userProfile?.company_id;
+        
+        // 🔥 FILTRO DE SUCURSAL: Pasar storeId solo si no es 'all' ni null
+        const storeIdParam = storeId && storeId !== 'all' ? storeId : null;
 
         const { data: result, error: rpcError } = await supabase.rpc(
           'get_inventory_financial_summary',
           {
-            p_company_id: companyId || null
+            p_company_id: companyId || null,
+            p_store_id: storeIdParam || null
           }
         );
 
@@ -81,7 +85,7 @@ export function useInventoryFinancialSummary() {
     };
 
     fetchData();
-  }, [userProfile?.company_id, company?.id]);
+  }, [userProfile?.company_id, company?.id, storeId]);
 
   return {
     data,

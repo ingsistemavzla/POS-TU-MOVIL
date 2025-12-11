@@ -63,3 +63,4 @@ BEGIN
     RAISE NOTICE '   - Dashboard carga: De 8-15s → 1-3s (5-10x más rápido)';
 END $$;
 
+

@@ -93,6 +93,10 @@ DECLARE
     v_failed_product_sku TEXT;
     v_failed_current_stock NUMERIC;
     v_failed_qty NUMERIC;
+    -- ✅ AGREGADO: Variables para mensajes de auditoría (declaradas al inicio)
+    v_product_name_mov TEXT;
+    v_product_sku_mov TEXT;
+    v_store_name_mov TEXT;
 BEGIN
     -- ✅ ELIMINACIÓN DE IVA: Anular cualquier parámetro de tax_rate que envíe el frontend
     p_tax_rate := 0;
@@ -306,17 +310,17 @@ BEGIN
 
     -- 6.3. TERCER PASO: Verificar integridad (todos los items se actualizaron)
     SELECT COUNT(*) INTO v_total_items
-    FROM jsonb_array_elements(p_items) as p_item
-    WHERE (p_item->>'qty')::NUMERIC > 0;
+    FROM jsonb_array_elements(p_items) as item
+    WHERE (item->>'qty')::NUMERIC > 0;
 
     IF v_rows_updated != v_total_items THEN
         -- Si no se actualizaron todos los items, significa que alguno no tenía stock suficiente
         -- Obtener el producto que falló para el mensaje de error
         WITH stock_updates AS (
             SELECT 
-                (p_item->>'product_id')::UUID as product_id,
-                COALESCE((p_item->>'qty')::NUMERIC, 1) as qty_to_subtract
-            FROM jsonb_array_elements(p_items) as p_item
+                (item->>'product_id')::UUID as product_id,
+                COALESCE((item->>'qty')::NUMERIC, 1) as qty_to_subtract
+            FROM jsonb_array_elements(p_items) as item
         ),
         failed_products AS (
             SELECT 
@@ -359,8 +363,8 @@ BEGIN
     WHERE company_id = p_company_id
       AND store_id = p_store_id
       AND product_id IN (
-          SELECT (p_item->>'product_id')::UUID
-          FROM jsonb_array_elements(p_items) as p_item
+          SELECT (item->>'product_id')::UUID
+          FROM jsonb_array_elements(p_items) as item
       )
       AND qty < 0;
 
@@ -368,7 +372,8 @@ BEGIN
         RAISE EXCEPTION 'Error crítico de integridad: Uno o más productos quedaron con stock negativo después del Batch UPDATE.';
     END IF;
 
-    -- 6.5. QUINTO PASO: Registrar movimientos de inventario (OPCIONAL - NO CRÍTICO)
+    -- 6.5. QUINTO PASO: Registrar movimientos de inventario (MEJORADO - CON INFO DE SUCURSAL)
+    -- ✅ CORREGIDO: Variables declaradas al inicio del bloque principal
     BEGIN
         IF EXISTS (SELECT 1 FROM information_schema.tables 
                   WHERE table_schema = 'public' 
@@ -377,20 +382,45 @@ BEGIN
                 v_product_id := (item->>'product_id')::UUID;
                 v_qty := COALESCE((item->>'qty')::NUMERIC, 1);
                 
-                INSERT INTO public.inventory_movements (
-                    product_id, type, qty, store_from_id, store_to_id, reason,
-                    user_id, company_id, sale_id, created_at
-                ) VALUES (
-                    v_product_id, 'OUT', -v_qty, p_store_id, NULL,
-                    'Venta - Factura: ' || COALESCE(v_invoice_number, new_sale_id::text) || 
-                    ' - Cliente: ' || COALESCE(p_customer_name, 'Cliente General'),
-                    p_cashier_id, p_company_id, new_sale_id, NOW()
-                );
+                -- ✅ CORREGIDO: Bloque BEGIN sin DECLARE anidado
+                BEGIN
+                    -- Obtener nombre y SKU del producto
+                    SELECT name, sku INTO v_product_name_mov, v_product_sku_mov
+                    FROM public.products
+                    WHERE id = v_product_id AND company_id = p_company_id
+                    LIMIT 1;
+                    
+                    -- Obtener nombre de la sucursal
+                    SELECT name INTO v_store_name_mov
+                    FROM public.stores
+                    WHERE id = p_store_id AND company_id = p_company_id
+                    LIMIT 1;
+                    
+                    -- Construir mensaje mejorado con información completa
+                    INSERT INTO public.inventory_movements (
+                        product_id, type, qty, store_from_id, store_to_id, reason,
+                        user_id, company_id, sale_id, created_at
+                    ) VALUES (
+                        v_product_id, 'OUT', -v_qty, p_store_id, NULL,
+                        'Venta - Factura: ' || COALESCE(v_invoice_number, new_sale_id::text) || 
+                        ' - Cliente: ' || COALESCE(p_customer_name, 'Cliente General') ||
+                        ' - Sucursal: ' || COALESCE(v_store_name_mov, 'Desconocida') ||
+                        ' - Producto: ' || COALESCE(v_product_name_mov, 'N/A') ||
+                        CASE WHEN v_product_sku_mov IS NOT NULL THEN ' (' || v_product_sku_mov || ')' ELSE '' END,
+                        p_cashier_id, p_company_id, new_sale_id, NOW()
+                    );
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        -- Log error pero continuar (NO CRÍTICO - la venta ya se procesó)
+                        RAISE WARNING 'Error al registrar movimiento de inventario para producto %: %', 
+                            v_product_id, SQLERRM;
+                END;
             END LOOP;
         END IF;
     EXCEPTION
         WHEN OTHERS THEN
-            NULL; -- Si falla, continuar (NO CRÍTICO)
+            -- Log error general pero continuar (NO CRÍTICO)
+            RAISE WARNING 'Error general al registrar movimientos de inventario: %', SQLERRM;
     END;
 
     -- 7. REGISTRAR PAGOS

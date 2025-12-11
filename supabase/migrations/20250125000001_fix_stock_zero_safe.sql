@@ -340,3 +340,4 @@ GRANT EXECUTE ON FUNCTION process_sale(
 COMMENT ON FUNCTION process_sale IS 'Procesa una venta con validación blindada en 3 pasos. Permite ventas que dejen el stock en 0 (último artículo). Validación atómica con qty >= v_qty en UPDATE para prevenir race conditions y garantizar que el stock nunca sea negativo. Incluye verificación post-update de integridad y detección de errores de concurrencia.';
 
 
+

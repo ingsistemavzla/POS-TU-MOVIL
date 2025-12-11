@@ -162,3 +162,4 @@ COMMENT ON POLICY "users_select_safe" ON public.users IS
 'Política SELECT segura: permite ver propio perfil, master_admin ve todos, usuarios ven su company. Usa funciones SECURITY DEFINER para evitar recursión.';
 
 
+

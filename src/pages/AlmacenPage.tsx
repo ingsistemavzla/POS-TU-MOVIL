@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,6 +42,7 @@ import { sanitizeInventoryData } from '@/utils/inventoryValidation';
 import { InventoryFinancialHeader } from '@/components/inventory/InventoryFinancialHeader';
 import { BranchStockMatrix } from '@/components/inventory/BranchStockMatrix';
 import { InventoryDashboardHeader } from '@/components/inventory/InventoryDashboardHeader';
+import { StoreFilterBar } from '@/components/inventory/StoreFilterBar';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface Product {
@@ -58,10 +60,6 @@ interface Product {
   stockByStore?: Record<string, number>;
 }
 
-interface Store {
-  id: string;
-  name: string;
-}
 
 interface StoreInventory {
   store_id: string;
@@ -73,13 +71,12 @@ interface StoreInventory {
 
 export const AlmacenPage: React.FC = () => {
   const { userProfile } = useAuth();
+  const { selectedStoreId, availableStores } = useStore();
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
-  const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [storeFilter, setStoreFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('name');
   const [sortOrder, setSortOrder] = useState<string>('asc');
   const [lowStockOnly, setLowStockOnly] = useState<boolean>(false);
@@ -135,40 +132,21 @@ export const AlmacenPage: React.FC = () => {
 
       // 🛡️ SEGURIDAD: RLS maneja el filtrado automáticamente
       // El backend solo retorna stores que el usuario tiene permiso de ver
-      // Cargar tiendas
-      const storesQuery = (supabase.from('stores') as any)
-        .select('id, name')
-        // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
-        .eq('active', true)
-        .order('name');
-
-      const { data: storesData, error: storesError } = await storesQuery;
-
-      if (storesError) {
-        console.error('Error fetching stores:', storesError);
-        console.error('Stores error details:', {
-          message: storesError.message,
-          code: storesError.code,
-          details: storesError.details,
-          hint: storesError.hint
-        });
-        toast({
-          title: "Advertencia",
-          description: "No se pudieron cargar las tiendas",
-          variant: "warning",
-        });
-        setStores([]);
-      } else {
-        setStores(storesData || []);
-      }
+      // Usar availableStores del StoreContext en lugar de cargar localmente
+      const storesData = availableStores;
 
       // Cargar inventario
       // ⚠️ FILTRO CRÍTICO: JOIN con products para filtrar solo productos activos
       // 🛡️ SEGURIDAD: RLS maneja el filtrado automáticamente por store_id y company_id
-      const inventoryQuery = (supabase.from('inventories') as any)
+      let inventoryQuery = (supabase.from('inventories') as any)
         .select('product_id, store_id, qty, products!inner(active)')
         // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
         .eq('products.active', true);  // ⚠️ Solo inventario de productos activos
+
+      // 🔥 FILTRO GLOBAL DE SUCURSAL: Aplicar filtro a nivel SQL cuando selectedStoreId no es 'all' ni null
+      if (selectedStoreId && selectedStoreId !== 'all') {
+        inventoryQuery = inventoryQuery.eq('store_id', selectedStoreId);
+      }
 
       const { data: inventoryData, error: inventoryError } = await inventoryQuery;
 
@@ -218,43 +196,79 @@ export const AlmacenPage: React.FC = () => {
         });
       }
 
-      // Asegurar que todos los productos tengan inventario para todas las tiendas
-      productsData?.forEach((product: Product) => {
-        if (!inventoriesByProduct[product.id]) {
-          inventoriesByProduct[product.id] = [];
-        }
-        storesData?.forEach((store: Store) => {
+      // 🔥 RESTAURACIÓN: Determinar la sucursal activa para el filtro
+      const activeStoreId = selectedStoreId && selectedStoreId !== 'all' 
+        ? selectedStoreId 
+        : null;
+
+      // 🔥 RESTAURACIÓN: Si hay filtro de sucursal, solo mostrar productos con stock en esa sucursal
+      // Si no hay filtro, asegurar que todos los productos tengan inventario para todas las tiendas
+      if (activeStoreId) {
+        // FILTRADO POR SUCURSAL: Solo productos con stock en la sucursal seleccionada
+        productsData?.forEach((product: Product) => {
+          if (!inventoriesByProduct[product.id]) {
+            inventoriesByProduct[product.id] = [];
+          }
+          // Solo agregar la sucursal seleccionada
           const exists = inventoriesByProduct[product.id].some(
-            inv => inv.store_id === store.id
+            inv => inv.store_id === activeStoreId
           );
           if (!exists) {
+            const store = storesData?.find((s: Store) => s.id === activeStoreId);
             inventoriesByProduct[product.id].push({
-              store_id: store.id,
-              store_name: store.name,
+              store_id: activeStoreId,
+              store_name: store?.name || 'Tienda Desconocida',
               qty: 0,
             });
           }
         });
-        inventoriesByProduct[product.id].sort((a, b) => 
-          a.store_name.localeCompare(b.store_name)
-        );
-      });
-
-      // Combinar datos - total_stock calculado sumando todas las tiendas
-        // 🛡️ SEGURIDAD: RLS ya filtró el inventario por store_id
-        // Calculamos total_stock sumando todas las tiendas visibles (ya filtradas por RLS)
-        const productsWithStock = (productsData || []).map((product: any) => {
-          const stockByStore = stockByProductStore.get(product.id) || {};
-          
-          // Sumar todas las tiendas visibles (RLS ya filtró por store_id)
-          const totalStock = Object.values(stockByStore).reduce((sum, qty) => sum + (qty || 0), 0);
-          
-          return {
-            ...product,
-            total_stock: totalStock,
-            stockByStore: stockByStore,
-          };
+      } else {
+        // SIN FILTRO: Asegurar que todos los productos tengan inventario para todas las tiendas
+        productsData?.forEach((product: Product) => {
+          if (!inventoriesByProduct[product.id]) {
+            inventoriesByProduct[product.id] = [];
+          }
+          storesData?.forEach((store: Store) => {
+            const exists = inventoriesByProduct[product.id].some(
+              inv => inv.store_id === store.id
+            );
+            if (!exists) {
+              inventoriesByProduct[product.id].push({
+                store_id: store.id,
+                store_name: store.name,
+                qty: 0,
+              });
+            }
+          });
+          inventoriesByProduct[product.id].sort((a, b) => 
+            a.store_name.localeCompare(b.store_name)
+          );
         });
+      }
+
+      // 🔥 RESTAURACIÓN: Calcular total_stock según el filtro activo
+      const productsWithStock = (productsData || []).map((product: any) => {
+        const stockByStore = stockByProductStore.get(product.id) || {};
+        
+        // Si hay filtro de sucursal, total_stock solo de esa sucursal
+        // Si no hay filtro, total_stock de todas las sucursales
+        const totalStock = activeStoreId
+          ? (stockByStore[activeStoreId] || 0)
+          : Object.values(stockByStore).reduce((sum, qty) => sum + (qty || 0), 0);
+        
+        return {
+          ...product,
+          total_stock: totalStock,
+          stockByStore: stockByStore,
+        };
+      }).filter((product: any) => {
+        // 🔥 RESTAURACIÓN: Si hay filtro de sucursal, solo mostrar productos con stock > 0 en esa sucursal
+        if (activeStoreId) {
+          return product.total_stock > 0;
+        }
+        // Sin filtro, mostrar todos los productos
+        return true;
+      });
 
       setProducts(productsWithStock);
       setStoreInventories(inventoriesByProduct);
@@ -274,7 +288,7 @@ export const AlmacenPage: React.FC = () => {
     if (userProfile?.company_id) {
       fetchData();
     }
-  }, [userProfile?.company_id]);
+  }, [userProfile?.company_id, selectedStoreId, availableStores]);
 
   // Toggle expandir producto
   const toggleExpand = (productId: string) => {
@@ -429,8 +443,8 @@ export const AlmacenPage: React.FC = () => {
     }
 
     // Obtener nombres de tiendas para la confirmación
-    const fromStore = stores.find(s => s.id === transfer.from);
-    const toStore = stores.find(s => s.id === transfer.to);
+    const fromStore = availableStores.find(s => s.id === transfer.from);
+    const toStore = availableStores.find(s => s.id === transfer.to);
     const product = products.find(p => p.id === productId);
 
     // Confirmación antes de transferir
@@ -520,14 +534,14 @@ export const AlmacenPage: React.FC = () => {
       
       const matchesCategory = categoryFilter === 'all' || product.category === categoryFilter;
       
-      // Filtro por tienda (basado en inventario)
-      const matchesStore = storeFilter === 'all' || 
-        (storeInventories[product.id]?.some(inv => inv.store_id === storeFilter && inv.qty > 0));
+      // ✅ FILTRO DE SUCURSAL ELIMINADO: Ahora se hace a nivel SQL, no en JavaScript
+      // El filtro por tienda ya se aplicó en la consulta SQL, así que todos los productos
+      // que lleguen aquí ya están filtrados por la sucursal seleccionada
       
       // Filtro de stock bajo
       const matchesLowStock = !lowStockOnly || (product.total_stock || 0) < 5;
       
-      return matchesSearch && matchesCategory && matchesStore && matchesLowStock;
+      return matchesSearch && matchesCategory && matchesLowStock;
     })
     .sort((a, b) => {
       let comparison = 0;
@@ -590,15 +604,15 @@ export const AlmacenPage: React.FC = () => {
         </Button>
       </div>
 
+      {/* 🔥 SÚPER FILTRO GLOBAL DE SUCURSAL - Barra Dominante */}
+      <StoreFilterBar pageTitle="Almacén" />
+
       {/* Header del Dashboard de Inventario */}
       <InventoryDashboardHeader
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
-        storeFilter={storeFilter}
-        onStoreFilterChange={setStoreFilter}
         categoryFilter={categoryFilter}
         onCategoryFilterChange={setCategoryFilter}
-        stores={stores}
       />
 
       {/* Tabla de Productos */}
@@ -739,7 +753,11 @@ export const AlmacenPage: React.FC = () => {
                                         </div>
                                         <div>
                                           <p className="text-sm text-muted-foreground">Tiendas</p>
-                                          <p className="text-2xl font-bold">{inventories.length}</p>
+                                          <p className="text-2xl font-bold">
+                                            {selectedStoreId && selectedStoreId !== 'all' 
+                                              ? inventories.filter(inv => inv.store_id === selectedStoreId).length 
+                                              : inventories.length}
+                                          </p>
                                         </div>
                                         <div>
                                           <p className="text-sm text-muted-foreground">Precio USD</p>
@@ -762,8 +780,13 @@ export const AlmacenPage: React.FC = () => {
                                       </h4>
                                       <div className="space-y-2">
                                         {inventories
-                                          // 🛡️ SEGURIDAD: RLS ya filtró el inventario por store_id
-                                          // No necesitamos filtrar manualmente en el frontend
+                                          // 🔥 RESTAURACIÓN: Filtrar por sucursal seleccionada cuando hay filtro activo
+                                          .filter((inv) => {
+                                            if (selectedStoreId && selectedStoreId !== 'all') {
+                                              return inv.store_id === selectedStoreId;
+                                            }
+                                            return true; // Sin filtro, mostrar todas las sucursales
+                                          })
                                           .map((inv) => {
                                             const isEditing = inv.editing;
                                             const isTransferring = transfer?.from === inv.store_id;
@@ -836,7 +859,7 @@ export const AlmacenPage: React.FC = () => {
                                                       <SelectValue placeholder="A tienda..." />
                                                     </SelectTrigger>
                                                     <SelectContent>
-                                                      {stores
+                                                      {availableStores
                                                         .filter(s => s.id !== transfer.from)
                                                         .map(store => (
                                                           <SelectItem key={store.id} value={store.id}>
@@ -894,7 +917,7 @@ export const AlmacenPage: React.FC = () => {
                                                 </div>
                                               ) : (
                                                 <div className="flex items-center gap-2">
-                                                  <span className={inv.qty === 0 ? 'text-status-danger font-bold' : 'font-semibold text-main-text'}>
+                                                  <span className={inv.qty === 0 ? 'text-status-danger font-normal' : 'font-semibold text-main-text'}>
                                                     {inv.qty === 0 ? 'SIN STOCK' : inv.qty}
                                                   </span>
                                                   {/* 🛡️ SEGURIDAD: RLS maneja los permisos de edición/transferencia */}
@@ -952,7 +975,7 @@ export const AlmacenPage: React.FC = () => {
       {showForm && (
         <ProductForm
           product={editingProduct || undefined}
-          stores={stores}
+          stores={availableStores}
           onClose={() => {
             setShowForm(false);
             setEditingProduct(null);

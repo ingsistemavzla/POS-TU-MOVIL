@@ -344,3 +344,4 @@ GRANT EXECUTE ON FUNCTION process_sale(
 COMMENT ON FUNCTION process_sale IS 'Procesa una venta sin cálculo de IVA (tax_rate = 0 siempre). Preserva la validación blindada de stock en 3 pasos que permite ventas hasta stock = 0. Validación atómica con qty >= v_qty en UPDATE para prevenir race conditions y garantizar que el stock nunca sea negativo.';
 
 
+

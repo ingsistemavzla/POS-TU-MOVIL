@@ -16,37 +16,37 @@ import {
   AlertTriangle,
   Package,
   Loader2,
-  Search
+  Search,
+  Smartphone,
+  Headphones,
+  Wrench
 } from 'lucide-react';
 import { useInventoryFinancialSummary } from '@/hooks/useInventoryFinancialSummary';
+import { useStore } from '@/contexts/StoreContext';
 import { formatCurrency } from '@/utils/currency';
 import { getCategoryLabel } from '@/constants/categories';
 
 interface InventoryDashboardHeaderProps {
   searchTerm: string;
   onSearchChange: (value: string) => void;
-  storeFilter: string;
-  onStoreFilterChange: (value: string) => void;
   categoryFilter: string;
   onCategoryFilterChange: (value: string) => void;
-  stores: Array<{ id: string; name: string }>;
 }
 
 export const InventoryDashboardHeader: React.FC<InventoryDashboardHeaderProps> = ({
   searchTerm,
   onSearchChange,
-  storeFilter,
-  onStoreFilterChange,
   categoryFilter,
-  onCategoryFilterChange,
-  stores
+  onCategoryFilterChange
 }) => {
-  const { data, loading, error } = useInventoryFinancialSummary();
+  const { availableStores, selectedStoreId } = useStore();
+  const { data, loading, error } = useInventoryFinancialSummary(selectedStoreId);
 
   // Calcular totales
   const totalProducts = data?.category_breakdown.reduce((sum, cat) => sum + (cat.items_count || 0), 0) || 0;
   const totalUnits = data?.category_breakdown.reduce((sum, cat) => sum + (cat.total_quantity || 0), 0) || 0;
-  const totalStores = stores.length;
+  // 🔥 RESTAURACIÓN: Si hay filtro de sucursal, mostrar solo 1 tienda
+  const totalStores = selectedStoreId && selectedStoreId !== 'all' ? 1 : availableStores.length;
   const outOfStockPercentage = totalProducts > 0 
     ? ((data?.out_of_stock_count || 0) / totalProducts * 100).toFixed(1)
     : '0';
@@ -121,7 +121,7 @@ export const InventoryDashboardHeader: React.FC<InventoryDashboardHeaderProps> =
                   {formatCurrency(statsData.totalValue)}
                 </p>
                 <p className="text-xs text-gray-500">
-                  {statsData.totalProducts} productos en {statsData.totalStores} tiendas
+                  {statsData.totalProducts} productos registrados
                 </p>
               </div>
             </div>
@@ -203,34 +203,58 @@ export const InventoryDashboardHeader: React.FC<InventoryDashboardHeaderProps> =
 
       {/* SECCIÓN 2: DESGLOSE POR CATEGORÍA (Grid de 3 Columnas) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {topCategories.map((category, index) => (
-          <Card key={index} className="bg-white rounded-lg shadow-sm border border-gray-200">
-            <CardContent className="p-5">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-base font-semibold text-gray-900">
-                    {getCategoryLabel(category.category_name)}
-                  </h3>
-                  <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300">
-                    Stock normal
-                  </Badge>
+        {topCategories.map((category, index) => {
+          // 🔥 NUEVO: Determinar ícono y color según categoría
+          const getCategoryIcon = (categoryName: string) => {
+            const name = categoryName.toLowerCase();
+            if (name.includes('phone') || name.includes('teléfono')) {
+              return { Icon: Smartphone, color: 'text-purple-600', bgColor: 'bg-purple-50' };
+            } else if (name.includes('accessor') || name.includes('accesorio')) {
+              return { Icon: Headphones, color: 'text-indigo-600', bgColor: 'bg-indigo-50' };
+            } else if (name.includes('servicio') || name.includes('service') || name.includes('técnico')) {
+              return { Icon: Wrench, color: 'text-orange-600', bgColor: 'bg-orange-50' };
+            }
+            // Default
+            return { Icon: Package, color: 'text-gray-600', bgColor: 'bg-gray-50' };
+          };
+
+          const { Icon, color, bgColor } = getCategoryIcon(category.category_name);
+
+          return (
+            <Card key={index} className="bg-white rounded-lg shadow-sm border border-gray-200">
+              <CardContent className="p-5">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {/* 🔥 NUEVO: Ícono de categoría con color (mediano) */}
+                      <div className={`p-2.5 ${bgColor} rounded-lg`}>
+                        <Icon className={`w-6 h-6 ${color}`} />
+                      </div>
+                      <h3 className="text-base font-semibold text-gray-900">
+                        {getCategoryLabel(category.category_name)}
+                      </h3>
+                    </div>
+                    <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300">
+                      Stock normal
+                    </Badge>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {formatCurrency(category.total_retail_value)}
+                    </p>
+                  </div>
+                  <div className="space-y-1 text-xs text-gray-500">
+                    <p>{category.items_count} productos registrados</p>
+                    <p>{category.total_quantity.toLocaleString()} unidades totales</p>
+                    <p className="font-medium text-gray-700">
+                      {category.percentage_of_total.toFixed(1)}% del total
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {formatCurrency(category.total_retail_value)}
-                  </p>
-                </div>
-                <div className="space-y-1 text-xs text-gray-500">
-                  <p>{category.items_count} productos únicos</p>
-                  <p>{category.total_quantity.toLocaleString()} unidades totales</p>
-                  <p className="font-medium text-gray-700">
-                    {category.percentage_of_total.toFixed(1)}% del total
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          );
+        })}
         {topCategories.length === 0 && (
           <div className="col-span-3 text-center py-8 text-gray-500">
             No hay datos de categorías disponibles
@@ -253,23 +277,6 @@ export const InventoryDashboardHeader: React.FC<InventoryDashboardHeaderProps> =
                   className="pl-10 bg-white border-gray-200"
                 />
               </div>
-            </div>
-
-            {/* Filtro por Tienda */}
-            <div className="w-full md:w-[180px]">
-              <Select value={storeFilter} onValueChange={onStoreFilterChange}>
-                <SelectTrigger className="bg-white border-gray-200">
-                  <SelectValue placeholder="Todas las tiendas" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas las tiendas</SelectItem>
-                  {stores.map(store => (
-                    <SelectItem key={store.id} value={store.id}>
-                      {store.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
 
             {/* Filtro por Categoría */}

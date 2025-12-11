@@ -447,6 +447,7 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
         toast({
           title: "Venta eliminada",
           description: `La venta ha sido eliminada exitosamente. Se repuso el inventario de ${(result as any).items_count} productos.`,
+          variant: "success",
         });
         
         // Close modals and refresh data

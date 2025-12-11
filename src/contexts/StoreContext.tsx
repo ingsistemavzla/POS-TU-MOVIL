@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { useAuth } from './AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -14,8 +14,10 @@ interface Store {
 
 interface StoreContextType {
   selectedStore: Store | null;
+  selectedStoreId: string | null;
   availableStores: Store[];
   setSelectedStore: (store: Store | null) => void;
+  setSelectedStoreId: (id: string | null) => void;
   loading: boolean;
   error: string | null;
 }
@@ -29,16 +31,26 @@ interface StoreProviderProps {
 export const StoreProvider: React.FC<StoreProviderProps> = ({ children }) => {
   const { userProfile, company } = useAuth();
   const [selectedStore, setSelectedStoreState] = useState<Store | null>(null);
+  const [selectedStoreId, setSelectedStoreIdState] = useState<string | null>(null);
   const [availableStores, setAvailableStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const previousUserIdRef = useRef<string | null>(null);
 
   // Cargar tiendas disponibles según el rol del usuario
   useEffect(() => {
     const loadStores = async () => {
       if (!userProfile || !company) {
         setLoading(false);
+        setSelectedStoreState(null);
+        setSelectedStoreIdState(null);
         return;
+      }
+
+      // Detectar si cambió el usuario
+      const userIdChanged = previousUserIdRef.current !== userProfile.id;
+      if (userIdChanged) {
+        previousUserIdRef.current = userProfile.id;
       }
 
       try {
@@ -75,21 +87,30 @@ export const StoreProvider: React.FC<StoreProviderProps> = ({ children }) => {
 
         setAvailableStores(stores);
 
-        // Establecer tienda por defecto
-        if (stores.length > 0) {
-          // Si es admin y no hay tienda seleccionada, usar la primera
-          if (userProfile.role === 'admin' && !selectedStore) {
-            setSelectedStoreState(stores[0]);
-          }
+        // Establecer tienda por defecto (solo si cambió el usuario)
+        // Usar función de actualización para leer el valor actual de selectedStoreId
+        if (stores.length > 0 && userIdChanged) {
           // Si es cajero o gerente, usar su tienda asignada automáticamente
-          else if ((userProfile.role === 'cashier' || userProfile.role === 'manager') && stores.length > 0) {
-            setSelectedStoreState(stores[0]);
+          if ((userProfile.role === 'cashier' || userProfile.role === 'manager') && userProfile.assigned_store_id) {
+            const assignedStore = stores.find(s => s.id === userProfile.assigned_store_id);
+            if (assignedStore) {
+              setSelectedStoreState(assignedStore);
+              setSelectedStoreIdState(assignedStore.id);
+            }
           }
-          // Si hay una tienda seleccionada previamente que aún existe, mantenerla
-          else if (selectedStore && stores.some(s => s.id === selectedStore.id)) {
-            // La tienda ya está seleccionada, no hacer nada
+          // Si es admin, usar 'all' por defecto (ver todas las sucursales)
+          else if (userProfile.role === 'admin') {
+            setSelectedStoreIdState('all');
+            setSelectedStoreState(null); // null cuando es 'all'
           }
+        } else if (stores.length === 0) {
+          // No hay tiendas disponibles, resetear todo
+          setSelectedStoreState(null);
+          setSelectedStoreIdState(null);
         }
+        
+        // La sincronización entre selectedStore y selectedStoreId se maneja
+        // automáticamente en las funciones setSelectedStore y setSelectedStoreId
 
       } catch (err) {
         console.error('Error loading stores:', err);
@@ -102,14 +123,65 @@ export const StoreProvider: React.FC<StoreProviderProps> = ({ children }) => {
     loadStores();
   }, [userProfile, company]);
 
+  // Inicializar selectedStoreId si no está establecido pero hay tiendas disponibles
+  useEffect(() => {
+    if (!selectedStoreId && availableStores.length > 0 && userProfile) {
+      // Si es cajero o gerente, usar su tienda asignada
+      if ((userProfile.role === 'cashier' || userProfile.role === 'manager') && userProfile.assigned_store_id) {
+        const assignedStore = availableStores.find(s => s.id === userProfile.assigned_store_id);
+        if (assignedStore) {
+          setSelectedStoreState(assignedStore);
+          setSelectedStoreIdState(assignedStore.id);
+        }
+      }
+      // Si es admin, usar 'all' por defecto
+      else if (userProfile.role === 'admin') {
+        setSelectedStoreIdState('all');
+        setSelectedStoreState(null);
+      }
+    }
+  }, [availableStores, selectedStoreId, userProfile]);
+
+  // Sincronizar selectedStore con selectedStoreId
   const setSelectedStore = (store: Store | null) => {
     setSelectedStoreState(store);
+    // Sincronizar el ID: si store es null, usar 'all' para admins, null para otros
+    if (store === null) {
+      if (userProfile?.role === 'admin') {
+        setSelectedStoreIdState('all');
+      } else {
+        setSelectedStoreIdState(null);
+      }
+    } else {
+      setSelectedStoreIdState(store.id);
+    }
+  };
+
+  // Sincronizar selectedStoreId con selectedStore
+  const setSelectedStoreId = (id: string | null) => {
+    setSelectedStoreIdState(id);
+    
+    // Sincronizar el objeto Store
+    if (id === null || id === 'all') {
+      setSelectedStoreState(null);
+    } else {
+      // Buscar el objeto Store correspondiente
+      const store = availableStores.find(s => s.id === id);
+      if (store) {
+        setSelectedStoreState(store);
+      } else {
+        // Si no se encuentra, mantener null pero guardar el ID
+        setSelectedStoreState(null);
+      }
+    }
   };
 
   const contextValue: StoreContextType = {
     selectedStore,
+    selectedStoreId,
     availableStores,
     setSelectedStore,
+    setSelectedStoreId,
     loading,
     error
   };

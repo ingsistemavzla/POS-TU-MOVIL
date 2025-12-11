@@ -162,7 +162,7 @@ const isNetworkError = (error: any): boolean => {
 
 export default function POS() {
   const { userProfile } = useAuth();
-  const { selectedStore, availableStores, setSelectedStore, loading: storeLoading } = useStore();
+  const { selectedStore, selectedStoreId, availableStores, setSelectedStore, setSelectedStoreId, loading: storeLoading } = useStore();
   const { getTaxRate, getReceiptFooter } = useSystemSettings();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -196,15 +196,32 @@ export default function POS() {
   // For cashiers and managers, always use their assigned store (no selection allowed)
   // GERENTE tiene mismas restricciones de tienda que CAJERO
   const isRestrictedToStore = userProfile?.role === 'cashier' || userProfile?.role === 'manager';
-  // Eliminado fallback innecesario: Roles Fijos DEBEN tener assigned_store_id
-  // Si no lo tienen, el backend rechazará la venta (correcto)
+  // 🔥 FIX: Usar selectedStoreId del contexto en lugar de selectedStore?.id
+  // Para admins, selectedStoreId puede ser 'all' o un UUID válido
+  // Para cashiers/managers, siempre usar assigned_store_id
   const resolvedStoreId = isRestrictedToStore
     ? (userProfile as any)?.assigned_store_id ?? null
-    : selectedStore?.id ?? null;
+    : (selectedStoreId && selectedStoreId !== 'all' ? selectedStoreId : null);
+  
+  // 🔥 VALIDACIÓN: Verificar que hay una tienda válida seleccionada
+  const hasValidStore = resolvedStoreId !== null && resolvedStoreId !== 'all';
   // Estado para ventas offline pendientes de sincronización
   const pendingOfflineSalesRef = useRef<any[]>([]);
   const syncingOfflineSalesRef = useRef(false);
   const prevStoreIdRef = useRef<string | null>(null); // Para detectar cambios de tienda (solo Admin)
+
+  // 🔥 RESTAURACIÓN: Inicializar selectedStoreId automáticamente para cashiers/managers
+  useEffect(() => {
+    if (isRestrictedToStore && (userProfile as any)?.assigned_store_id && !selectedStoreId) {
+      // Buscar la tienda asignada en availableStores y establecerla
+      const assignedStore = availableStores.find(s => s.id === (userProfile as any)?.assigned_store_id);
+      if (assignedStore) {
+        setSelectedStore(assignedStore);
+        setSelectedStoreId(assignedStore.id);
+        setHasSelectedStoreInSession(true);
+      }
+    }
+  }, [isRestrictedToStore, userProfile, availableStores, selectedStoreId, setSelectedStore, setSelectedStoreId]);
 
   useEffect(() => {
     pendingOfflineSalesRef.current = loadOfflineSales();
@@ -260,7 +277,8 @@ export default function POS() {
     if (isSaleConfirmedAndCompleted) return;
     
     // Validaciones automáticas de paso
-    if (currentStep > 1 && (!hasSelectedStoreInSession || !selectedStore)) {
+    // 🔥 RESTAURACIÓN: Validar que hay una tienda válida (UUID) antes de permitir avanzar
+    if (currentStep > 1 && (!hasValidStore || !hasSelectedStoreInSession)) {
       setCurrentStep(1);
     } else if (currentStep > 2 && !selectedCustomer) {
       setCurrentStep(2);
@@ -470,7 +488,11 @@ export default function POS() {
       
       // Si intenta agregar más cantidad de la disponible, mostrar error y NO actualizar
       if (newQuantity > availableStock) {
-        alert(`❌ No hay suficiente stock. Solo hay ${availableStock} unidades disponibles de: ${product.name}`);
+        toast({
+          title: "Stock insuficiente",
+          description: `Solo hay ${availableStock} ${availableStock === 1 ? 'unidad disponible' : 'unidades disponibles'} de: ${product.name}`,
+          variant: "warning",
+        });
         return; // NO actualiza la cantidad
       }
       
@@ -540,9 +562,9 @@ export default function POS() {
         
         if (limitedQuantity < newQuantity) {
           toast({
-            title: "Stock máximo alcanzado",
-            description: `Solo hay ${availableStock} unidades disponibles de: ${pendingProduct.name}`,
-            variant: "destructive",
+            title: "Stock insuficiente",
+            description: `Solo hay ${availableStock} ${availableStock === 1 ? 'unidad disponible' : 'unidades disponibles'} de: ${pendingProduct.name}`,
+            variant: "warning",
           });
           // Cerrar modal y limpiar estado
           setShowIMEIModal(false);
@@ -704,7 +726,11 @@ export default function POS() {
     
     // Si intenta incrementar más allá del stock disponible, mostrar error y NO actualizar
     if (change > 0 && newQuantity > availableStock) {
-      alert(`❌ No hay suficiente stock. Solo hay ${availableStock} unidades disponibles de: ${item.name}`);
+      toast({
+        title: "Stock insuficiente",
+        description: `Solo hay ${availableStock} ${availableStock === 1 ? 'unidad disponible' : 'unidades disponibles'} de: ${item.name}`,
+        variant: "warning",
+      });
       return; // NO actualiza la cantidad
     }
     
@@ -801,7 +827,11 @@ export default function POS() {
     
     // Si intenta escribir un número mayor al stock, mostrar error y revertir al valor actual
     if (parsedValue > availableStock) {
-      alert(`❌ No hay suficiente stock. Solo hay ${availableStock} unidades disponibles de: ${item.name}`);
+      toast({
+        title: "Stock insuficiente",
+        description: `Solo hay ${availableStock} ${availableStock === 1 ? 'unidad disponible' : 'unidades disponibles'} de: ${item.name}`,
+        variant: "warning",
+      });
       // Revertir al valor actual del carrito
       setQuantityInputs(prev => {
         const { [id]: _, ...rest } = prev;
@@ -866,7 +896,11 @@ export default function POS() {
     
     // Si intenta confirmar un valor mayor al stock, mostrar error y NO actualizar
     if (parsedValue > availableStock) {
-      alert(`❌ No hay suficiente stock. Solo hay ${availableStock} unidades disponibles de: ${item.name}`);
+      toast({
+        title: "Stock insuficiente",
+        description: `Solo hay ${availableStock} ${availableStock === 1 ? 'unidad disponible' : 'unidades disponibles'} de: ${item.name}`,
+        variant: "warning",
+      });
       // Revertir al valor actual del carrito
       setQuantityInputs(prev => {
         const { [item.id]: _, ...rest } = prev;
@@ -1405,11 +1439,13 @@ export default function POS() {
     // ✅ LÓGICA LEGACY ELIMINADA: Ya no necesitamos reservar números de factura
 
     try {
-      // Validar que hay una tienda disponible
-      if (!resolvedStoreId) {
+      // 🔥 VALIDACIÓN MEJORADA: Verificar que hay una tienda válida (no 'all' ni null)
+      if (!hasValidStore) {
         toast({
           title: "Tienda requerida",
-          description: "Debe seleccionar una tienda antes de procesar la venta.",
+          description: userProfile?.role === 'admin'
+            ? "Debes seleccionar una sucursal específica para realizar ventas. El filtro 'Todas las sucursales' no está disponible en el POS."
+            : "Debe seleccionar una tienda antes de procesar la venta.",
           variant: "destructive",
         });
         setIsProcessingSale(false);
@@ -1990,28 +2026,13 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
     );
   }
 
-  // Validar que haya tienda disponible (para cajeros debe estar asignada, para otros debe estar seleccionada)
-  if (!resolvedStoreId) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
-        <Card className="p-6 max-w-md text-center">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-16 h-16 rounded-sm bg-orange-500/20 flex items-center justify-center shadow-md shadow-orange-500/50 border-none">
-              <Store className="w-8 h-8 text-orange-600" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold mb-2">Tienda no disponible</h2>
-              <p className="text-muted-foreground mb-4">
-                {userProfile?.role === 'cashier' 
-                  ? 'Tu tienda asignada no está disponible. Contacta al administrador.'
-                  : 'Debes seleccionar una tienda para continuar.'}
-              </p>
-            </div>
-          </div>
-        </Card>
-      </div>
-    );
-  }
+  // 🔥 RESTAURACIÓN: Si no hay tienda válida, forzar Step 1 (selección de tienda)
+  // No bloquear completamente, sino mostrar el Step 1 para que el usuario seleccione
+  useEffect(() => {
+    if (!hasValidStore) {
+      setCurrentStep(1);
+    }
+  }, [hasValidStore]);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background">
@@ -2094,8 +2115,9 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
       {/* ===== CONTENIDO PRINCIPAL (Scrollable) ===== */}
       <div className="flex-1 overflow-y-auto p-4">
 
+      {/* 🔥 RESTAURACIÓN: STEP 1 siempre visible cuando no hay tienda válida */}
       {/* ========== STEP 1: Selección de Tienda (PANEL INLINE) ========== */}
-      {currentStep === 1 && (
+      {(currentStep === 1 || !hasValidStore) && (
         <Card className="p-6 glass-card border border-green-500/30 animate-fade-in">
           <div className="max-w-2xl mx-auto text-center">
             <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
@@ -2125,7 +2147,9 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                   <div className="flex items-center justify-center gap-3">
                     <Store className="w-8 h-8 text-primary" />
                     <div>
-                      <p className="text-lg font-bold">{selectedStore?.name}</p>
+                      <p className="text-lg font-bold">
+                        {selectedStore?.name || availableStores.find(s => s.id === (userProfile as any)?.assigned_store_id)?.name || 'Cargando...'}
+                      </p>
                       <p className="text-sm text-muted-foreground">Tienda asignada</p>
                     </div>
                   </div>
@@ -2144,7 +2168,9 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                         : 'hover:bg-primary/10 hover:border-primary'
                     }`}
                     onClick={() => {
+                      // 🔥 RESTAURACIÓN: Sincronizar tanto selectedStore como selectedStoreId
                       setSelectedStore(store);
+                      setSelectedStoreId(store.id); // Asegurar que selectedStoreId sea un UUID válido
                       setHasSelectedStoreInSession(true);
                     }}
                   >
@@ -2162,10 +2188,15 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                   if (isRestrictedToStore && selectedStore) {
                     setHasSelectedStoreInSession(true);
                   }
+                  // 🔥 RESTAURACIÓN: Asegurar que selectedStoreId sea un UUID válido antes de continuar
+                  if (selectedStore && selectedStoreId !== 'all') {
+                    setSelectedStoreId(selectedStore.id);
+                  }
                   setCurrentStep(2);
                 }}
-                disabled={!selectedStore || (!isRestrictedToStore && !hasSelectedStoreInSession)}
+                disabled={!hasValidStore || (!isRestrictedToStore && !hasSelectedStoreInSession)}
                 className="bg-primary glow-primary px-8"
+                title={!hasValidStore ? "Debes seleccionar una sucursal específica para continuar" : undefined}
               >
                 Continuar
                 <ChevronRight className="w-4 h-4 ml-2" />
@@ -2175,6 +2206,9 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
         </Card>
       )}
 
+      {/* 🔥 RESTAURACIÓN: Solo mostrar Steps 2+ si hay tienda válida */}
+      {hasValidStore && (
+        <>
       {/* ========== STEP 2: Identificación de Cliente (PANEL INLINE) ========== */}
       {currentStep === 2 && (
         <Card className="p-6 glass-card border border-green-500/30 animate-fade-in">
@@ -3580,8 +3614,9 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
               </Button>
               <Button
                 onClick={() => setShowPreValidationModal(true)}
-                disabled={cart.length === 0 || isProcessingSale || isSaleConfirmedAndCompleted}
+                disabled={cart.length === 0 || isProcessingSale || isSaleConfirmedAndCompleted || !hasValidStore}
                 className="glow-primary px-8"
+                title={!hasValidStore ? "Debes seleccionar una sucursal específica para realizar ventas" : undefined}
               >
                 {isSaleConfirmedAndCompleted ? (
                   <>
@@ -3598,6 +3633,8 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
             </div>
           </div>
         </Card>
+      )}
+        </>
       )}
       
       </div>{/* Cierre del div CONTENIDO PRINCIPAL (Scrollable) */}
@@ -3786,7 +3823,8 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                 await processSale();
               }}
               className="bg-primary glow-primary"
-              disabled={isProcessingSale}
+              disabled={isProcessingSale || !hasValidStore}
+              title={!hasValidStore ? "Debes seleccionar una sucursal específica para realizar ventas" : undefined}
             >
               {isProcessingSale ? (
                 <>

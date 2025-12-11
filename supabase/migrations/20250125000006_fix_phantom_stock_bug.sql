@@ -245,3 +245,4 @@ COMMENT ON FUNCTION delete_sale_and_restore_inventory(UUID) IS
 Valida que el UPDATE de stock funcionó y registra advertencias si no hay evidencia de que la venta descontó stock originalmente.';
 
 
+

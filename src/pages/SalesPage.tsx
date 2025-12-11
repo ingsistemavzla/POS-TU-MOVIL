@@ -52,7 +52,10 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
-  Package
+  Package,
+  Smartphone,
+  Headphones,
+  Wrench
 } from "lucide-react";
 import { useSalesData, SalesFilters } from "@/hooks/useSalesData";
 import { formatCurrency } from "@/utils/currency";
@@ -144,11 +147,11 @@ export default function SalesPage() {
     dateTo?: string;
   } | null>(null);
   
-  // Estado para totales por categoría
+  // Estado para totales por categoría (unidades, USD, BS)
   const [categoryTotals, setCategoryTotals] = useState({
-    phones: 0,
-    accessories: 0,
-    technical_service: 0,
+    phones: { units: 0, usd: 0, bs: 0 },
+    accessories: { units: 0, usd: 0, bs: 0 },
+    technical_service: { units: 0, usd: 0, bs: 0 },
   });
 
   const handleApplyFilters = () => {
@@ -322,7 +325,11 @@ export default function SalesPage() {
         // Si hay filtro de categoría, usar los sale_ids obtenidos
         if (saleIds !== null) {
           if (saleIds.length === 0) {
-            setCategoryTotals({ phones: 0, accessories: 0, technical_service: 0 });
+            setCategoryTotals({ 
+              phones: { units: 0, usd: 0, bs: 0 },
+              accessories: { units: 0, usd: 0, bs: 0 },
+              technical_service: { units: 0, usd: 0, bs: 0 }
+            });
             return;
           }
           salesQuery = salesQuery.in('id', saleIds);
@@ -332,50 +339,86 @@ export default function SalesPage() {
         const { data: salesData } = await salesQuery.select('id');
 
         if (!salesData || salesData.length === 0) {
-          setCategoryTotals({ phones: 0, accessories: 0, technical_service: 0 });
+          setCategoryTotals({ 
+            phones: { units: 0, usd: 0, bs: 0 },
+            accessories: { units: 0, usd: 0, bs: 0 },
+            technical_service: { units: 0, usd: 0, bs: 0 }
+          });
           return;
         }
 
         const allSaleIds = salesData.map((s: any) => s.id);
 
-        // Obtener todos los items de todas las ventas filtradas
-        const { data: allItemsData } = await supabase
+        // Obtener todos los items de todas las ventas filtradas con precios y montos
+        // Necesitamos el bcv_rate_used de sales para calcular subtotal_bs
+        const { data: allItemsData, error: itemsError } = await supabase
           .from('sale_items')
           .select(`
             qty,
-            products(category)
+            subtotal_usd,
+            sale_id,
+            products(category),
+            sales(bcv_rate_used)
           `)
           .in('sale_id', allSaleIds);
 
-        if (!allItemsData) {
-          setCategoryTotals({ phones: 0, accessories: 0, technical_service: 0 });
+        if (itemsError) {
+          console.error('Error fetching sale items:', itemsError);
+        }
+
+        if (!allItemsData || allItemsData.length === 0) {
+          console.log('📊 [CategoryTotals] No hay items de venta para calcular');
+          setCategoryTotals({ 
+            phones: { units: 0, usd: 0, bs: 0 },
+            accessories: { units: 0, usd: 0, bs: 0 },
+            technical_service: { units: 0, usd: 0, bs: 0 }
+          });
           return;
         }
 
-        // Calcular totales por categoría
+        console.log('📊 [CategoryTotals] Items encontrados:', allItemsData.length);
+
+        // Calcular totales por categoría (unidades, USD, BS)
         const totals = {
-          phones: 0,
-          accessories: 0,
-          technical_service: 0,
+          phones: { units: 0, usd: 0, bs: 0 },
+          accessories: { units: 0, usd: 0, bs: 0 },
+          technical_service: { units: 0, usd: 0, bs: 0 },
         };
 
         allItemsData.forEach((item: any) => {
           const category = item.products?.category;
           const quantity = Number(item.qty) || 0;
+          const usd = Number(item.subtotal_usd) || 0;
+          // Calcular BS desde USD usando el bcv_rate_used de la venta
+          // sales puede ser un objeto o un array, manejamos ambos casos
+          const salesData = Array.isArray(item.sales) ? item.sales[0] : item.sales;
+          const bcvRate = Number(salesData?.bcv_rate_used) || 1;
+          const bs = usd * bcvRate;
 
           if (category === 'phones') {
-            totals.phones += quantity;
+            totals.phones.units += quantity;
+            totals.phones.usd += usd;
+            totals.phones.bs += bs;
           } else if (category === 'accessories') {
-            totals.accessories += quantity;
+            totals.accessories.units += quantity;
+            totals.accessories.usd += usd;
+            totals.accessories.bs += bs;
           } else if (category === 'technical_service') {
-            totals.technical_service += quantity;
+            totals.technical_service.units += quantity;
+            totals.technical_service.usd += usd;
+            totals.technical_service.bs += bs;
           }
         });
 
+        console.log('📊 [CategoryTotals] Totales calculados:', totals);
         setCategoryTotals(totals);
       } catch (error) {
         console.error('Error calculando totales por categoría:', error);
-        setCategoryTotals({ phones: 0, accessories: 0, technical_service: 0 });
+        setCategoryTotals({ 
+          phones: { units: 0, usd: 0, bs: 0 },
+          accessories: { units: 0, usd: 0, bs: 0 },
+          technical_service: { units: 0, usd: 0, bs: 0 }
+        });
       }
     };
 
@@ -1149,6 +1192,7 @@ export default function SalesPage() {
             toast({
               title: "Venta eliminada",
               description: response.message || `La venta ${saleToDelete.invoice_number} ha sido eliminada exitosamente. Se repuso el inventario.`,
+              variant: "success",
             });
             
             // Refresh the data to update the list
@@ -1165,6 +1209,7 @@ export default function SalesPage() {
           toast({
             title: "Venta eliminada",
             description: `La venta ${saleToDelete.invoice_number} ha sido eliminada exitosamente. Se repuso el inventario.`,
+            variant: "success",
           });
           
           // Refresh the data to update the list
@@ -1397,50 +1442,6 @@ export default function SalesPage() {
         </div>
       </div>
 
-      {/* Statistics Cards */}
-      {data && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Card className="p-4 sm:p-6">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Monto Total</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold sm:text-2xl">{formatCurrency(data.totalAmount)}</div>
-              <p className="text-xs text-muted-foreground">
-                en ventas totales
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="p-4 sm:p-6">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Promedio por Venta</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold sm:text-2xl">{formatCurrency(data.averageAmount)}</div>
-              <p className="text-xs text-muted-foreground">
-                ticket promedio
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="p-4 sm:p-6">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Páginas</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold sm:text-2xl">{data.currentPage} / {data.totalPages}</div>
-              <p className="text-xs text-muted-foreground">
-                página actual
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
       {/* Filters Panel */}
       {showFilters && (
         <Card className="shadow-lg shadow-green-500/50 border border-green-500/40">
@@ -1596,21 +1597,6 @@ export default function SalesPage() {
                   <CardDescription>
                     {data ? `Mostrando ${data.sales.length} de ${data.totalCount} ventas` : 'Cargando ventas...'}
                   </CardDescription>
-                </div>
-                {/* Badges dinámicos de categorías */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  {/* Badge Teléfonos - Verde */}
-                  <Badge className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 text-sm font-semibold shadow-md shadow-green-500/50">
-                    Teléfonos {categoryTotals.phones}
-                  </Badge>
-                  {/* Badge Accesorios - Rojo */}
-                  <Badge className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 text-sm font-semibold">
-                    Accesorios {categoryTotals.accessories}
-                  </Badge>
-                  {/* Badge Servicio Técnico - Morado */}
-                  <Badge className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 text-sm font-semibold">
-                    Servicio {categoryTotals.technical_service}
-                  </Badge>
                 </div>
               </div>
               <div className="flex items-center space-x-2">
@@ -1794,6 +1780,86 @@ export default function SalesPage() {
             </div>
           </div>
         </CardHeader>
+        
+        {/* 🔥 NUEVO: Cards de Categorías (dentro del mismo contenedor, tamaño reducido) */}
+        {data && (
+          <div className="px-6 pb-4 border-b">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* Tarjeta 1: Teléfonos */}
+              <Card className="bg-white rounded-lg shadow-sm border border-gray-200">
+                <CardContent className="p-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <div className="p-1.5 bg-purple-50 rounded-lg">
+                          <Smartphone className="h-4 w-4 text-purple-600" />
+                        </div>
+                        <p className="text-xs font-medium text-gray-600">Teléfonos</p>
+                      </div>
+                      {/* Unidades primero (más pequeño) */}
+                      <p className="text-lg font-bold text-gray-900">
+                        {(categoryTotals.phones?.units || 0).toLocaleString()} Unidades
+                      </p>
+                      {/* USD y BS debajo (más pequeño) */}
+                      <p className="text-[10px] text-gray-500 mt-0.5">
+                        {formatCurrency(categoryTotals.phones?.usd || 0)} • Bs. {(categoryTotals.phones?.bs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Tarjeta 2: Accesorios */}
+              <Card className="bg-white rounded-lg shadow-sm border border-gray-200">
+                <CardContent className="p-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <div className="p-1.5 bg-indigo-50 rounded-lg">
+                          <Headphones className="h-4 w-4 text-indigo-600" />
+                        </div>
+                        <p className="text-xs font-medium text-gray-600">Accesorios</p>
+                      </div>
+                      {/* Unidades primero (más pequeño) */}
+                      <p className="text-lg font-bold text-gray-900">
+                        {(categoryTotals.accessories?.units || 0).toLocaleString()} Unidades
+                      </p>
+                      {/* USD y BS debajo (más pequeño) */}
+                      <p className="text-[10px] text-gray-500 mt-0.5">
+                        {formatCurrency(categoryTotals.accessories?.usd || 0)} • Bs. {(categoryTotals.accessories?.bs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Tarjeta 3: Servicio */}
+              <Card className="bg-white rounded-lg shadow-sm border border-gray-200">
+                <CardContent className="p-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <div className="p-1.5 bg-orange-50 rounded-lg">
+                          <Wrench className="h-4 w-4 text-orange-600" />
+                        </div>
+                        <p className="text-xs font-medium text-gray-600">Servicio</p>
+                      </div>
+                      {/* Unidades primero (más pequeño) */}
+                      <p className="text-lg font-bold text-gray-900">
+                        {(categoryTotals.technical_service?.units || 0).toLocaleString()} Unidades
+                      </p>
+                      {/* USD y BS debajo (más pequeño) */}
+                      <p className="text-[10px] text-gray-500 mt-0.5">
+                        {formatCurrency(categoryTotals.technical_service?.usd || 0)} • Bs. {(categoryTotals.technical_service?.bs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
+
         <CardContent>
           {loading ? (
             <div className="rounded-sm shadow-md shadow-green-500/50 overflow-x-auto">
