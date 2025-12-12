@@ -16,6 +16,7 @@ export interface FinancialSummary {
   total_cost_value: number;
   total_retail_value: number;
   profit_potential: number;
+  total_items: number;
   category_breakdown: CategoryBreakdown[];
   out_of_stock_count: number;
   critical_stock_count: number;
@@ -46,6 +47,13 @@ export function useInventoryFinancialSummary(storeId?: string | null) {
         // 🔥 FILTRO DE SUCURSAL: Pasar storeId solo si no es 'all' ni null
         const storeIdParam = storeId && storeId !== 'all' ? storeId : null;
 
+        // 🔥 DEBUG: Log para verificar parámetros
+        console.log('[useInventoryFinancialSummary] Fetching data:', {
+          companyId,
+          storeId,
+          storeIdParam
+        });
+
         const { data: result, error: rpcError } = await supabase.rpc(
           'get_inventory_financial_summary',
           {
@@ -63,11 +71,24 @@ export function useInventoryFinancialSummary(storeId?: string | null) {
           throw new Error(result.message || 'Error al obtener resumen financiero');
         }
 
+        // 🔥 DEBUG: Log para verificar respuesta
+        console.log('[useInventoryFinancialSummary] Response:', {
+          total_items: result?.total_items,
+          total_retail_value: result?.total_retail_value,
+          category_breakdown_count: result?.category_breakdown?.length || 0,
+          categories: result?.category_breakdown?.map((c: any) => ({
+            name: c.category_name,
+            items: c.items_count,
+            quantity: c.total_quantity
+          }))
+        });
+
         // Normalizar los datos
         const normalizedData: FinancialSummary = {
           total_cost_value: result?.total_cost_value || 0,
           total_retail_value: result?.total_retail_value || 0,
           profit_potential: result?.profit_potential || 0,
+          total_items: result?.total_items || 0,
           category_breakdown: result?.category_breakdown || [],
           out_of_stock_count: result?.out_of_stock_count || 0,
           critical_stock_count: result?.critical_stock_count || 0,

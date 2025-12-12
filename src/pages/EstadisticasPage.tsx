@@ -18,11 +18,14 @@ import {
   ShoppingCart,
   Wallet,
   Zap,
-  ShoppingBag
+  ShoppingBag,
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
 import { getCategoryLabel } from '@/constants/categories';
 import { sanitizeInventoryData } from '@/utils/inventoryValidation';
 import { useDashboardData } from '@/hooks/useDashboardData';
+import { useInventoryFinancialSummary } from '@/hooks/useInventoryFinancialSummary';
 import { formatCurrency } from '@/utils/currency';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
@@ -57,6 +60,9 @@ interface InventorySummary {
 export const EstadisticasPage: React.FC = () => {
   const { userProfile } = useAuth();
   const { data: dashboardData } = useDashboardData();
+  // 🔥 USAR LA MISMA FUNCIÓN QUE ALMACÉN: useInventoryFinancialSummary
+  // Esto garantiza que los totales por categoría sean consistentes (75 para Servicio Técnico)
+  const { data: financialSummary, loading: financialLoading } = useInventoryFinancialSummary(null); // null = todas las tiendas
   const [loading, setLoading] = useState(true);
   const [storeStats, setStoreStats] = useState<Record<string, StoreStats>>({});
   const [inventorySummary, setInventorySummary] = useState<InventorySummary>({
@@ -115,6 +121,7 @@ export const EstadisticasPage: React.FC = () => {
 
       // Construir query de inventario
       // ⚠️ FILTRO CRÍTICO: JOIN con products y filtrar solo productos activos
+      // 🔥 SOLUCIÓN: Usar range() para obtener todos los registros (Supabase limita a 1000 por defecto)
       let inventoryQuery = (supabase.from('inventories') as any)
         .select(`
           store_id,
@@ -129,6 +136,9 @@ export const EstadisticasPage: React.FC = () => {
         `)
         .eq('products.active', true);  // ⚠️ Solo inventario de productos activos
       
+      // 🔥 PAGINACIÓN: Obtener todos los registros en lotes de 1000
+      // Supabase tiene un límite de 1000 registros por consulta, necesitamos hacer múltiples consultas
+      
       // Solo filtrar por company_id si NO es master_admin
       if (!isMasterAdmin && userProfile?.company_id) {
         inventoryQuery = inventoryQuery.eq('company_id', userProfile.company_id);
@@ -139,20 +149,49 @@ export const EstadisticasPage: React.FC = () => {
         inventoryQuery = inventoryQuery.eq('store_id', userProfile.assigned_store_id);
       }
 
+      // 🔥 PAGINACIÓN: Obtener todos los registros de inventario (Supabase limita a 1000 por consulta)
+      const fetchAllInventory = async () => {
+        const allData: any[] = [];
+        const pageSize = 1000;
+        let from = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+          const pageQuery = inventoryQuery.range(from, from + pageSize - 1);
+          const { data, error } = await pageQuery;
+          
+          if (error) {
+            console.error('Error fetching inventory page:', error);
+            break;
+          }
+
+          if (data && data.length > 0) {
+            allData.push(...data);
+            from += pageSize;
+            hasMore = data.length === pageSize; // Si devolvió menos de pageSize, no hay más
+          } else {
+            hasMore = false;
+          }
+        }
+
+        console.log(`📊 [EstadisticasPage] Inventario obtenido: ${allData.length} registros (en ${Math.ceil(from / pageSize)} páginas)`);
+
+        // Filtrar por tienda si es cajero o manager
+        const isRestricted = (userProfile?.role === 'cashier' || userProfile?.role === 'manager') && userProfile?.assigned_store_id;
+        if (isRestricted) {
+          return {
+            data: allData.filter((item: any) => item.store_id === userProfile.assigned_store_id),
+            error: null
+          };
+        }
+
+        return { data: allData, error: null };
+      };
+
       // Ejecutar consultas en PARALELO para máxima velocidad
       const [storesResult, inventoryResult] = await Promise.all([
         storesQuery,
-        inventoryQuery.then((result: any) => {
-          // Filtrar por tienda si es cajero o manager
-          const isRestricted = (userProfile?.role === 'cashier' || userProfile?.role === 'manager') && userProfile?.assigned_store_id;
-          if (isRestricted) {
-            return {
-              ...result,
-              data: result.data?.filter((item: any) => item.store_id === userProfile.assigned_store_id)
-            };
-          }
-          return result;
-        })
+        fetchAllInventory()
       ]);
 
       console.timeLog('📊 EstadisticasPage - fetchStatistics', 'Consultas completadas');
@@ -175,10 +214,65 @@ export const EstadisticasPage: React.FC = () => {
         storeMap.set(store.id, store.name);
       });
 
+      // 🔥 DEBUG: Verificar datos RAW antes de sanitizar
+      const rawInventoryData = inventoryResult.data || [];
+      const rawTechnicalService = rawInventoryData.filter((item: any) => 
+        item.products?.category === 'technical_service'
+      );
+      const rawTechnicalServiceTotal = rawTechnicalService.reduce((sum: number, item: any) => 
+        sum + Math.max(0, item.qty || 0), 0
+      );
+      console.log('📊 [EstadisticasPage] Datos RAW de Servicio Técnico:');
+      console.log('  - Items encontrados:', rawTechnicalService.length);
+      console.log('  - Total unidades (RAW):', rawTechnicalServiceTotal);
+      console.log('  - Total registros de inventario (TODOS):', rawInventoryData.length);
+      
+      // 🔥 DISTRIBUCIÓN DETALLADA POR SUCURSAL (para comparar con BD)
+      const distributionByStore = rawTechnicalService.reduce((acc: Record<string, { count: number, total: number, items: any[] }>, item: any) => {
+        const storeId = item.store_id || 'unknown';
+        const storeName = storeMap.get(storeId) || storeId;
+        if (!acc[storeName]) {
+          acc[storeName] = { count: 0, total: 0, items: [] };
+        }
+        acc[storeName].count++;
+        acc[storeName].total += Math.max(0, item.qty || 0);
+        acc[storeName].items.push({
+          product_id: item.product_id,
+          qty: item.qty,
+          store_id: item.store_id
+        });
+        return acc;
+      }, {});
+      console.log('  - Distribución por tienda (RAW):', Object.entries(distributionByStore).map(([store, data]) => ({
+        store,
+        total: data.total,
+        count: data.count,
+        items: data.items.slice(0, 3) // Primeros 3 items
+      })));
+      console.log('  - Suma de distribución:', Object.values(distributionByStore).reduce((sum, store) => sum + store.total, 0));
+      console.log('  - VALORES ESPERADOS (BD): Centro=2, La Isla=0, Store=2, Zona Gamer=71, Total=75');
+
       // Sanitizar datos (validación rápida)
       const sanitizedInventory = sanitizeInventoryData(inventoryResult.data || []);
       
       console.timeLog('📊 EstadisticasPage - fetchStatistics', `Datos sanitizados: ${sanitizedInventory.length} items`);
+      
+      // 🔥 DEBUG: Verificar datos de Servicio Técnico después de sanitizar
+      const technicalServiceItems = sanitizedInventory.filter((item: any) => 
+        item.products?.category === 'technical_service'
+      );
+      const technicalServiceTotal = technicalServiceItems.reduce((sum: number, item: any) => 
+        sum + Math.max(0, item.qty || 0), 0
+      );
+      console.log('📊 [EstadisticasPage] Servicio Técnico (después de sanitizar):');
+      console.log('  - Items encontrados:', technicalServiceItems.length);
+      console.log('  - Total unidades:', technicalServiceTotal);
+      console.log('  - Distribución por tienda:', technicalServiceItems.reduce((acc: Record<string, number>, item: any) => {
+        const storeId = item.store_id || 'unknown';
+        const storeName = storeMap.get(storeId) || storeId;
+        acc[storeName] = (acc[storeName] || 0) + Math.max(0, item.qty || 0);
+        return acc;
+      }, {}));
 
       // 3. Calcular estadísticas por sucursal
       const statsByStore: Record<string, StoreStats> = {};
@@ -194,6 +288,46 @@ export const EstadisticasPage: React.FC = () => {
         };
       });
 
+      // 🔥 CORRECCIÓN: Agrupar por producto y tienda primero (como AlmacenPage)
+      // Esto evita duplicados y asegura que cada producto-tienda se cuente solo una vez
+      
+      // PRIMERO: Obtener la categoría de cada producto (antes de agrupar)
+      const categoryByProduct = new Map<string, string>();
+      sanitizedInventory.forEach((item: any) => {
+        const productId = item.product_id;
+        const category = item.products?.category;
+        if (category && !categoryByProduct.has(productId)) {
+          categoryByProduct.set(productId, category);
+        }
+      });
+
+      // SEGUNDO: Agrupar inventario por producto y tienda
+      const inventoryByProductStore = new Map<string, Map<string, number>>();
+      
+      sanitizedInventory.forEach((item: any) => {
+        const productId = item.product_id;
+        const storeId = item.store_id;
+        const qty = Math.max(0, item.qty || 0);
+        
+        if (!inventoryByProductStore.has(productId)) {
+          inventoryByProductStore.set(productId, new Map());
+        }
+        const productStores = inventoryByProductStore.get(productId)!;
+        
+        // Sumar stock por tienda (si hay múltiples registros, se suman)
+        productStores.set(storeId, (productStores.get(storeId) || 0) + qty);
+      });
+
+      // 🔥 DEBUG: Verificar agrupación de Servicio Técnico
+      const technicalServiceProducts = Array.from(inventoryByProductStore.entries()).filter(([productId]) => {
+        const category = categoryByProduct.get(productId);
+        return category === 'technical_service';
+      });
+      console.log('📊 [EstadisticasPage] Productos de Servicio Técnico agrupados:', technicalServiceProducts.length);
+      technicalServiceProducts.forEach(([productId, stores]) => {
+        console.log(`  - Producto ${productId}:`, Object.fromEntries(stores));
+      });
+
       // Totales globales por categoría
       const globalTotals = {
         phones: 0,
@@ -201,39 +335,116 @@ export const EstadisticasPage: React.FC = () => {
         technical_service: 0,
       };
 
-      // Procesar inventario
-      sanitizedInventory.forEach((item: any) => {
-        const storeId = item.store_id;
-        const category = item.products?.category;
-        const qty = Math.max(0, item.qty || 0);
+      // Ahora calcular estadísticas por tienda y globales
+      inventoryByProductStore.forEach((productStores, productId) => {
+        const category = categoryByProduct.get(productId);
+        if (!category) return;
 
-        if (!statsByStore[storeId]) {
-          const storeName = storeMap.get(storeId) || 'Sucursal Desconocida';
-          statsByStore[storeId] = {
-            storeName,
-            phones: 0,
-            accessories: 0,
-            technical_service: 0,
-            total: 0,
-          };
+        // Para technical_service: sumar TODAS las tiendas (como AlmacenPage)
+        // Para otras categorías: sumar por tienda individualmente
+        const isTechnicalService = category === 'technical_service';
+        
+        if (isTechnicalService) {
+          // Para technical_service: mostrar stock por tienda individualmente
+          // pero el total global se calcula sumando todas las tiendas
+          productStores.forEach((qty, storeId) => {
+            if (!statsByStore[storeId]) {
+              const storeName = storeMap.get(storeId) || 'Sucursal Desconocida';
+              statsByStore[storeId] = {
+                storeName,
+                phones: 0,
+                accessories: 0,
+                technical_service: 0,
+                total: 0,
+              };
+            }
+            statsByStore[storeId].technical_service += qty;
+            statsByStore[storeId].total += qty;
+          });
+          
+          // Agregar al total global: suma de todas las tiendas de este producto
+          let productTotalQty = 0;
+          productStores.forEach((qty) => {
+            productTotalQty += qty;
+          });
+          globalTotals.technical_service += productTotalQty;
+        } else {
+          // Para otras categorías: procesar por tienda
+          productStores.forEach((qty, storeId) => {
+            if (!statsByStore[storeId]) {
+              const storeName = storeMap.get(storeId) || 'Sucursal Desconocida';
+              statsByStore[storeId] = {
+                storeName,
+                phones: 0,
+                accessories: 0,
+                technical_service: 0,
+                total: 0,
+              };
+            }
+
+            if (category === 'phones') {
+              statsByStore[storeId].phones += qty;
+              globalTotals.phones += qty;
+            } else if (category === 'accessories') {
+              statsByStore[storeId].accessories += qty;
+              globalTotals.accessories += qty;
+            }
+
+            statsByStore[storeId].total += qty;
+          });
         }
+      });
 
-        if (category === 'phones') {
-          statsByStore[storeId].phones += qty;
-          globalTotals.phones += qty;
-        } else if (category === 'accessories') {
-          statsByStore[storeId].accessories += qty;
-          globalTotals.accessories += qty;
-        } else if (category === 'technical_service') {
-          statsByStore[storeId].technical_service += qty;
-          globalTotals.technical_service += qty;
-        }
+      // 🔥 USAR TOTALES DE LA RPC (como Almacén): Reemplazar totales calculados manualmente
+      // con los totales de get_inventory_financial_summary para garantizar consistencia
+      let finalGlobalTotals = { ...globalTotals };
+      
+      if (financialSummary && financialSummary.category_breakdown) {
+        console.log('📊 [EstadisticasPage] Usando totales de RPC get_inventory_financial_summary');
+        
+        financialSummary.category_breakdown.forEach((cat: any) => {
+          const categoryName = cat.category_name?.toLowerCase() || '';
+          const totalQty = cat.total_quantity || 0;
+          
+          if (categoryName === 'phones' || categoryName === 'teléfonos') {
+            finalGlobalTotals.phones = totalQty;
+            console.log('  - Teléfonos (RPC):', totalQty);
+          } else if (categoryName === 'accessories' || categoryName === 'accesorios') {
+            finalGlobalTotals.accessories = totalQty;
+            console.log('  - Accesorios (RPC):', totalQty);
+          } else if (categoryName === 'technical_service' || categoryName === 'servicio técnico') {
+            finalGlobalTotals.technical_service = totalQty;
+            console.log('  - Servicio Técnico (RPC):', totalQty, '(debería ser 75)');
+          }
+        });
+      } else {
+        console.log('📊 [EstadisticasPage] RPC no disponible, usando totales calculados manualmente');
+      }
 
-        statsByStore[storeId].total += qty;
+      // 🔥 DEBUG: Verificar totales finales y comparar con BD
+      console.log('📊 [EstadisticasPage] Totales finales (después de RPC):');
+      console.log('  - Total Servicio Técnico:', finalGlobalTotals.technical_service);
+      const totalsByStore = Object.entries(statsByStore).reduce((acc: Record<string, number>, [storeId, stats]) => {
+        acc[stats.storeName] = stats.technical_service;
+        return acc;
+      }, {});
+      console.log('  - Total por tienda (calculado):', totalsByStore);
+      console.log('  - VALORES ESPERADOS (BD):', {
+        'Tu Móvil Centro': 2,
+        'Tu Móvil La Isla': 0,
+        'Tu Móvil Store': 2,
+        'Zona Gamer Margarita': 71,
+        'Total': 75
+      });
+      console.log('  - ¿Coinciden?', {
+        'Tu Móvil Centro': totalsByStore['Tu Móvil Centro'] === 2,
+        'Tu Móvil La Isla': totalsByStore['Tu Móvil La Isla'] === 0,
+        'Tu Móvil Store': totalsByStore['Tu Móvil Store'] === 2,
+        'Zona Gamer Margarita': totalsByStore['Zona Gamer Margarita'] === 71
       });
 
       setStoreStats(statsByStore);
-      setGlobalCategoryTotals(globalTotals);
+      setGlobalCategoryTotals(finalGlobalTotals);
 
       // 4. Calcular resumen del inventario
       const productMap = new Map<string, {
@@ -346,12 +557,15 @@ export const EstadisticasPage: React.FC = () => {
         tiendas: stores.length,
         itemsInventario: sanitizedInventory.length,
         productosUnicos: uniqueProducts,
-        valorTotal: totalValue.toFixed(2)
+        valorTotal: totalValue.toFixed(2),
+        financialSummaryDisponible: !!financialSummary,
+        totalServicioTecnico: finalGlobalTotals.technical_service
       });
 
     } catch (error) {
       console.error('Error fetching statistics:', error);
     } finally {
+      // Solo marcar como no-loading cuando ambas consultas terminen
       setLoading(false);
     }
   };
@@ -360,6 +574,17 @@ export const EstadisticasPage: React.FC = () => {
     if (userProfile?.company_id) {
       fetchStatistics();
     }
+  }, [userProfile?.company_id]);
+
+  // 🔄 AUTO-REFRESH: Actualizar estadísticas cada 30 segundos para reflejar cambios en inventario
+  useEffect(() => {
+    if (!userProfile?.company_id) return;
+
+    const interval = setInterval(() => {
+      fetchStatistics();
+    }, 30000); // Actualizar cada 30 segundos
+
+    return () => clearInterval(interval);
   }, [userProfile?.company_id]);
 
   if (loading) {
@@ -403,14 +628,34 @@ export const EstadisticasPage: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <BarChart3 className="w-8 h-8" />
-            Estadísticas
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold flex items-center gap-2">
+              <BarChart3 className="w-8 h-8" />
+              Estadísticas
+            </h1>
+            <Badge variant="destructive" className="text-sm font-bold px-3 py-1 animate-pulse">
+              🔴 PRUEBA
+            </Badge>
+          </div>
           <p className="text-muted-foreground">Resumen completo del inventario y productos</p>
         </div>
-        <Button onClick={fetchStatistics} variant="outline">
-          Actualizar
+        <Button 
+          onClick={fetchStatistics} 
+          variant="outline"
+          disabled={loading}
+          className="flex items-center gap-2"
+        >
+          {loading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Actualizando...
+            </>
+          ) : (
+            <>
+              <RefreshCw className="h-4 w-4" />
+              Actualizar
+            </>
+          )}
         </Button>
       </div>
 

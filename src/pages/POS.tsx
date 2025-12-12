@@ -1516,59 +1516,85 @@ export default function POS() {
       // El backend genera el número de forma atómica usando una SEQUENCE de PostgreSQL
 
       // PREPARAR ITEMS DE VENTA
-      const saleItems = cart.flatMap(item => {
-        // Validación y corrección de precio
-        let cleanPrice = Math.max(0, Number(item.price) || 0);
-        
-        if (cleanPrice === 0 && item.originalPrice && item.originalPrice > 0) {
-          cleanPrice = item.originalPrice;
-        }
-        
-        if (cleanPrice === 0) {
-          const productFromList = products.find(p => p.id === item.id);
-          if (productFromList?.sale_price_usd && productFromList.sale_price_usd > 0) {
-            cleanPrice = productFromList.sale_price_usd;
+      // ✅ CORRECCIÓN: Filtrar items inválidos antes de procesar
+      const saleItems = cart
+        .filter(item => {
+          // Excluir items sin ID válido
+          if (!item.id) {
+            console.warn('Item sin product_id detectado, excluyendo del carrito:', item);
+            return false;
           }
-        }
-        
-        // Validación y corrección de nombre
-        let cleanName = String(item.name || '').trim();
-        const genericNames = ['Producto sin nombre', 'S/SKU', 'Producto', 'N/A', ''];
-        const isGenericName = !cleanName || genericNames.some(generic => 
-          cleanName.toLowerCase().includes(generic.toLowerCase())
-        );
-        
-        if (isGenericName || !cleanName) {
-          const productFromList = products.find(p => p.id === item.id);
-          if (productFromList?.name && productFromList.name.trim()) {
-            cleanName = productFromList.name.trim();
+          // Excluir items con cantidad <= 0
+          if (!item.quantity || item.quantity <= 0) {
+            console.warn('Item con cantidad <= 0 detectado, excluyendo del carrito:', item);
+            return false;
+          }
+          return true;
+        })
+        .flatMap(item => {
+          // Validación y corrección de precio
+          let cleanPrice = Math.max(0, Number(item.price) || 0);
+          
+          if (cleanPrice === 0 && item.originalPrice && item.originalPrice > 0) {
+            cleanPrice = item.originalPrice;
+          }
+          
+          if (cleanPrice === 0) {
+            const productFromList = products.find(p => p.id === item.id);
+            if (productFromList?.sale_price_usd && productFromList.sale_price_usd > 0) {
+              cleanPrice = productFromList.sale_price_usd;
+            }
+          }
+          
+          // Validación y corrección de nombre
+          let cleanName = String(item.name || '').trim();
+          const genericNames = ['Producto sin nombre', 'S/SKU', 'Producto', 'N/A', ''];
+          const isGenericName = !cleanName || genericNames.some(generic => 
+            cleanName.toLowerCase().includes(generic.toLowerCase())
+          );
+          
+          if (isGenericName || !cleanName) {
+            const productFromList = products.find(p => p.id === item.id);
+            if (productFromList?.name && productFromList.name.trim()) {
+              cleanName = productFromList.name.trim();
+            } else {
+              cleanName = `Producto ${item.sku || item.id}`;
+            }
+          }
+          
+          const cleanSku = String(item.sku || 'SKU-000').trim();
+          
+          const finalItem = {
+            product_id: item.id,
+            qty: item.quantity,
+            price_usd: cleanPrice,
+            product_name: cleanName,
+            product_sku: cleanSku,
+            imei: item.category === 'phones' && item.imeis && item.imeis.length > 0 ? null : (item.imei ? String(item.imei).trim() : null)
+          };
+          
+          // Si es un teléfono con múltiples IMEIs, crear un item por cada IMEI
+          if (item.category === 'phones' && item.imeis && item.imeis.length > 0) {
+            return item.imeis.map(imei => ({
+              ...finalItem,
+              qty: 1,
+              imei: String(imei).trim()
+            }));
           } else {
-            cleanName = `Producto ${item.sku || item.id}`;
+            return [finalItem];
           }
-        }
-        
-        const cleanSku = String(item.sku || 'SKU-000').trim();
-        
-        const finalItem = {
-          product_id: item.id,
-          qty: item.quantity,
-          price_usd: cleanPrice,
-          product_name: cleanName,
-          product_sku: cleanSku,
-          imei: item.category === 'phones' && item.imeis && item.imeis.length > 0 ? null : (item.imei ? String(item.imei).trim() : null)
-        };
-        
-        // Si es un teléfono con múltiples IMEIs, crear un item por cada IMEI
-        if (item.category === 'phones' && item.imeis && item.imeis.length > 0) {
-          return item.imeis.map(imei => ({
-            ...finalItem,
-            qty: 1,
-            imei: String(imei).trim()
-          }));
-        } else {
-          return [finalItem];
-        }
-      });
+        });
+      
+      // ✅ CORRECCIÓN: Validar que hay items válidos después del filtrado
+      if (saleItems.length === 0) {
+        toast({
+          title: "Error en el carrito",
+          description: "El carrito no contiene items válidos para procesar. Verifica que todos los productos tengan cantidad mayor a 0.",
+          variant: "destructive",
+        });
+        setIsProcessingSale(false);
+        return;
+      }
 
       // PREPARAR PAGOS MIXTOS
       const mixedPaymentsData = isMixedPayment ? mixedPayments.map(payment => {

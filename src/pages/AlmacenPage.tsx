@@ -137,18 +137,48 @@ export const AlmacenPage: React.FC = () => {
 
       // Cargar inventario
       // ⚠️ FILTRO CRÍTICO: JOIN con products para filtrar solo productos activos
-      // 🛡️ SEGURIDAD: RLS maneja el filtrado automáticamente por store_id y company_id
+      // 🛡️ EXCEPCIÓN QUIRÚRGICA: Cargar TODOS los datos de inventario (sin filtro de sucursal)
+      // para garantizar consistencia con ArticulosPage y que productos de Servicio Técnico
+      // tengan datos completos de todas las sucursales
+      // El filtrado por sucursal se hará en memoria después para otras categorías
       let inventoryQuery = (supabase.from('inventories') as any)
         .select('product_id, store_id, qty, products!inner(active)')
         // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
         .eq('products.active', true);  // ⚠️ Solo inventario de productos activos
 
-      // 🔥 FILTRO GLOBAL DE SUCURSAL: Aplicar filtro a nivel SQL cuando selectedStoreId no es 'all' ni null
-      if (selectedStoreId && selectedStoreId !== 'all') {
-        inventoryQuery = inventoryQuery.eq('store_id', selectedStoreId);
-      }
+      // 🔥 NO APLICAR FILTRO DE SUCURSAL EN SQL: Cargar todos los datos
+      // El filtrado se hará en memoria para otras categorías, pero Servicio Técnico necesita todos los datos
 
-      const { data: inventoryData, error: inventoryError } = await inventoryQuery;
+      // 🔥 PAGINACIÓN: Obtener todos los registros (Supabase limita a 1000 por defecto)
+      const fetchAllInventory = async () => {
+        const allData: any[] = [];
+        const pageSize = 1000;
+        let from = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+          const pageQuery = inventoryQuery.range(from, from + pageSize - 1);
+          const { data, error } = await pageQuery;
+          
+          if (error) {
+            console.error('Error fetching inventory page:', error);
+            break;
+          }
+
+          if (data && data.length > 0) {
+            allData.push(...data);
+            from += pageSize;
+            hasMore = data.length === pageSize; // Si devolvió menos de pageSize, no hay más
+          } else {
+            hasMore = false;
+          }
+        }
+
+        console.log(`[AlmacenPage] Inventario obtenido: ${allData.length} registros (en ${Math.ceil(from / pageSize)} páginas)`);
+        return { data: allData, error: null };
+      };
+
+      const { data: inventoryData, error: inventoryError } = await fetchAllInventory();
 
       if (inventoryError) {
         console.error('Error fetching inventory:', inventoryError);
@@ -250,11 +280,13 @@ export const AlmacenPage: React.FC = () => {
       const productsWithStock = (productsData || []).map((product: any) => {
         const stockByStore = stockByProductStore.get(product.id) || {};
         
-        // Si hay filtro de sucursal, total_stock solo de esa sucursal
-        // Si no hay filtro, total_stock de todas las sucursales
-        const totalStock = activeStoreId
-          ? (stockByStore[activeStoreId] || 0)
-          : Object.values(stockByStore).reduce((sum, qty) => sum + (qty || 0), 0);
+        // 🛡️ EXCEPCIÓN QUIRÚRGICA: Para Servicio Técnico, siempre mostrar total de todas las sucursales
+        // Esto asegura consistencia entre paneles y refleja correctamente el stock total
+        const totalStock = product.category === 'technical_service'
+          ? Object.values(stockByStore).reduce((sum, qty) => sum + (qty || 0), 0) // Siempre suma todas las sucursales
+          : activeStoreId
+            ? (stockByStore[activeStoreId] || 0) // Para otras categorías, respetar filtro
+            : Object.values(stockByStore).reduce((sum, qty) => sum + (qty || 0), 0); // Sin filtro, suma todas
         
         return {
           ...product,
@@ -264,6 +296,12 @@ export const AlmacenPage: React.FC = () => {
       }).filter((product: any) => {
         // 🔥 RESTAURACIÓN: Si hay filtro de sucursal, solo mostrar productos con stock > 0 en esa sucursal
         if (activeStoreId) {
+          // 🛡️ EXCEPCIÓN QUIRÚRGICA: Servicio Técnico siempre visible (incluso con stock 0)
+          // Esto permite que servicios técnicos aparezcan aunque no tengan inventario físico
+          if (product.category === 'technical_service') {
+            return true; // Siempre mostrar Servicio Técnico
+          }
+          // Para otras categorías, mantener lógica de stock físico
           return product.total_stock > 0;
         }
         // Sin filtro, mostrar todos los productos
