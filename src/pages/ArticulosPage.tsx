@@ -414,10 +414,12 @@ export const ArticulosPage: React.FC = () => {
   // Ejecutar transferencia - REUTILIZA LA MISMA FUNCIÓN DE AlmacenPage (LÓGICA INTACTA)
   const executeTransfer = async (productId: string) => {
     const transfer = transferring[productId];
-    if (!transfer || !transfer.to || transfer.qty <= 0) {
+    // 🛡️ VALIDACIÓN CRÍTICA: Prevenir valores negativos o cero
+    const safeQty = Math.max(0, Math.floor(transfer?.qty || 0));
+    if (!transfer || !transfer.to || safeQty <= 0) {
       toast({
         title: "Error",
-        description: "Completa todos los campos de la transferencia",
+        description: "Completa todos los campos de la transferencia con una cantidad válida mayor a 0",
         variant: "destructive",
       });
       return;
@@ -428,7 +430,7 @@ export const ArticulosPage: React.FC = () => {
         p_product_id: productId,
         p_from_store_id: transfer.from,
         p_to_store_id: transfer.to,
-        p_quantity: transfer.qty,
+        p_quantity: safeQty, // 🛡️ Usar valor validado
         p_company_id: userProfile?.company_id,
         p_transferred_by: userProfile?.id,
       });
@@ -439,7 +441,7 @@ export const ArticulosPage: React.FC = () => {
 
       toast({
         title: "Transferencia exitosa",
-        description: `Se transfirieron ${transfer.qty} unidades`,
+        description: `Se transfirieron ${safeQty} unidades`,
         variant: "success",
       });
 
@@ -730,17 +732,27 @@ export const ArticulosPage: React.FC = () => {
                                           id={`edit-qty-${inv.store_id}`}
                                           type="number"
                                           step="1"
+                                          min="0"
                                           value={editQty}
                                           onChange={(e) => {
                                             const val = e.target.value;
-                                            // Permitir escribir libremente (incluyendo vacío)
-                                            if (val === '') {
+                                            // 🛡️ VALIDACIÓN CRÍTICA: Prevenir valores negativos
+                                            if (val === '' || val === '-') {
                                               setEditQty(0);
-                                            } else {
-                                              const num = parseInt(val, 10);
-                                              if (!isNaN(num)) {
-                                                setEditQty(num);
-                                              }
+                                              return;
+                                            }
+                                            const num = parseInt(val, 10);
+                                            if (!isNaN(num) && num >= 0) {
+                                              setEditQty(num);
+                                            } else if (num < 0) {
+                                              // Si es negativo, forzar a 0
+                                              setEditQty(0);
+                                            }
+                                          }}
+                                          onKeyDown={(e) => {
+                                            // 🛡️ Prevenir que se escriba el signo "-"
+                                            if (e.key === '-' || e.key === 'e' || e.key === 'E' || e.key === '+') {
+                                              e.preventDefault();
                                             }
                                           }}
                                           className="w-full"
@@ -840,11 +852,12 @@ export const ArticulosPage: React.FC = () => {
                                             id={`transfer-qty-${inv.store_id}`}
                                             type="number"
                                             step="1"
+                                            min="0"
                                             value={transfer?.qty || ''}
                                             onChange={(e) => {
                                               const val = e.target.value;
-                                              // Permitir escribir libremente (incluyendo vacío)
-                                              if (val === '') {
+                                              // 🛡️ VALIDACIÓN CRÍTICA: Prevenir valores negativos
+                                              if (val === '' || val === '-') {
                                                 setTransferring(prev => ({
                                                   ...prev,
                                                   [product.id]: { 
@@ -852,17 +865,32 @@ export const ArticulosPage: React.FC = () => {
                                                     qty: 0 
                                                   },
                                                 }));
-                                              } else {
-                                                const num = parseInt(val, 10);
-                                                if (!isNaN(num)) {
-                                                  setTransferring(prev => ({
-                                                    ...prev,
-                                                    [product.id]: { 
-                                                      ...(prev[product.id] || { from: inv.store_id, to: '', qty: 0 }), 
-                                                      qty: num 
-                                                    },
-                                                  }));
-                                                }
+                                                return;
+                                              }
+                                              const num = parseInt(val, 10);
+                                              if (!isNaN(num) && num >= 0) {
+                                                setTransferring(prev => ({
+                                                  ...prev,
+                                                  [product.id]: { 
+                                                    ...(prev[product.id] || { from: inv.store_id, to: '', qty: 0 }), 
+                                                    qty: num 
+                                                  },
+                                                }));
+                                              } else if (num < 0) {
+                                                // Si es negativo, forzar a 0
+                                                setTransferring(prev => ({
+                                                  ...prev,
+                                                  [product.id]: { 
+                                                    ...(prev[product.id] || { from: inv.store_id, to: '', qty: 0 }), 
+                                                    qty: 0 
+                                                  },
+                                                }));
+                                              }
+                                            }}
+                                            onKeyDown={(e) => {
+                                              // 🛡️ Prevenir que se escriba el signo "-"
+                                              if (e.key === '-' || e.key === 'e' || e.key === 'E' || e.key === '+') {
+                                                e.preventDefault();
                                               }
                                             }}
                                             className="w-full"

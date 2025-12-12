@@ -493,8 +493,25 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                           min="0"
                           value={Math.max(0, inventory.qty)}
                           onChange={(e) => {
-                            const val = parseInt(e.target.value) || 0;
-                            handleInventoryChange(store.id, Math.max(0, val));
+                            const val = e.target.value;
+                            // 🛡️ VALIDACIÓN CRÍTICA: Prevenir valores negativos
+                            if (val === '' || val === '-') {
+                              handleInventoryChange(store.id, 0);
+                              return;
+                            }
+                            const num = parseInt(val, 10);
+                            if (!isNaN(num) && num >= 0) {
+                              handleInventoryChange(store.id, num);
+                            } else if (num < 0) {
+                              // Si es negativo, forzar a 0
+                              handleInventoryChange(store.id, 0);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            // 🛡️ Prevenir que se escriba el signo "-"
+                            if (e.key === '-' || e.key === 'e' || e.key === 'E' || e.key === '+') {
+                              e.preventDefault();
+                            }
                           }}
                           className="h-8 w-20 text-center"
                         />
