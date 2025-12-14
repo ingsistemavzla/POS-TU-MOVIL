@@ -31,3 +31,4 @@ COMMENT ON COLUMN sales.tax_rate IS 'Tasa de impuesto (siempre 0 después de la 
 
 
 
+

@@ -345,3 +345,4 @@ COMMENT ON FUNCTION process_sale IS 'Procesa una venta sin cálculo de IVA (tax_
 
 
 
+

@@ -60,3 +60,4 @@ COMMENT ON FUNCTION get_store_name_for_audit(UUID, UUID) IS
 'Función auxiliar para obtener el nombre de una sucursal para usar en mensajes de auditoría. 
 Asegura que los mensajes de creación de productos incluyan información clara de la sucursal.';
 
+

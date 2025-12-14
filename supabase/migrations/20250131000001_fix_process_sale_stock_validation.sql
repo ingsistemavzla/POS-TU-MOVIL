@@ -263,15 +263,17 @@ BEGIN
     -- 6.2. SEGUNDO PASO: ✅ BATCH UPDATE de inventario (OPTIMIZACIÓN CRÍTICA)
     -- Esto reemplaza N UPDATEs individuales con 1 UPDATE masivo
     WITH stock_updates AS (
-        -- ✅ CORRECCIÓN CRÍTICA: Extraer solo productos válidos (qty > 0 Y product_id NOT NULL)
+        -- ✅ CORRECCIÓN CRÍTICA: Agrupar items duplicados por producto y sumar cantidades
+        -- Esto garantiza una sola validación y un solo UPDATE por producto, mejorando integridad
         SELECT 
             (p_item->>'product_id')::UUID as product_id,
-            COALESCE((p_item->>'qty')::NUMERIC, 0) as qty_to_subtract
+            SUM(COALESCE((p_item->>'qty')::NUMERIC, 0)) as qty_to_subtract
         FROM jsonb_array_elements(p_items) as p_item
         WHERE (p_item->>'qty')::NUMERIC > 0
           AND (p_item->>'product_id')::UUID IS NOT NULL
           AND (p_item->>'product_id')::TEXT != 'null'  -- ✅ Excluir strings "null"
           AND (p_item->>'product_id')::TEXT != ''      -- ✅ Excluir strings vacíos
+        GROUP BY (p_item->>'product_id')::UUID  -- ✅ Agrupar por producto para sumar cantidades
     ),
     -- ✅ CORRECCIÓN: Asegurar que todos los productos tengan inventario
     ensure_inventory AS (
@@ -317,27 +319,33 @@ BEGIN
     )
     SELECT COUNT(*) INTO v_rows_updated FROM batch_update;
 
-    -- 6.3. TERCER PASO: Verificar integridad (todos los items se actualizaron)
-    SELECT COUNT(*) INTO v_total_items
+    -- 6.3. TERCER PASO: Verificar integridad (todos los productos se actualizaron)
+    -- ✅ CORRECCIÓN: Contar productos únicos (no items totales) para coincidir con GROUP BY
+    SELECT COUNT(DISTINCT (p_item->>'product_id')::UUID) INTO v_total_items
     FROM jsonb_array_elements(p_items) as p_item
     WHERE (p_item->>'qty')::NUMERIC > 0
-      AND (p_item->>'product_id')::UUID IS NOT NULL;
+      AND (p_item->>'product_id')::UUID IS NOT NULL
+      AND (p_item->>'product_id')::TEXT != 'null'
+      AND (p_item->>'product_id')::TEXT != '';
 
     IF v_rows_updated != v_total_items THEN
-        -- ✅ CORRECCIÓN MEJORADA: Obtener el producto que falló con mejor información
-        -- Solo considerar items válidos (qty > 0 y product_id NOT NULL)
-        WITH stock_updates AS (
+        -- ✅ CORRECCIÓN MEJORADA: Identificar producto fallido usando EXCLUSIÓN (NOT EXISTS)
+        -- Estrategia: Cualquier item en stock_updates que NO esté en validated_stock es el culpable
+        WITH stock_updates_for_diagnosis AS (
+            -- Reconstruir stock_updates para diagnóstico (mismo criterio que el batch update)
+            -- ✅ CORRECCIÓN: Agrupar items duplicados por producto para mantener consistencia
             SELECT 
                 (p_item->>'product_id')::UUID as product_id,
-                COALESCE((p_item->>'qty')::NUMERIC, 0) as qty_to_subtract
+                SUM(COALESCE((p_item->>'qty')::NUMERIC, 0)) as qty_to_subtract
             FROM jsonb_array_elements(p_items) as p_item
             WHERE (p_item->>'qty')::NUMERIC > 0
               AND (p_item->>'product_id')::UUID IS NOT NULL
               AND (p_item->>'product_id')::TEXT != 'null'
               AND (p_item->>'product_id')::TEXT != ''
+            GROUP BY (p_item->>'product_id')::UUID  -- ✅ Agrupar por producto para sumar cantidades
         ),
         items_with_names AS (
-            -- ✅ CORRECCIÓN: Extraer nombres de productos desde p_items primero
+            -- Extraer nombres de productos desde p_items para mensaje de error
             SELECT 
                 (p_item->>'product_id')::UUID as product_id,
                 p_item->>'product_name' as product_name_from_item,
@@ -345,23 +353,45 @@ BEGIN
             FROM jsonb_array_elements(p_items) as p_item
             WHERE (p_item->>'product_id')::UUID IS NOT NULL
         ),
+        validated_stock_for_diagnosis AS (
+            -- Reconstruir validated_stock para comparación (mismo criterio que el batch update)
+            SELECT 
+                su.product_id,
+                su.qty_to_subtract,
+                i.qty as current_stock,
+                COALESCE(p.name, 'Producto Desconocido') as product_name,
+                COALESCE(p.sku, 'N/A') as product_sku
+            FROM stock_updates_for_diagnosis su
+            INNER JOIN inventories i ON 
+                i.product_id = su.product_id 
+                AND i.company_id = p_company_id 
+                AND i.store_id = p_store_id
+            LEFT JOIN products p ON p.id = su.product_id AND p.company_id = p_company_id
+            WHERE i.qty >= su.qty_to_subtract  -- ✅ Solo productos que pasaron validación
+        ),
         failed_products AS (
+            -- ✅ ESTRATEGIA DE EXCLUSIÓN: Items en stock_updates que NO están en validated_stock
             SELECT 
                 su.product_id,
                 su.qty_to_subtract,
                 COALESCE(i.qty, 0) as current_stock,
                 COALESCE(p.name, iwn.product_name_from_item, 'Producto Desconocido') as product_name,
                 COALESCE(p.sku, iwn.product_sku_from_item, 'N/A') as product_sku
-            FROM stock_updates su
+            FROM stock_updates_for_diagnosis su
+            -- LEFT JOINs primero (antes del WHERE) para obtener datos para el mensaje de error
             LEFT JOIN inventories i ON 
                 i.product_id = su.product_id 
                 AND i.company_id = p_company_id 
                 AND i.store_id = p_store_id
             LEFT JOIN products p ON p.id = su.product_id AND p.company_id = p_company_id
             LEFT JOIN items_with_names iwn ON iwn.product_id = su.product_id
-            WHERE COALESCE(i.qty, 0) < su.qty_to_subtract
-               OR i.product_id IS NULL  -- Producto sin inventario en esta sucursal
-            LIMIT 1
+            -- ✅ EXCLUSIÓN: Solo productos que NO pasaron validated_stock (WHERE después de JOINs)
+            WHERE NOT EXISTS (
+                SELECT 1 
+                FROM validated_stock_for_diagnosis vs 
+                WHERE vs.product_id = su.product_id
+            )
+            LIMIT 1  -- Solo necesitamos el primer producto fallido para el mensaje
         )
         SELECT 
             product_name,
@@ -377,8 +407,9 @@ BEGIN
             v_failed_product_id
         FROM failed_products;
 
-        -- ✅ CORRECCIÓN: Mensaje de error más descriptivo
+        -- ✅ Mensaje de error descriptivo con información completa
         IF v_failed_product_id IS NULL THEN
+            -- Fallback: Si por alguna razón no se identificó el producto, usar mensaje genérico
             RAISE EXCEPTION 'Error al procesar la venta: No se pudo identificar el producto con stock insuficiente. Verifica que todos los productos tienen stock disponible en la sucursal seleccionada.';
         ELSE
             RAISE EXCEPTION 'Stock insuficiente para el producto % (SKU: %) en la sucursal seleccionada. Stock disponible: %, solicitado: %. Verifica que el producto tiene stock en la sucursal correcta.', 
@@ -527,7 +558,10 @@ GRANT EXECUTE ON FUNCTION process_sale(
 COMMENT ON FUNCTION process_sale IS 
 'Función optimizada para procesar ventas con Batch UPDATE de inventario.
 Corregida para manejar correctamente productos sin inventario en sucursales específicas.
-Mejora mensajes de error y validación de stock por sucursal.';
+Agrupa items duplicados por producto (GROUP BY + SUM) para garantizar validación única y UPDATE atómico.
+Mejora mensajes de error usando estrategia de exclusión (NOT EXISTS) para identificar productos fallidos.
+Validación de stock por sucursal con detección precisa de productos con stock insuficiente.
+Protección contra race conditions mediante bloqueo automático de PostgreSQL y validación atómica en WHERE.';
 
 -- ============================================================================
 -- VERIFICACIÓN FINAL
@@ -535,9 +569,12 @@ Mejora mensajes de error y validación de stock por sucursal.';
 DO $$
 BEGIN
     RAISE NOTICE '✅ Migración de corrección de validación de stock completada';
+    RAISE NOTICE '   - Agrupación de items duplicados por producto (GROUP BY + SUM) para validación única';
     RAISE NOTICE '   - Validación mejorada de productos sin inventario en sucursal';
-    RAISE NOTICE '   - Mensajes de error más descriptivos';
+    RAISE NOTICE '   - Mensajes de error más descriptivos usando estrategia de exclusión (NOT EXISTS)';
+    RAISE NOTICE '   - Detección precisa de productos fallidos comparando stock_updates vs validated_stock';
     RAISE NOTICE '   - Validación de qty > 0 antes de procesar';
     RAISE NOTICE '   - Creación automática de inventario si no existe';
+    RAISE NOTICE '   - Protección contra race conditions mediante bloqueo automático de PostgreSQL';
 END $$;
 

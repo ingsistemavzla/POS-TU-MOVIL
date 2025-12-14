@@ -246,3 +246,4 @@ Valida que el UPDATE de stock funcionó y registra advertencias si no hay eviden
 
 
 
+

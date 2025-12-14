@@ -230,3 +230,4 @@ Registra automáticamente los cambios en inventory_movements con tipo ADJUST par
 VERSIÓN MEJORADA: Incluye información detallada: aumento/disminución, cantidad, sucursal (nombre), producto, y usuario que realizó el cambio.
 NOTA: Esta versión preserva toda la lógica crítica y solo mejora los mensajes de auditoría.';
 
+

@@ -179,11 +179,60 @@ export default function POS() {
   const [isKreceEnabled, setIsKreceEnabled] = useState(false);
   const [kreceInitialAmount, setKreceInitialAmount] = useState<number>(0);
   const [kreceInitialPaymentMethod, setKreceInitialPaymentMethod] = useState<string>("cash_usd");
+  // ✅ Estado local para input de porcentaje Krece (permite valores vacíos temporalmente)
+  const [krecePercentageInput, setKrecePercentageInput] = useState<string>("");
+  const kreceInputRef = useRef<HTMLInputElement>(null);
   
   // Cashea financing state
   const [isCasheaEnabled, setIsCasheaEnabled] = useState(false);
   const [casheaInitialAmount, setCasheaInitialAmount] = useState<number>(0);
   const [casheaInitialPaymentMethod, setCasheaInitialPaymentMethod] = useState<string>("cash_usd");
+  // ✅ Estado local para input de porcentaje Cashea (permite valores vacíos temporalmente)
+  const [casheaPercentageInput, setCasheaPercentageInput] = useState<string>("");
+  const casheaInputRef = useRef<HTMLInputElement>(null);
+  
+  // ✅ Forzar color del placeholder con CSS global
+  useEffect(() => {
+    // Crear o actualizar estilos para los placeholders
+    let styleElement = document.getElementById('percentage-input-placeholder-styles');
+    if (!styleElement) {
+      styleElement = document.createElement('style');
+      styleElement.id = 'percentage-input-placeholder-styles';
+      document.head.appendChild(styleElement);
+    }
+    styleElement.textContent = `
+      #krece-percentage-input::placeholder,
+      #cashea-percentage-input::placeholder {
+        color: #374151 !important;
+        opacity: 1 !important;
+      }
+      .dark #krece-percentage-input::placeholder,
+      .dark #cashea-percentage-input::placeholder {
+        color: #d1d5db !important;
+        opacity: 1 !important;
+      }
+    `;
+  }, []);
+
+  // ✅ Funciones Helper: "Ley del 5" para redondeo de porcentajes
+  const snapToNearestFive = (percentage: number): number => {
+    return Math.round(percentage / 5) * 5;
+  };
+
+  const normalizePercentage = (percentage: number): number => {
+    // 1. Clamp a rango válido (0-100%)
+    const clamped = Math.min(Math.max(0, percentage), 100);
+    // 2. Snap al múltiplo de 5 más cercano
+    const snapped = Math.round(clamped / 5) * 5;
+    // 3. Redondear a 2 decimales máximo
+    return Number(snapped.toFixed(2));
+  };
+
+  const calculateAmountFromPercentage = (percentage: number, subtotal: number): number => {
+    const normalizedPercentage = normalizePercentage(percentage);
+    const amount = (subtotal * normalizedPercentage) / 100;
+    return Number(amount.toFixed(2));
+  };
   
   // Mixed payments state
   const [isMixedPayment, setIsMixedPayment] = useState(false);
@@ -1619,7 +1668,7 @@ export default function POS() {
       const kreceInitialUsd = isKreceEnabled ? kreceInitialAmount : 0;
       const kreceFinancedUsd = isKreceEnabled ? (cartSubtotal - kreceInitialAmount) : 0;
       const kreceInitialPercentage = isKreceEnabled && cartSubtotal > 0 
-        ? Number((kreceInitialAmount / cartSubtotal) * 100) || 0 
+        ? Number(((kreceInitialAmount / cartSubtotal) * 100).toFixed(2)) || 0 
         : 0;
       const kreceInitialBs = isKreceEnabled 
         ? Number((kreceInitialAmount * bcvRate).toFixed(2)) 
@@ -1634,7 +1683,7 @@ export default function POS() {
       const casheaInitialUsd = isCasheaEnabled ? casheaInitialAmount : 0;
       const casheaFinancedUsd = isCasheaEnabled ? (cartSubtotal - casheaInitialAmount) : 0;
       const casheaInitialPercentage = isCasheaEnabled && cartSubtotal > 0 
-        ? Number((casheaInitialAmount / cartSubtotal) * 100) || 0 
+        ? Number(((casheaInitialAmount / cartSubtotal) * 100).toFixed(2)) || 0 
         : 0;
       const casheaInitialBs = isCasheaEnabled 
         ? Number((casheaInitialAmount * bcvRate).toFixed(2)) 
@@ -2782,10 +2831,15 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                       setIsCasheaEnabled(false);
                       setCasheaInitialAmount(0);
                       setIsKreceEnabled(true);
-                      setKreceInitialAmount(subtotalUSD * 0.3); // 30% inicial por defecto
+                      // ✅ Usar "Ley del 5": 30% se redondea a 30% (ya es múltiplo de 5)
+                      const defaultPercentage = 30;
+                      const amount = calculateAmountFromPercentage(defaultPercentage, subtotalUSD);
+                      setKreceInitialAmount(amount);
+                      setKrecePercentageInput(""); // Input vacío por defecto
                     } else {
                       setIsKreceEnabled(false);
                       setKreceInitialAmount(0);
+                      setKrecePercentageInput(""); // Limpiar input
                     }
                   }}
                   className={`text-xs ${isKreceEnabled ? "bg-blue-600 hover:bg-blue-700" : ""}`}
@@ -2797,44 +2851,64 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
             
             {isKreceEnabled && (
               <div className="space-y-3">
-                {/* Botones de Porcentaje Fijo */}
+                {/* ✅ Input Manual de Porcentaje (Reemplaza botones predefinidos) */}
                 <div className="space-y-2">
-                  <div className="text-xs text-muted-foreground font-medium">
-                    Selecciona el porcentaje de inicial:
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[25, 40, 60].map((percentage) => {
-                      const amount = (subtotalUSD * percentage) / 100;
-                      const isSelected = Math.abs((kreceInitialAmount / subtotalUSD) * 100 - percentage) < 0.1;
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Porcentaje de inicial (%):
+                  </label>
+                  <Input
+                    id="krece-percentage-input"
+                    ref={kreceInputRef}
+                    type="number"
+                    value={krecePercentageInput}
+                    onChange={(e) => {
+                      const inputValue = e.target.value;
+                      // ✅ Permitir input vacío completamente
+                      setKrecePercentageInput(inputValue);
                       
-                      return (
-                        <Button
-                          key={percentage}
-                          variant={isSelected ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => {
-                            setKreceInitialAmount(amount);
-                          }}
-                          className={`text-xs h-10 ${
-                            isSelected 
-                              ? "bg-primary text-primary-foreground hover:bg-primary/90" 
-                              : "hover:bg-primary/10 hover:border-primary"
-                          }`}
-                          disabled={subtotalUSD === 0}
-                        >
-                          <div className="text-center w-full">
-                            <div className="font-bold text-sm">{percentage}%</div>
-                            <div className="text-[11px] opacity-80">
-                              ${subtotalUSD === 0 ? "0.00" : amount.toFixed(2)}
-                            </div>
-                          </div>
-                        </Button>
-                      );
-                    })}
-                  </div>
-                  {subtotalUSD === 0 && (
+                      // Solo actualizar el monto si hay un valor válido
+                      if (inputValue !== "" && !isNaN(parseFloat(inputValue))) {
+                        const percentage = parseFloat(inputValue);
+                        if (percentage >= 0 && percentage <= 100) {
+                          const normalizedPercentage = normalizePercentage(percentage);
+                          const amount = calculateAmountFromPercentage(normalizedPercentage, subtotalUSD);
+                          setKreceInitialAmount(amount);
+                        }
+                      } else if (inputValue === "") {
+                        // Si está vacío, resetear el monto a 0
+                        setKreceInitialAmount(0);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      // ✅ Aplicar "Ley del 5" al perder foco
+                      const inputValue = e.target.value;
+                      if (inputValue === "" || isNaN(parseFloat(inputValue))) {
+                        // Si está vacío, dejar en 0 y input vacío
+                        setKreceInitialAmount(0);
+                        setKrecePercentageInput("");
+                      } else {
+                        const percentage = parseFloat(inputValue);
+                        const snapped = snapToNearestFive(percentage);
+                        const normalizedPercentage = normalizePercentage(snapped);
+                        const amount = calculateAmountFromPercentage(normalizedPercentage, subtotalUSD);
+                        setKreceInitialAmount(amount);
+                        setKrecePercentageInput(normalizedPercentage.toString());
+                      }
+                    }}
+                    className="h-10 text-sm bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600"
+                    placeholder="Ejemplo: 30, 40, 50, 60"
+                    min="0"
+                    max="100"
+                    step="1"
+                    disabled={subtotalUSD === 0}
+                  />
+                  {subtotalUSD === 0 ? (
                     <div className="text-xs text-muted-foreground text-center py-2">
                       Agrega productos al carrito para calcular financiamiento
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted-foreground">
+                      Ingrese el porcentaje de inicial del financiamiento
                     </div>
                   )}
                 </div>
@@ -2933,10 +3007,15 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                     setIsKreceEnabled(false);
                     setKreceInitialAmount(0);
                     setIsCasheaEnabled(true);
-                    setCasheaInitialAmount(subtotalUSD * 0.5); // 50% inicial por defecto
+                    // ✅ Usar "Ley del 5": 50% se redondea a 50% (ya es múltiplo de 5)
+                    const defaultPercentage = 50;
+                    const amount = calculateAmountFromPercentage(defaultPercentage, subtotalUSD);
+                    setCasheaInitialAmount(amount);
+                    setCasheaPercentageInput(""); // Input vacío por defecto
                   } else {
                     setIsCasheaEnabled(false);
                     setCasheaInitialAmount(0);
+                    setCasheaPercentageInput(""); // Limpiar input
                   }
                 }}
                 className={`text-xs ${isCasheaEnabled ? "bg-purple-600 hover:bg-purple-700" : ""}`}
@@ -2948,71 +3027,64 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
             
             {isCasheaEnabled && (
               <div className="space-y-2">
-                <div className="space-y-3">
-                  <div className="text-xs text-muted-foreground">
-                    Selecciona el porcentaje de inicial:
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[60, 50, 40].map((percentage) => {
-                      const amount = (subtotalUSD * percentage) / 100;
-                      const isSelected = Math.abs((casheaInitialAmount / subtotalUSD) * 100 - percentage) < 0.1;
+                {/* ✅ Input Manual de Porcentaje (Reemplaza botones predefinidos) */}
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Porcentaje de inicial (%):
+                  </label>
+                  <Input
+                    id="cashea-percentage-input"
+                    ref={casheaInputRef}
+                    type="number"
+                    value={casheaPercentageInput}
+                    onChange={(e) => {
+                      const inputValue = e.target.value;
+                      // ✅ Permitir input vacío completamente
+                      setCasheaPercentageInput(inputValue);
                       
-                      return (
-                        <Button
-                          key={percentage}
-                          variant={isSelected ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => {
-                            setCasheaInitialAmount(amount);
-                          }}
-                          className={`text-xs h-8 ${
-                            isSelected 
-                              ? "bg-purple-600 hover:bg-purple-700" 
-                              : "hover:bg-purple-50 hover:border-purple-300"
-                          }`}
-                          disabled={subtotalUSD === 0}
-                        >
-                          <div className="text-center">
-                            <div className="font-semibold">{percentage}%</div>
-                            <div className="text-[11px] opacity-80">
-                              ${subtotalUSD === 0 ? "0.00" : amount.toFixed(2)}
-                            </div>
-                          </div>
-                        </Button>
-                      );
-                    })}
-                  </div>
-                  {subtotalUSD === 0 && (
-                    <div className="text-xs text-muted-foreground text-center">
+                      // Solo actualizar el monto si hay un valor válido
+                      if (inputValue !== "" && !isNaN(parseFloat(inputValue))) {
+                        const percentage = parseFloat(inputValue);
+                        if (percentage >= 0 && percentage <= 100) {
+                          const normalizedPercentage = normalizePercentage(percentage);
+                          const amount = calculateAmountFromPercentage(normalizedPercentage, subtotalUSD);
+                          setCasheaInitialAmount(amount);
+                        }
+                      } else if (inputValue === "") {
+                        // Si está vacío, resetear el monto a 0
+                        setCasheaInitialAmount(0);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      // ✅ Aplicar "Ley del 5" al perder foco
+                      const inputValue = e.target.value;
+                      if (inputValue === "" || isNaN(parseFloat(inputValue))) {
+                        // Si está vacío, dejar en 0 y input vacío
+                        setCasheaInitialAmount(0);
+                        setCasheaPercentageInput("");
+                      } else {
+                        const percentage = parseFloat(inputValue);
+                        const snapped = snapToNearestFive(percentage);
+                        const normalizedPercentage = normalizePercentage(snapped);
+                        const amount = calculateAmountFromPercentage(normalizedPercentage, subtotalUSD);
+                        setCasheaInitialAmount(amount);
+                        setCasheaPercentageInput(normalizedPercentage.toString());
+                      }
+                    }}
+                    className="h-10 text-sm bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600"
+                    placeholder="Ejemplo: 30, 40, 50, 60"
+                    min="0"
+                    max="100"
+                    step="1"
+                    disabled={subtotalUSD === 0}
+                  />
+                  {subtotalUSD === 0 ? (
+                    <div className="text-xs text-muted-foreground text-center py-2">
                       Agrega productos al carrito para calcular financiamiento
                     </div>
-                  )}
-                  <div className="text-xs text-muted-foreground">
-                    O ingresa un monto personalizado:
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">Monto Inicial (USD)</label>
-                  <Input
-                    type="number"
-                    value={casheaInitialAmount.toFixed(2)}
-                    onChange={(e) => {
-                      const value = parseFloat(e.target.value) || 0;
-                      const newAmount = Math.min(value, subtotalUSD);
-                      setCasheaInitialAmount(newAmount);
-                    }}
-                    className="h-8 text-sm"
-                    placeholder="0.00"
-                    min="0"
-                    max={subtotalUSD}
-                    step="0.01"
-                  />
-                  <div className="text-xs text-muted-foreground">
-                    Máximo: ${subtotalUSD.toFixed(2)} (100% del total)
-                  </div>
-                  {casheaInitialAmount > 0 && subtotalUSD > 0 && (
-                    <div className="text-xs text-purple-600 font-medium">
-                      Porcentaje actual: {((casheaInitialAmount / subtotalUSD) * 100).toFixed(1)}%
+                  ) : (
+                    <div className="text-xs text-muted-foreground">
+                      Ingrese el porcentaje de inicial del financiamiento
                     </div>
                   )}
                 </div>

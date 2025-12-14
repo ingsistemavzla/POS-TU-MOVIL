@@ -203,3 +203,4 @@ COMMENT ON FUNCTION update_store_inventory(uuid, uuid, integer, integer) IS
 Registra automáticamente los cambios en inventory_movements con tipo ADJUST para auditoría forense.
 Incluye información detallada: aumento/disminución, cantidad, sucursal (nombre), producto, y usuario que realizó el cambio.';
 
+
