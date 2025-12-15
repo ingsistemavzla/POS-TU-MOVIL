@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { getSalesSummary } from '@/lib/sales/stats';
 
 export interface SaleItem {
   id: string;
@@ -90,8 +89,21 @@ export interface SalesResponse {
   totalCount: number;
   totalPages: number;
   currentPage: number;
-  totalAmount: number;
-  averageAmount: number;
+  totalAmount: number;      // Total USD global desde el servidor
+  averageAmount: number;    // Promedio USD global desde el servidor
+  categoryStats?: CategoryStats;
+}
+
+export interface CategoryTotals {
+  units: number;
+  amount_usd: number;
+  amount_bs: number;
+}
+
+export interface CategoryStats {
+  phones: CategoryTotals;
+  accessories: CategoryTotals;
+  technical_service: CategoryTotals;
 }
 
 export interface UseSalesDataReturn {
@@ -115,7 +127,7 @@ export function useSalesData(): UseSalesDataReturn {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(15);
   const [filters, setFiltersState] = useState<SalesFilters>({});
 
   const fetchSalesData = useCallback(async () => {
@@ -130,13 +142,13 @@ export function useSalesData(): UseSalesDataReturn {
 
       console.log('🔄 [RPC] Fetching sales data with get_sales_history_v2:', filters, 'page:', page, 'pageSize:', pageSize);
 
-      // ✅ NUEVO: Usar RPC get_sales_history_v2 en lugar de query manual
       const offset = (page - 1) * pageSize;
       const { data: rpcData, error: rpcError } = await (supabase as any).rpc('get_sales_history_v2', {
         p_company_id: null, // La RPC lo deduce del usuario autenticado
         p_store_id: filters.storeId || null,
         p_date_from: filters.dateFrom || null,
         p_date_to: filters.dateTo || null,
+        p_category: filters.category || null,
         p_limit: pageSize,
         p_offset: offset
       });
@@ -145,8 +157,7 @@ export function useSalesData(): UseSalesDataReturn {
         throw rpcError;
       }
 
-      // La RPC retorna SETOF JSONB, que Supabase convierte en un array
-      // Si no hay datos, puede ser null, undefined, o array vacío
+      // Nueva RPC: retorna un JSON con { metadata, data }
       if (!rpcData) {
         console.log('📊 [RPC] No hay datos retornados');
         const response: SalesResponse = {
@@ -161,19 +172,49 @@ export function useSalesData(): UseSalesDataReturn {
         return;
       }
 
-      // Verificar si hay error en la respuesta (puede venir como primer elemento del array)
-      if (Array.isArray(rpcData) && rpcData.length > 0 && rpcData[0]?.error) {
-        throw new Error(rpcData[0].message || 'Error al obtener historial de ventas');
+      // rpcData puede venir como objeto o como array con un solo elemento
+      const payload: any = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+
+      if (payload?.error) {
+        throw new Error(payload.message || 'Error al obtener historial de ventas');
       }
 
-      // La RPC retorna un array JSONB directamente
-      const salesData: any[] = Array.isArray(rpcData) ? rpcData : [];
+      const metadata = payload.metadata || {};
+      const rawSales: any[] = Array.isArray(payload.data) ? payload.data : [];
 
-      console.log(`📊 [RPC] Ventas obtenidas: ${salesData.length}`);
+      const totalCount = Number(metadata.total_count) || 0;
+      const serverTotalAmountUsd = Number(metadata.total_amount_usd) || 0;
+      const totalPages = totalCount > 0 ? Math.ceil(totalCount / pageSize) : 0;
+      const averageAmount = totalCount > 0 ? serverTotalAmountUsd / totalCount : 0;
+
+      // ✅ Totales por categoría desde el servidor (respetan filtros activos)
+      const rawCategoryStats = metadata.category_stats || {};
+      const categoryStats: CategoryStats = {
+        phones: {
+          units:      Number(rawCategoryStats?.phones?.units)      || 0,
+          amount_usd: Number(rawCategoryStats?.phones?.amount_usd) || 0,
+          amount_bs:  Number(rawCategoryStats?.phones?.amount_bs)  || 0,
+        },
+        accessories: {
+          units:      Number(rawCategoryStats?.accessories?.units)      || 0,
+          amount_usd: Number(rawCategoryStats?.accessories?.amount_usd) || 0,
+          amount_bs:  Number(rawCategoryStats?.accessories?.amount_bs)  || 0,
+        },
+        technical_service: {
+          units:      Number(rawCategoryStats?.technical_service?.units)      || 0,
+          amount_usd: Number(rawCategoryStats?.technical_service?.amount_usd) || 0,
+          amount_bs:  Number(rawCategoryStats?.technical_service?.amount_bs)  || 0,
+        },
+      };
+
+      console.log(
+        `📊 [RPC] Ventas obtenidas (página): ${rawSales.length}, totalCount: ${totalCount}, totalAmountUsd: ${serverTotalAmountUsd}, categoryStats:`,
+        categoryStats
+      );
 
       // ✅ REFACTOR: La RPC ya devuelve todos los datos resueltos (client_name, store_name, cashier_name)
       // Solo mapeamos directamente sin queries adicionales
-      const transformedSales: Sale[] = salesData.map((sale: any) => ({
+      const transformedSales: Sale[] = rawSales.map((sale: any) => ({
         id: sale.id,
         invoice_number: sale.invoice_number,
         created_at: sale.created_at,
@@ -231,26 +272,14 @@ export function useSalesData(): UseSalesDataReturn {
       // La RPC ya devuelve las ventas ordenadas por fecha descendente
       const sortedSales = transformedSales;
 
-      // Calcular totales desde los datos obtenidos
-      // NOTA: La RPC solo devuelve la página actual, así que los totales son aproximados
-      const totalCount = salesData.length; // Aproximado (solo página actual)
-      const totalPages = Math.ceil(totalCount / pageSize);
-
-      // Calcular totales desde los datos de la página actual
-      const summary = getSalesSummary(
-        sortedSales.map(s => ({ store_id: s.store_id, total_usd: s.total_usd })),
-        filters.storeId
-      );
-      const finalTotalAmount = summary.totalSales;
-      const finalAverageAmount = summary.averageSales;
-
       const response: SalesResponse = {
         sales: sortedSales, // Usar las ventas ordenadas (página actual)
         totalCount,
         totalPages,
         currentPage: page,
-        totalAmount: finalTotalAmount, // Total de TODAS las ventas filtradas
-        averageAmount: finalAverageAmount, // Promedio de TODAS las ventas filtradas
+        totalAmount: serverTotalAmountUsd,
+        averageAmount,
+        categoryStats,
       };
 
       console.log('Sales data fetched successfully:', response);
@@ -266,7 +295,7 @@ export function useSalesData(): UseSalesDataReturn {
 
   const setFilters = useCallback((newFilters: Partial<SalesFilters>) => {
     setFiltersState(prev => {
-      const updated = { ...prev };
+      const updated: SalesFilters = { ...prev };
       
       // Si un filtro se establece como undefined, eliminarlo del estado
       Object.keys(newFilters).forEach(key => {
@@ -274,7 +303,7 @@ export function useSalesData(): UseSalesDataReturn {
         if (newFilters[filterKey] === undefined) {
           delete updated[filterKey];
         } else {
-          updated[filterKey] = newFilters[filterKey] as any;
+          (updated as any)[filterKey] = newFilters[filterKey];
         }
       });
       

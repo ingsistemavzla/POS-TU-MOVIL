@@ -68,6 +68,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { PRODUCT_CATEGORIES, getCategoryLabel } from "@/constants/categories";
 import { generateSalesReportPdf } from "@/lib/reports/salesReport";
 import type jsPDF from "jspdf";
+import { useStore } from "@/contexts/StoreContext";
+import { StoreFilterBar } from "@/components/inventory/StoreFilterBar";
 import {
   Dialog,
   DialogContent,
@@ -81,6 +83,7 @@ import { GenerateReportModal } from "@/components/reports/GenerateReportModal";
 export default function SalesPage() {
   const { toast } = useToast();
   const { userProfile } = useAuth();
+  const { selectedStoreId, setSelectedStoreId, availableStores } = useStore();
   const {
     data,
     loading,
@@ -96,11 +99,6 @@ export default function SalesPage() {
     exportData
   } = useSalesData();
 
-  const [showFilters, setShowFilters] = useState(false);
-  const [localFilters, setLocalFilters] = useState<SalesFilters>({
-    paymentMethod: 'all',
-    kreceOnly: false
-  });
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [showSaleDetail, setShowSaleDetail] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -111,8 +109,6 @@ export default function SalesPage() {
   const [deletingSale, setDeletingSale] = useState(false);
   
   // Estados para filtros rápidos
-  const [stores, setStores] = useState<Array<{ id: string; name: string }>>([]);
-  const [selectedStoreFilter, setSelectedStoreFilter] = useState<string>('all');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
   const [dateRangePreset, setDateRangePreset] = useState<string>('custom');
   const [dateRangeStart, setDateRangeStart] = useState<Date | null>(null);
@@ -154,48 +150,6 @@ export default function SalesPage() {
     technical_service: { units: 0, usd: 0, bs: 0 },
   });
 
-  const handleApplyFilters = () => {
-    // Convertir valores especiales antes de aplicar filtros
-    const filtersToApply = {
-      ...localFilters,
-      paymentMethod: localFilters.paymentMethod === 'all' ? undefined : localFilters.paymentMethod
-    };
-    setFilters(filtersToApply);
-    setShowFilters(false);
-    toast({
-      title: "Filtros aplicados",
-      description: "Los filtros se han aplicado correctamente",
-    });
-  };
-
-  // Sincronizar filtros locales cuando se abren los filtros
-  const handleOpenFilters = () => {
-    setLocalFilters({
-      ...filters,
-      paymentMethod: filters.paymentMethod || 'all',
-      kreceOnly: filters.kreceOnly || false
-    });
-    setShowFilters(true);
-  };
-
-  const handleClearFilters = () => {
-    setLocalFilters({
-      paymentMethod: 'all',
-      kreceOnly: false
-    });
-    // Limpiar también los filtros rápidos
-    setSelectedStoreFilter('all');
-    setSelectedCategoryFilter('all');
-    setDateRangePreset('custom');
-    setDateRangeStart(null);
-    setDateRangeEnd(null);
-    clearFilters();
-    setShowFilters(false);
-    toast({
-      title: "Filtros limpiados",
-      description: "Todos los filtros han sido eliminados",
-    });
-  };
 
   const handleExport = async () => {
     try {
@@ -215,7 +169,7 @@ export default function SalesPage() {
   };
 
   const handleOpenPdfDialog = () => {
-    setPdfStoreId(filters.storeId || selectedStoreFilter || 'all');
+    setPdfStoreId(filters.storeId || selectedStoreId || 'all');
     setLockPdfStore(false);
     setShowPdfDialog(true);
   };
@@ -223,8 +177,8 @@ export default function SalesPage() {
   const handleOpenStorePdfDialog = () => {
     const storeId = filters.storeId && filters.storeId !== 'all'
       ? filters.storeId
-      : selectedStoreFilter !== 'all'
-        ? selectedStoreFilter
+      : selectedStoreId && selectedStoreId !== 'all'
+        ? selectedStoreId
         : undefined;
 
     if (!storeId) {
@@ -250,180 +204,34 @@ export default function SalesPage() {
     };
   }, []);
 
-  // Calcular totales por categoría desde todas las ventas filtradas
+  // Sincronizar las tarjetas de categorías con los totales calculados en el servidor
   useEffect(() => {
-    const calculateCategoryTotals = async () => {
-      if (!userProfile?.company_id) return;
-
-      try {
-        // Usar filtros locales si están disponibles, sino usar los del hook
-        const effectiveStoreId = selectedStoreFilter !== 'all' ? selectedStoreFilter : (filters.storeId && filters.storeId !== 'all' ? filters.storeId : undefined);
-        const effectiveCategory = selectedCategoryFilter !== 'all' ? selectedCategoryFilter : (filters.category && filters.category !== 'all' ? filters.category : undefined);
-        const effectiveDateFrom = dateRangeStart ? dateRangeStart.toISOString() : (filters.dateFrom || undefined);
-        const effectiveDateTo = dateRangeEnd ? new Date(dateRangeEnd.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString() : (filters.dateTo || undefined);
-
-        // Construir la consulta base con los mismos filtros que useSalesData
-        // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
-        let salesQuery = supabase
-          .from('sales')
-          .select('id');
-          // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
-
-        // Aplicar filtros de fecha
-        if (effectiveDateFrom) {
-          salesQuery = salesQuery.gte('created_at', effectiveDateFrom);
-        }
-        if (effectiveDateTo) {
-          salesQuery = salesQuery.lte('created_at', effectiveDateTo);
-        }
-
-        // Aplicar filtro de sucursal
-        if (effectiveStoreId) {
-          salesQuery = salesQuery.eq('store_id', effectiveStoreId);
-        }
-
-        // Si hay filtro de categoría, obtener sale_ids primero
-        let saleIds: string[] | null = null;
-        if (effectiveCategory) {
-          // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
-          const { data: productsData } = await supabase
-            .from('products')
-            .select('id')
-            // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
-            .eq('category', effectiveCategory);
-
-          if (productsData && productsData.length > 0) {
-            const productIds = productsData.map((p: any) => p.id);
-            // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
-            let saleItemsQuery = supabase
-              .from('sale_items')
-              .select('sale_id, sales!inner(id, company_id, store_id, created_at)')
-              // ✅ REMOVED: .eq('sales.company_id', userProfile.company_id) - RLS handles this automatically
-              .in('product_id', productIds);
-
-            if (effectiveStoreId) {
-              saleItemsQuery = saleItemsQuery.eq('sales.store_id', effectiveStoreId);
-            }
-            if (effectiveDateFrom) {
-              saleItemsQuery = saleItemsQuery.gte('sales.created_at', effectiveDateFrom);
-            }
-            if (effectiveDateTo) {
-              saleItemsQuery = saleItemsQuery.lte('sales.created_at', effectiveDateTo);
-            }
-
-            const { data: saleItemsData } = await saleItemsQuery;
-            if (saleItemsData && saleItemsData.length > 0) {
-              saleIds = [...new Set(saleItemsData.map((item: any) => item.sale_id))];
-            } else {
-              saleIds = [];
-            }
-          } else {
-            saleIds = [];
-          }
-        }
-
-        // Si hay filtro de categoría, usar los sale_ids obtenidos
-        if (saleIds !== null) {
-          if (saleIds.length === 0) {
-            setCategoryTotals({ 
-              phones: { units: 0, usd: 0, bs: 0 },
-              accessories: { units: 0, usd: 0, bs: 0 },
-              technical_service: { units: 0, usd: 0, bs: 0 }
-            });
-            return;
-          }
-          salesQuery = salesQuery.in('id', saleIds);
-        }
-
-        // Obtener todos los sale_ids filtrados
-        const { data: salesData } = await salesQuery.select('id');
-
-        if (!salesData || salesData.length === 0) {
-          setCategoryTotals({ 
-            phones: { units: 0, usd: 0, bs: 0 },
-            accessories: { units: 0, usd: 0, bs: 0 },
-            technical_service: { units: 0, usd: 0, bs: 0 }
-          });
-          return;
-        }
-
-        const allSaleIds = salesData.map((s: any) => s.id);
-
-        // Obtener todos los items de todas las ventas filtradas con precios y montos
-        // Necesitamos el bcv_rate_used de sales para calcular subtotal_bs
-        const { data: allItemsData, error: itemsError } = await supabase
-          .from('sale_items')
-          .select(`
-            qty,
-            subtotal_usd,
-            sale_id,
-            products(category),
-            sales(bcv_rate_used)
-          `)
-          .in('sale_id', allSaleIds);
-
-        if (itemsError) {
-          console.error('Error fetching sale items:', itemsError);
-        }
-
-        if (!allItemsData || allItemsData.length === 0) {
-          console.log('📊 [CategoryTotals] No hay items de venta para calcular');
-          setCategoryTotals({ 
-            phones: { units: 0, usd: 0, bs: 0 },
-            accessories: { units: 0, usd: 0, bs: 0 },
-            technical_service: { units: 0, usd: 0, bs: 0 }
-          });
-          return;
-        }
-
-        console.log('📊 [CategoryTotals] Items encontrados:', allItemsData.length);
-
-        // Calcular totales por categoría (unidades, USD, BS)
-        const totals = {
-          phones: { units: 0, usd: 0, bs: 0 },
-          accessories: { units: 0, usd: 0, bs: 0 },
-          technical_service: { units: 0, usd: 0, bs: 0 },
-        };
-
-        allItemsData.forEach((item: any) => {
-          const category = item.products?.category;
-          const quantity = Number(item.qty) || 0;
-          const usd = Number(item.subtotal_usd) || 0;
-          // Calcular BS desde USD usando el bcv_rate_used de la venta
-          // sales puede ser un objeto o un array, manejamos ambos casos
-          const salesData = Array.isArray(item.sales) ? item.sales[0] : item.sales;
-          const bcvRate = Number(salesData?.bcv_rate_used) || 1;
-          const bs = usd * bcvRate;
-
-          if (category === 'phones') {
-            totals.phones.units += quantity;
-            totals.phones.usd += usd;
-            totals.phones.bs += bs;
-          } else if (category === 'accessories') {
-            totals.accessories.units += quantity;
-            totals.accessories.usd += usd;
-            totals.accessories.bs += bs;
-          } else if (category === 'technical_service') {
-            totals.technical_service.units += quantity;
-            totals.technical_service.usd += usd;
-            totals.technical_service.bs += bs;
-          }
-        });
-
-        console.log('📊 [CategoryTotals] Totales calculados:', totals);
-        setCategoryTotals(totals);
-      } catch (error) {
-        console.error('Error calculando totales por categoría:', error);
-        setCategoryTotals({ 
-          phones: { units: 0, usd: 0, bs: 0 },
-          accessories: { units: 0, usd: 0, bs: 0 },
-          technical_service: { units: 0, usd: 0, bs: 0 }
-        });
-      }
-    };
-
-    calculateCategoryTotals();
-  }, [filters, userProfile?.company_id, data?.totalCount, selectedStoreFilter, selectedCategoryFilter, dateRangeStart, dateRangeEnd]);
+    if (data?.categoryStats) {
+      setCategoryTotals({
+        phones: {
+          units: data.categoryStats.phones.units,
+          usd:   data.categoryStats.phones.amount_usd,
+          bs:    data.categoryStats.phones.amount_bs,
+        },
+        accessories: {
+          units: data.categoryStats.accessories.units,
+          usd:   data.categoryStats.accessories.amount_usd,
+          bs:    data.categoryStats.accessories.amount_bs,
+        },
+        technical_service: {
+          units: data.categoryStats.technical_service.units,
+          usd:   data.categoryStats.technical_service.amount_usd,
+          bs:    data.categoryStats.technical_service.amount_bs,
+        },
+      });
+    } else {
+      setCategoryTotals({
+        phones: { units: 0, usd: 0, bs: 0 },
+        accessories: { units: 0, usd: 0, bs: 0 },
+        technical_service: { units: 0, usd: 0, bs: 0 },
+      });
+    }
+  }, [data?.categoryStats]);
 
   const closePdfPreview = () => {
     if (pdfPreviewUrlRef.current) {
@@ -827,7 +635,7 @@ export default function SalesPage() {
         category: reportFilters.categoryId || undefined,
       };
 
-      const storeName = stores.find(store => store.id === reportFilters.storeId)?.name;
+      const storeName = availableStores.find(store => store.id === reportFilters.storeId)?.name;
       const companyDisplayName =
         (userProfile as any)?.company?.name ??
         (userProfile as any)?.company_name ??
@@ -1007,12 +815,6 @@ export default function SalesPage() {
       hour12: false, // Formato 24 horas
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone // Usar zona horaria local
     });
-  };
-
-  const getActiveFiltersCount = () => {
-    return Object.values(filters).filter(value => 
-      value !== undefined && value !== null && value !== ''
-    ).length;
   };
 
   const handleViewSale = (saleId: string) => {
@@ -1239,40 +1041,6 @@ export default function SalesPage() {
     setSaleToDelete(null);
   };
 
-  // Obtener sucursales disponibles
-  useEffect(() => {
-    const fetchStores = async () => {
-      if (!userProfile?.company_id) return;
-
-      try {
-        // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
-        let query = (supabase as any)
-          .from('stores')
-          .select('id, name')
-          // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
-          .eq('active', true)
-          .order('name');
-
-      // 🛡️ SEGURIDAD: RLS maneja el filtrado automáticamente
-      // El backend solo retorna stores que el usuario tiene permiso de ver
-      // No necesitamos filtrar por roles en el frontend
-
-        const { data, error } = await query;
-
-        if (error) {
-          console.error('Error fetching stores:', error);
-          return;
-        }
-
-        setStores(data || []);
-      } catch (error) {
-        console.error('Error in fetchStores:', error);
-      }
-    };
-
-    fetchStores();
-  }, [userProfile?.company_id, userProfile?.role, userProfile?.assigned_store_id]);
-
   // Calcular fechas según el rango predefinido seleccionado
   useEffect(() => {
     if (dateRangePreset === 'custom') {
@@ -1286,35 +1054,51 @@ export default function SalesPage() {
     startDate.setHours(0, 0, 0, 0); // Inicio del día
 
     switch (dateRangePreset) {
-      case 'today':
+      case 'today': {
+        // Hoy
         setDateRangeStart(new Date(startDate));
         setDateRangeEnd(new Date(today));
         break;
-      case '3days':
-        startDate.setDate(startDate.getDate() - 2); // Últimos 3 días (incluyendo hoy)
+      }
+      case 'yesterday': {
+        // Ayer completo
+        const yStart = new Date(startDate);
+        yStart.setDate(yStart.getDate() - 1);
+        const yEnd = new Date(today);
+        yEnd.setDate(yEnd.getDate() - 1);
+        setDateRangeStart(yStart);
+        setDateRangeEnd(yEnd);
+        break;
+      }
+      case '2days': {
+        // Últimos 2 días (incluyendo hoy)
+        startDate.setDate(startDate.getDate() - 1);
         setDateRangeStart(new Date(startDate));
         setDateRangeEnd(new Date(today));
         break;
-      case '5days':
-        startDate.setDate(startDate.getDate() - 4); // Últimos 5 días (incluyendo hoy)
+      }
+      case '7days': {
+        // Última semana (7 días incluyendo hoy)
+        startDate.setDate(startDate.getDate() - 6);
         setDateRangeStart(new Date(startDate));
         setDateRangeEnd(new Date(today));
         break;
-      case '10days':
-        startDate.setDate(startDate.getDate() - 9); // Últimos 10 días (incluyendo hoy)
+      }
+      case '15days': {
+        // Últimos 15 días (incluyendo hoy)
+        startDate.setDate(startDate.getDate() - 14);
         setDateRangeStart(new Date(startDate));
         setDateRangeEnd(new Date(today));
         break;
-      case '15days':
-        startDate.setDate(startDate.getDate() - 14); // Últimos 15 días (incluyendo hoy)
-        setDateRangeStart(new Date(startDate));
+      }
+      case 'month': {
+        // Mes actual: desde el primer día del mes hasta hoy
+        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+        monthStart.setHours(0, 0, 0, 0);
+        setDateRangeStart(monthStart);
         setDateRangeEnd(new Date(today));
         break;
-      case '30days':
-        startDate.setDate(startDate.getDate() - 29); // Últimos 30 días (incluyendo hoy)
-        setDateRangeStart(new Date(startDate));
-        setDateRangeEnd(new Date(today));
-        break;
+      }
       default:
         break;
     }
@@ -1324,9 +1108,9 @@ export default function SalesPage() {
   useEffect(() => {
     const newFilters: Partial<SalesFilters> = {};
 
-    // Sincronizar filtros rápidos con los filtros globales
-    if (selectedStoreFilter && selectedStoreFilter !== 'all') {
-      newFilters.storeId = selectedStoreFilter;
+    // Sincronizar filtros rápidos con los filtros globales usando StoreContext
+    if (selectedStoreId && selectedStoreId !== 'all') {
+      newFilters.storeId = selectedStoreId;
     } else {
       // Si se limpia, eliminar el filtro de storeId
       newFilters.storeId = undefined;
@@ -1361,7 +1145,7 @@ export default function SalesPage() {
 
     // Actualizar solo estos filtros específicos, manteniendo otros filtros del panel avanzado
     setFilters(newFilters);
-  }, [selectedStoreFilter, selectedCategoryFilter, dateRangeStart, dateRangeEnd, setFilters]);
+  }, [selectedStoreId, selectedCategoryFilter, dateRangeStart, dateRangeEnd, setFilters]);
 
   if (error) {
     return (
@@ -1381,6 +1165,9 @@ export default function SalesPage() {
 
   return (
     <div className="space-y-6">
+      {/* Filtro global de sucursal (barra verde) */}
+      <StoreFilterBar pageTitle="Historial de Ventas" />
+
       {/* Header */}
       <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
         <div className="space-y-2">
@@ -1399,19 +1186,6 @@ export default function SalesPage() {
           </p>
         </div>
         <div className="flex flex-col space-y-2 sm:flex-row sm:space-x-2 sm:space-y-0">
-          <Button
-            variant="outline"
-            onClick={handleOpenFilters}
-            className="relative w-full sm:w-auto"
-          >
-            <Filter className="w-4 h-4 mr-2" />
-            Filtros
-            {getActiveFiltersCount() > 0 && (
-              <Badge className="ml-2 h-5 w-5 rounded-full p-0 text-xs">
-                {getActiveFiltersCount()}
-              </Badge>
-            )}
-          </Button>
           <Button variant="outline" onClick={refreshData} disabled={loading} className="w-full sm:w-auto">
             <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Actualizar
@@ -1428,7 +1202,7 @@ export default function SalesPage() {
             <FileDown className="w-4 h-4 mr-2" />
             Generar Reportes
           </Button>
-          {(filters.storeId && filters.storeId !== 'all') || selectedStoreFilter !== 'all' ? (
+          {(filters.storeId && filters.storeId !== 'all') || (selectedStoreId && selectedStoreId !== 'all') ? (
             <Button
               variant="secondary"
               onClick={handleOpenStorePdfDialog}
@@ -1441,149 +1215,6 @@ export default function SalesPage() {
           ) : null}
         </div>
       </div>
-
-      {/* Filters Panel */}
-      {showFilters && (
-        <Card className="shadow-lg shadow-green-500/50 border border-green-500/40">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center">
-                  <Filter className="w-5 h-5 mr-2" />
-                  Filtros Avanzados
-                </CardTitle>
-                <CardDescription>
-                  Filtra las ventas por diferentes criterios
-                </CardDescription>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowFilters(false)}
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {/* Date Range */}
-              <div className="space-y-2">
-                <Label htmlFor="dateFrom">Fecha Desde</Label>
-                <Input
-                  id="dateFrom"
-                  type="date"
-                  value={localFilters.dateFrom || ''}
-                  onChange={(e) => setLocalFilters(prev => ({ ...prev, dateFrom: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="dateTo">Fecha Hasta</Label>
-                <Input
-                  id="dateTo"
-                  type="date"
-                  value={localFilters.dateTo || ''}
-                  onChange={(e) => setLocalFilters(prev => ({ ...prev, dateTo: e.target.value }))}
-                />
-              </div>
-
-              {/* Amount Range */}
-              <div className="space-y-2">
-                <Label htmlFor="minAmount">Monto Mínimo (USD)</Label>
-                <Input
-                  id="minAmount"
-                  type="number"
-                  step="0.01"
-                  value={localFilters.minAmount || ''}
-                  onChange={(e) => setLocalFilters(prev => ({ ...prev, minAmount: parseFloat(e.target.value) || undefined }))}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="maxAmount">Monto Máximo (USD)</Label>
-                <Input
-                  id="maxAmount"
-                  type="number"
-                  step="0.01"
-                  value={localFilters.maxAmount || ''}
-                  onChange={(e) => setLocalFilters(prev => ({ ...prev, maxAmount: parseFloat(e.target.value) || undefined }))}
-                />
-              </div>
-
-              {/* Payment Method */}
-              <div className="space-y-2">
-                <Label>Método de Pago</Label>
-                <Select
-                  value={localFilters.paymentMethod || 'all'}
-                  onValueChange={(value) => setLocalFilters(prev => ({ ...prev, paymentMethod: value === 'all' ? undefined : value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Todos" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos</SelectItem>
-                    <SelectItem value="cash_usd">Efectivo USD</SelectItem>
-                    <SelectItem value="cash_bs">Efectivo BS</SelectItem>
-                    <SelectItem value="card">Tarjeta</SelectItem>
-                    <SelectItem value="transfer">Transferencia</SelectItem>
-                    <SelectItem value="binance">Binance</SelectItem>
-                    <SelectItem value="zelle">Zelle</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Search Term */}
-              <div className="space-y-2">
-                <Label htmlFor="searchTerm">Búsqueda General</Label>
-                <Input
-                  id="searchTerm"
-                  placeholder="Factura, cliente, cédula..."
-                  value={localFilters.searchTerm || ''}
-                  onChange={(e) => setLocalFilters(prev => ({ ...prev, searchTerm: e.target.value || undefined }))}
-                />
-              </div>
-
-              {/* Invoice Number */}
-              <div className="space-y-2">
-                <Label htmlFor="invoiceNumber">Número de Factura</Label>
-                <Input
-                  id="invoiceNumber"
-                  placeholder="Ej: POS-2024-001"
-                  value={localFilters.invoiceNumber || ''}
-                  onChange={(e) => setLocalFilters(prev => ({ ...prev, invoiceNumber: e.target.value || undefined }))}
-                />
-              </div>
-
-              {/* Krece Filter */}
-              <div className="space-y-2">
-                <Label>Filtro KRECE</Label>
-                <Select
-                  value={localFilters.kreceOnly ? 'true' : 'false'}
-                  onValueChange={(value) => setLocalFilters(prev => ({ ...prev, kreceOnly: value === 'true' }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="false">Todas las ventas</SelectItem>
-                    <SelectItem value="true">Solo ventas KRECE</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <Separator />
-
-            <div className="flex justify-end space-x-2">
-              <Button variant="outline" onClick={handleClearFilters}>
-                Limpiar Filtros
-              </Button>
-              <Button onClick={handleApplyFilters}>
-                Aplicar Filtros
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Sales Table */}
       <Card>
@@ -1610,6 +1241,7 @@ export default function SalesPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="15">15</SelectItem>
                     <SelectItem value="20">20</SelectItem>
                     <SelectItem value="50">50</SelectItem>
                     <SelectItem value="100">100</SelectItem>
@@ -1617,26 +1249,8 @@ export default function SalesPage() {
                 </Select>
               </div>
             </div>
-            {/* Segunda fila: Filtros rápidos */}
+            {/* Segunda fila: Filtros rápidos (sin filtro local de sucursal, ya manejado por StoreFilterBar) */}
             <div className="flex flex-wrap items-center gap-3 pt-2 border-t">
-              {/* Filtro por Sucursal */}
-              <div className="flex items-center space-x-2">
-                <Label htmlFor="storeFilter" className="text-sm whitespace-nowrap">Sucursal:</Label>
-                <Select value={selectedStoreFilter} onValueChange={setSelectedStoreFilter}>
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Todas las sucursales" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas las sucursales</SelectItem>
-                    {stores.map((store) => (
-                      <SelectItem key={store.id} value={store.id}>
-                        {store.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
               {/* Filtro por Categoría */}
               <div className="flex items-center space-x-2">
                 <Label htmlFor="categoryFilter" className="text-sm whitespace-nowrap">Categoría:</Label>
@@ -1666,12 +1280,12 @@ export default function SalesPage() {
                     <SelectValue placeholder="Seleccionar rango" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="today">Rango del día</SelectItem>
-                    <SelectItem value="3days">Últimos 3 días</SelectItem>
-                    <SelectItem value="5days">Últimos 5 días</SelectItem>
-                    <SelectItem value="10days">Últimos 10 días</SelectItem>
-                    <SelectItem value="15days">Últimos 15 días</SelectItem>
-                    <SelectItem value="30days">Últimos 30 días</SelectItem>
+                  <SelectItem value="today">Hoy</SelectItem>
+                  <SelectItem value="yesterday">Ayer</SelectItem>
+                  <SelectItem value="2days">Hace 2 días</SelectItem>
+                  <SelectItem value="7days">Última semana</SelectItem>
+                  <SelectItem value="15days">Últimos 15 días</SelectItem>
+                  <SelectItem value="month">Mes actual</SelectItem>
                     <SelectItem value="custom">Rango personalizado</SelectItem>
                   </SelectContent>
                 </Select>
@@ -1685,12 +1299,20 @@ export default function SalesPage() {
                     <div className="relative">
                       <Input
                         id="dateStart"
-                        type="date"
+                        type="text"
                         value={dateRangeStart ? format(dateRangeStart, 'yyyy-MM-dd') : ''}
                         onChange={(e) => {
-                          const date = e.target.value ? new Date(e.target.value) : null;
-                          setDateRangeStart(date);
-                          setDateRangePreset('custom'); // Cambiar a custom si se edita manualmente
+                          const value = e.target.value;
+                          if (!value) {
+                            setDateRangeStart(null);
+                            setDateRangePreset('custom');
+                            return;
+                          }
+                          const parsed = new Date(value);
+                          if (!isNaN(parsed.getTime())) {
+                            setDateRangeStart(parsed);
+                            setDateRangePreset('custom'); // Cambiar a custom si se edita manualmente
+                          }
                         }}
                         className="w-[150px] pr-8"
                         placeholder="Seleccionar fecha"
@@ -1725,14 +1347,22 @@ export default function SalesPage() {
                     <div className="relative">
                       <Input
                         id="dateEnd"
-                        type="date"
+                        type="text"
                         value={dateRangeEnd ? format(dateRangeEnd, 'yyyy-MM-dd') : ''}
                         onChange={(e) => {
-                          const date = e.target.value ? new Date(e.target.value) : null;
-                          setDateRangeEnd(date);
-                          setDateRangePreset('custom'); // Cambiar a custom si se edita manualmente
+                          const value = e.target.value;
+                          if (!value) {
+                            setDateRangeEnd(null);
+                            setDateRangePreset('custom');
+                            return;
+                          }
+                          const parsed = new Date(value);
+                          if (!isNaN(parsed.getTime())) {
+                            setDateRangeEnd(parsed);
+                            setDateRangePreset('custom'); // Cambiar a custom si se edita manualmente
+                          }
                         }}
-                        className="w-[150px] pr-8"
+                        className="w-[150px] pr    -8"
                         placeholder="Seleccionar fecha"
                       />
                       <button
@@ -1760,12 +1390,12 @@ export default function SalesPage() {
               </div>
 
               {/* Botón para limpiar filtros rápidos */}
-              {(selectedStoreFilter !== 'all' || selectedCategoryFilter !== 'all' || dateRangePreset !== 'custom' || dateRangeStart || dateRangeEnd) && (
+              {((selectedStoreId && selectedStoreId !== 'all') || selectedCategoryFilter !== 'all' || dateRangePreset !== 'custom' || dateRangeStart || dateRangeEnd) && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    setSelectedStoreFilter('all');
+                    setSelectedStoreId('all');
                     setSelectedCategoryFilter('all');
                     setDateRangePreset('custom');
                     setDateRangeStart(null);
@@ -2198,7 +1828,7 @@ export default function SalesPage() {
           }
         }}
         onGenerate={handleGenerateReport}
-        stores={stores}
+        stores={availableStores}
         loading={loading}
         lockStore={lockPdfStore}
         lockedStoreId={lockPdfStore ? pdfStoreId : undefined}
