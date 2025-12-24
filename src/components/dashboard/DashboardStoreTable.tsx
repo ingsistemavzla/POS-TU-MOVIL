@@ -170,9 +170,9 @@ export const DashboardStoreTable: React.FC<DashboardStoreTableProps> = ({ select
   // Skeleton de carga
   if (loading) {
     return (
-      <Card className="bg-white shadow-sm border border-gray-200">
+      <Card className="glass-panel-dense">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-gray-900">
+          <CardTitle className="flex items-center gap-2">
             <Store className="h-5 w-5" />
             Rendimiento por Sucursal
           </CardTitle>
@@ -221,7 +221,7 @@ export const DashboardStoreTable: React.FC<DashboardStoreTableProps> = ({ select
     return (
       <Card className="bg-white shadow-sm border border-red-200">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-gray-900">
+          <CardTitle className="flex items-center gap-2 text-white">
             <Store className="h-5 w-5" />
             Rendimiento por Sucursal
           </CardTitle>
@@ -251,15 +251,15 @@ export const DashboardStoreTable: React.FC<DashboardStoreTableProps> = ({ select
   // Estado vacío
   if (!data?.summary || data.summary.length === 0) {
     return (
-      <Card className="bg-white shadow-sm border border-gray-200">
+      <Card className="glass-panel-dense">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-gray-900">
+          <CardTitle className="flex items-center gap-2">
             <Store className="h-5 w-5" />
             Rendimiento por Sucursal
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-center py-12 text-gray-500">
+          <div className="text-center py-12 text-white/90">
             <Store className="w-12 h-12 mx-auto mb-4 opacity-50" />
             <p>No hay ventas en este periodo</p>
           </div>
@@ -269,16 +269,16 @@ export const DashboardStoreTable: React.FC<DashboardStoreTableProps> = ({ select
   }
 
   return (
-    <Card className="bg-white shadow-sm border border-gray-200">
+    <Card className="glass-panel-dense">
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-gray-900">
+          <CardTitle className="flex items-center gap-2 text-white">
             <Store className="h-5 w-5" />
             Rendimiento por Sucursal
           </CardTitle>
           {/* Selector de Fechas */}
           <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-gray-500" />
+            <Calendar className="h-4 w-4 text-white/90" />
             <div className="flex gap-1">
               <Button
                 variant={datePreset === '7days' ? 'default' : 'outline'}
@@ -324,32 +324,31 @@ export const DashboardStoreTable: React.FC<DashboardStoreTableProps> = ({ select
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow className="bg-gray-50">
-                <TableHead className="font-semibold text-gray-700">Tienda</TableHead>
-                <TableHead className="font-semibold text-gray-700 text-right">Órdenes</TableHead>
-                <TableHead className="font-semibold text-gray-700 text-right">Facturado</TableHead>
-                <TableHead className="font-semibold text-gray-700 text-right">Ingreso Real</TableHead>
-                <TableHead className="font-semibold text-gray-700 text-right">Ganancia</TableHead>
-                <TableHead className="font-semibold text-gray-700 text-right">Margen %</TableHead>
+              <TableRow>
+                <TableHead className="text-right">Órdenes</TableHead>
+                <TableHead className="text-right">Facturado</TableHead>
+                <TableHead className="text-right">Ingreso Real</TableHead>
+                <TableHead className="text-right">Ganancia</TableHead>
+                <TableHead className="text-right">Margen %</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {data.summary.map((store) => (
-                <TableRow key={store.store_id} className="hover:bg-gray-50">
-                  <TableCell className="font-medium text-gray-900">
+                <TableRow key={store.store_id}>
+                  <TableCell className="font-medium">
                     {store.store_name}
                   </TableCell>
-                  <TableCell className="text-right text-gray-700">
+                  <TableCell className="text-right">
                     {store.orders_count.toLocaleString()}
                   </TableCell>
-                  <TableCell className="text-right text-gray-700">
+                  <TableCell className="text-right">
                     {formatCurrency(store.total_invoiced)}
                   </TableCell>
                   <TableCell className="text-right">
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <span className="text-emerald-700 font-bold cursor-help">
+                          <span className="text-[#00FF7F] font-bold cursor-help">
                             {formatCurrency(store.net_income_real)}
                           </span>
                         </TooltipTrigger>
@@ -359,7 +358,7 @@ export const DashboardStoreTable: React.FC<DashboardStoreTableProps> = ({ select
                       </Tooltip>
                     </TooltipProvider>
                   </TableCell>
-                  <TableCell className="text-right text-gray-700">
+                  <TableCell className="text-right">
                     {formatCurrency(store.estimated_profit)}
                   </TableCell>
                   <TableCell className="text-right">
@@ -375,17 +374,17 @@ export const DashboardStoreTable: React.FC<DashboardStoreTableProps> = ({ select
             </TableBody>
             <TableFooter>
               <TableRow className="bg-gray-50 font-semibold">
-                <TableCell className="font-bold text-gray-900">TOTAL GENERAL</TableCell>
-                <TableCell className="text-right font-bold text-gray-900">
+                <TableCell className="font-bold text-white">TOTAL GENERAL</TableCell>
+                <TableCell className="text-right font-bold text-white">
                   {totals.totalOrders.toLocaleString()}
                 </TableCell>
-                <TableCell className="text-right font-bold text-gray-900">
+                <TableCell className="text-right font-bold text-white">
                   {formatCurrency(totals.totalInvoiced)}
                 </TableCell>
                 <TableCell className="text-right font-bold text-emerald-700">
                   {formatCurrency(totals.totalNetIncome)}
                 </TableCell>
-                <TableCell className="text-right font-bold text-gray-900">
+                <TableCell className="text-right font-bold text-white">
                   {formatCurrency(totals.totalProfit)}
                 </TableCell>
                 <TableCell className="text-right">

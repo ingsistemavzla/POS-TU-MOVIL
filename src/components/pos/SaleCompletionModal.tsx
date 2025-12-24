@@ -246,16 +246,16 @@ export const SaleCompletionModal: React.FC<SaleCompletionModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100] p-4">
-      <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-xl max-w-md w-full border border-green-500/30">
+      <div className="glass-panel rounded-lg shadow-xl max-w-md w-full border border-green-500/30 text-white">
         {/* Header - Mensaje Prominente de Éxito */}
-        <div className="flex flex-col items-center justify-center p-8 border-b bg-green-50 dark:bg-green-950/50">
+        <div className="flex flex-col items-center justify-center p-8 border-b glass-green-dark border-green-500/30">
           <div className="flex items-center justify-center mb-4">
             <CheckCircle className="h-20 w-20 text-green-600 animate-in zoom-in duration-300" />
           </div>
-          <h2 className="text-3xl font-bold text-green-800 dark:text-green-400 mb-2 text-center animate-in fade-in duration-500">
+          <h2 className="text-3xl font-bold text-emerald-300 mb-2 text-center animate-in fade-in duration-500">
             ✅ Venta Concretada con Éxito
           </h2>
-          <p className="text-lg font-semibold text-green-700 dark:text-green-500 mb-4">
+          <p className="text-lg font-semibold text-emerald-400 mb-4">
             Factura #{saleData.invoice_number}
           </p>
           
@@ -277,71 +277,71 @@ export const SaleCompletionModal: React.FC<SaleCompletionModalProps> = ({
         {/* Resumen Compacto */}
         <div className="p-6 space-y-4">
           {/* Información Principal */}
-          <div className="bg-gray-50 p-4 rounded-lg">
+          <div className="glass-green-dark p-4 rounded-lg border border-green-500/30">
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">Cliente:</span>
-                <span className="font-semibold text-gray-900">{saleData.customer}</span>
+                <span className="text-white/80">Cliente:</span>
+                <span className="font-semibold text-white">{saleData.customer}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">Total USD:</span>
-                <span className="text-2xl font-bold text-green-700">{formatCurrency(saleData.total_usd, 'USD')}</span>
+                <span className="text-white/80">Total USD:</span>
+                <span className="text-2xl font-bold text-emerald-400">{formatCurrency(saleData.total_usd, 'USD')}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">Total BS:</span>
-                <span className="text-xl font-bold text-green-700">{formatCurrency(saleData.total_bs, 'BS')}</span>
+                <span className="text-white/80">Total BS:</span>
+                <span className="text-xl font-bold text-emerald-400">{formatCurrency(saleData.total_bs, 'BS')}</span>
               </div>
             </div>
           </div>
 
           {/* Detalles Opcionales (Colapsables) */}
           <details className="border rounded-lg">
-            <summary className="px-4 py-3 cursor-pointer font-medium text-gray-700 hover:bg-gray-50">
+            <summary className="px-4 py-3 cursor-pointer font-medium text-white hover:bg-white/10 rounded-lg">
               Ver Detalles Completos
             </summary>
-            <div className="p-4 space-y-4 border-t">
+            <div className="p-4 space-y-4 border-t border-white/10">
           {/* Customer & Date Info */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-gray-700 mb-2">Cliente</h3>
+            <div className="glass-green-dark p-4 rounded-lg border border-green-500/30">
+              <h3 className="font-semibold text-white mb-2">Cliente</h3>
               {saleData.customer_id && (
-                <p className="text-sm text-gray-600 mb-1">Cédula: {saleData.customer_id}</p>
+                <p className="text-sm text-white/80 mb-1">Cédula: {saleData.customer_id}</p>
               )}
-              <p className="text-gray-900">{saleData.customer}</p>
+              <p className="text-white">{saleData.customer}</p>
             </div>
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-gray-700 mb-2">Información de Venta</h3>
-              <p className="text-gray-900">{formatDate(saleData.sale_date)}</p>
-              <p className="text-sm text-gray-600">Método: {saleData.payment_method}</p>
+            <div className="glass-green-dark p-4 rounded-lg border border-green-500/30">
+              <h3 className="font-semibold text-white mb-2">Información de Venta</h3>
+              <p className="text-white">{formatDate(saleData.sale_date)}</p>
+              <p className="text-sm text-white/80">Método: {saleData.payment_method}</p>
               {saleData.cashier_name && (
-                <p className="text-sm text-gray-600">Cajero: {saleData.cashier_name}</p>
+                <p className="text-sm text-white/80">Cajero: {saleData.cashier_name}</p>
               )}
             </div>
           </div>
 
           {/* Store Information */}
           {saleData.store_info && Object.keys(saleData.store_info).length > 0 && (
-            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-              <h3 className="font-semibold text-blue-800 mb-2">Información de la Tienda</h3>
+            <div className="glass-green-dark p-4 rounded-lg border border-green-500/30">
+              <h3 className="font-semibold text-emerald-300 mb-2">Información de la Tienda</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <p className="text-blue-900 font-medium">{saleData.store_info.name}</p>
+                  <p className="text-white font-medium">{saleData.store_info.name}</p>
                   {saleData.store_info.business_name && (
-                    <p className="text-sm text-blue-700">Razón Social: {saleData.store_info.business_name}</p>
+                    <p className="text-sm text-white/80">Razón Social: {saleData.store_info.business_name}</p>
                   )}
                   {saleData.store_info.tax_id && (
-                    <p className="text-sm text-blue-700">RIF: {saleData.store_info.tax_id}</p>
+                    <p className="text-sm text-white/80">RIF: {saleData.store_info.tax_id}</p>
                   )}
                 </div>
                 <div>
                   {saleData.store_info.fiscal_address && (
-                    <p className="text-sm text-blue-700">Dirección Fiscal: {saleData.store_info.fiscal_address}</p>
+                    <p className="text-sm text-white/80">Dirección Fiscal: {saleData.store_info.fiscal_address}</p>
                   )}
                   {saleData.store_info.phone_fiscal && (
-                    <p className="text-sm text-blue-700">Tel: {saleData.store_info.phone_fiscal}</p>
+                    <p className="text-sm text-white/80">Tel: {saleData.store_info.phone_fiscal}</p>
                   )}
                   {saleData.store_info.email_fiscal && (
-                    <p className="text-sm text-blue-700">Email: {saleData.store_info.email_fiscal}</p>
+                    <p className="text-sm text-white/80">Email: {saleData.store_info.email_fiscal}</p>
                   )}
                 </div>
               </div>
@@ -350,31 +350,31 @@ export const SaleCompletionModal: React.FC<SaleCompletionModalProps> = ({
 
           {/* Items Table */}
           <div>
-            <h3 className="font-semibold text-gray-700 mb-3">Productos</h3>
-            <div className="border rounded-lg overflow-hidden">
+            <h3 className="font-semibold text-white mb-3">Productos</h3>
+            <div className="border border-white/10 rounded-lg overflow-hidden glass-panel">
               <table className="w-full">
-                <thead className="bg-gray-50">
+                <thead className="bg-white/5">
                   <tr>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Producto</th>
-                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-700">Cant.</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-700">Precio</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-700">Total</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-emerald-300">Producto</th>
+                    <th className="px-4 py-3 text-center text-sm font-medium text-emerald-300">Cant.</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-emerald-300">Precio</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-emerald-300">Total</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="divide-y divide-white/10">
                   {saleData.items.map((item, index) => (
-                    <tr key={index} className="hover:bg-gray-50">
+                    <tr key={index} className="hover:bg-white/5">
                       <td className="px-4 py-3">
                         <div>
-                          <p className="font-medium text-gray-900">{item.name}</p>
-                          <p className="text-sm text-gray-500">SKU: {item.sku}</p>
+                          <p className="font-medium text-white">{item.name}</p>
+                          <p className="text-sm text-white/70">SKU: {item.sku}</p>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-center text-gray-900">{item.quantity}</td>
-                      <td className="px-4 py-3 text-right text-gray-900">
+                      <td className="px-4 py-3 text-center text-white">{item.quantity}</td>
+                      <td className="px-4 py-3 text-right text-white">
                         {formatCurrency(item.price, 'USD')}
                       </td>
-                      <td className="px-4 py-3 text-right font-medium text-gray-900">
+                      <td className="px-4 py-3 text-right font-medium text-emerald-300">
                         {formatCurrency(item.price * item.quantity, 'USD')}
                       </td>
                     </tr>
@@ -385,22 +385,22 @@ export const SaleCompletionModal: React.FC<SaleCompletionModalProps> = ({
           </div>
 
           {/* Totals */}
-          <div className="bg-gray-50 p-4 rounded-lg">
+          <div className="glass-green-dark p-4 rounded-lg border border-green-500/30">
             <div className="space-y-2">
-              <div className="flex justify-between text-gray-700">
+              <div className="flex justify-between text-white/80">
                 <span>Subtotal:</span>
-                <span>{formatCurrency(saleData.subtotal_usd, 'USD')}</span>
+                <span className="text-white">{formatCurrency(saleData.subtotal_usd, 'USD')}</span>
               </div>
               {/* IVA eliminado - no se muestra */}
-              <div className="flex justify-between text-lg font-semibold text-gray-900 border-t pt-2">
+              <div className="flex justify-between text-lg font-semibold text-white border-t border-white/10 pt-2">
                 <span>Total USD:</span>
-                <span>{formatCurrency(saleData.total_usd, 'USD')}</span>
+                <span className="text-emerald-300">{formatCurrency(saleData.total_usd, 'USD')}</span>
               </div>
-              <div className="flex justify-between items-center text-lg font-bold text-green-700 bg-green-100 p-2 rounded">
+              <div className="flex justify-between items-center text-lg font-bold text-emerald-400 bg-emerald-500/20 p-2 rounded border border-emerald-500/30">
                 <span>Total BS:</span>
                 <div className="text-right">
                   <div>{formatCurrency(saleData.total_bs, 'BS')}</div>
-                  <div className="text-sm font-normal text-green-600">
+                  <div className="text-sm font-normal text-emerald-300">
                     Tasa BCV: {saleData.bcv_rate.toFixed(4)}
                   </div>
                 </div>
@@ -410,26 +410,26 @@ export const SaleCompletionModal: React.FC<SaleCompletionModalProps> = ({
 
           {/* KRece Financing Information */}
           {saleData.krece_enabled && (
-            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+            <div className="glass-green-dark p-4 rounded-lg border border-blue-500/30">
               <div className="flex items-center space-x-2 mb-3">
-                <div className="w-3 h-3 bg-blue-600 rounded-full"></div>
-                <h3 className="font-semibold text-blue-800">Krece Financiamiento</h3>
+                <div className="w-3 h-3 bg-blue-400 rounded-full"></div>
+                <h3 className="font-semibold text-blue-300">Krece Financiamiento</h3>
               </div>
               <div className="space-y-2">
-                <div className="flex justify-between text-blue-700">
+                <div className="flex justify-between text-white/90">
                   <span>Monto Inicial:</span>
-                  <span className="font-semibold">{formatCurrency(saleData.krece_initial_amount || 0, 'USD')}</span>
+                  <span className="font-semibold text-blue-300">{formatCurrency(saleData.krece_initial_amount || 0, 'USD')}</span>
                 </div>
-                <div className="flex justify-between text-blue-700">
+                <div className="flex justify-between text-white/90">
                   <span>Porcentaje Inicial:</span>
-                  <span className="font-semibold">{(saleData.krece_initial_percentage || 0).toFixed(1)}%</span>
+                  <span className="font-semibold text-blue-300">{(saleData.krece_initial_percentage || 0).toFixed(1)}%</span>
                 </div>
-                <div className="flex justify-between text-blue-700">
+                <div className="flex justify-between text-white/90">
                   <span>Total a Financiar:</span>
-                  <span className="font-semibold">{formatCurrency(saleData.krece_financed_amount || 0, 'USD')}</span>
+                  <span className="font-semibold text-blue-300">{formatCurrency(saleData.krece_financed_amount || 0, 'USD')}</span>
                 </div>
-                <div className="mt-3 pt-2 border-t border-blue-200">
-                  <p className="text-sm text-blue-600">
+                <div className="mt-3 pt-2 border-t border-white/10">
+                  <p className="text-sm text-white/80">
                     El cliente pagará la inicial con el método seleccionado y el resto será financiado por Krece.
                   </p>
                 </div>
@@ -441,7 +441,7 @@ export const SaleCompletionModal: React.FC<SaleCompletionModalProps> = ({
         </div>
 
         {/* Actions - Botones Dinámicos según el estado */}
-        <div className="flex flex-col gap-3 p-4 border-t bg-gray-50 dark:bg-zinc-800/50">
+        <div className="flex flex-col gap-3 p-4 border-t border-white/10 glass-panel">
           {printCompleted ? (
             <>
               {/* Fila 1: Opciones secundarias (Imprimir de nuevo, PDF) */}

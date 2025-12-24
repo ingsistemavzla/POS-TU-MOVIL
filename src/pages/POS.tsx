@@ -2110,7 +2110,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
   }, [hasValidStore]);
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden bg-background">
+    <div className="h-screen flex flex-col overflow-hidden">
       {/* ===== HEADER PRINCIPAL (Igual al Modal) ===== */}
       <div className="flex-shrink-0 border-b p-4">
         <div className="flex items-center justify-between">
@@ -2121,10 +2121,10 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
           </div>
           
           {/* Tasa BCV */}
-          <div className="flex items-center gap-2 bg-primary/10 px-4 py-2 rounded-full">
-            <DollarSign className="w-4 h-4 text-primary" />
-            <span className="text-sm text-muted-foreground">Tasa BCV:</span>
-            <span className="font-bold text-primary">Bs {bcvRate.toFixed(2)}</span>
+          <div className="flex items-center gap-2 glass-green-dark px-4 py-2 rounded-full border border-emerald-500/40 shadow-lg shadow-emerald-500/30">
+            <DollarSign className="w-4 h-4 text-emerald-300 brightness-150" />
+            <span className="text-sm text-white font-medium">Tasa BCV:</span>
+            <span className="font-bold text-emerald-300 text-lg brightness-110">Bs {bcvRate.toFixed(2)}</span>
           </div>
         </div>
         
@@ -2149,13 +2149,13 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                   disabled={!canNavigate}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-full transition-all text-sm ${
                     isActive 
-                      ? 'bg-primary text-primary-foreground shadow-md' 
+                      ? 'bg-primary-dark text-white shadow-md' 
                       : isCompleted 
-                        ? 'bg-accent-hover/20 text-accent-primary hover:bg-accent-hover/30 cursor-pointer' 
-                        : 'bg-muted text-muted-foreground cursor-not-allowed'
+                        ? 'glass-input text-emerald-300 border border-emerald-500/50 hover:border-emerald-500/70 cursor-pointer' 
+                        : 'glass-input text-white/70 border border-white/10 cursor-not-allowed'
                   }`}
                 >
-                  {isCompleted ? <Check className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
+                  {isCompleted ? <Check className="w-4 h-4 text-emerald-300" /> : <Icon className="w-4 h-4" />}
                   <span className="hidden sm:inline">{step.label}</span>
                 </button>
                 {index < 4 && (
@@ -2168,18 +2168,18 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
         
         {/* Info Bar: Tienda + Cliente (visible después de seleccionar) */}
         {currentStep > 1 && selectedStore && (
-          <div className="flex items-center gap-4 mt-3 p-3 bg-primary/5 rounded-lg border border-primary/20">
+          <div className="flex items-center gap-4 mt-3 p-3 glass-green-dark rounded-lg border border-emerald-500/30">
             <div className="flex items-center gap-2">
-              <Store className="w-4 h-4 text-primary" />
-              <span className="font-semibold text-sm">{selectedStore.name}</span>
+              <Store className="w-4 h-4 text-emerald-300 brightness-150" />
+              <span className="font-semibold text-sm text-white">{selectedStore.name}</span>
             </div>
             {selectedCustomer && (
               <>
-                <div className="w-px h-6 bg-border" />
+                <div className="w-px h-6 bg-white/20" />
                 <div className="flex items-center gap-2">
-                  <User className="w-4 h-4 text-primary" />
-                  <span className="font-semibold text-sm">{selectedCustomer.name}</span>
-                  <Badge variant="outline" className="text-xs">{selectedCustomer.id_number}</Badge>
+                  <User className="w-4 h-4 text-emerald-300 brightness-150" />
+                  <span className="font-semibold text-sm text-white">{selectedCustomer.name}</span>
+                  <Badge variant="outline" className="text-xs bg-emerald-500/30 text-emerald-300 border-emerald-500/50 font-medium shadow-sm shadow-emerald-500/20">{selectedCustomer.id_number}</Badge>
                 </div>
               </>
             )}
@@ -2237,10 +2237,10 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                   <Button
                     key={store.id}
                     variant={selectedStore?.id === store.id ? "default" : "outline"}
-                    className={`h-auto p-4 justify-start ${
+                    className={`h-auto p-4 justify-start text-white ${
                       selectedStore?.id === store.id 
-                        ? 'bg-primary glow-primary' 
-                        : 'hover:bg-primary/10 hover:border-primary'
+                        ? 'bg-primary-dark glow-primary' 
+                        : 'glass-input hover:bg-primary/20 border-white/20'
                     }`}
                     onClick={() => {
                       // 🔥 RESTAURACIÓN: Sincronizar tanto selectedStore como selectedStoreId
@@ -2270,7 +2270,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                   setCurrentStep(2);
                 }}
                 disabled={!hasValidStore || (!isRestrictedToStore && !hasSelectedStoreInSession)}
-                className="bg-primary glow-primary px-8"
+                className="bg-primary-dark glow-primary px-8"
                 title={!hasValidStore ? "Debes seleccionar una sucursal específica para continuar" : undefined}
               >
                 Continuar
@@ -2308,7 +2308,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                     </div>
                     <div>
                       <p className="font-semibold">{selectedCustomer.name}</p>
-                      <p className="text-sm text-muted-foreground">{selectedCustomer.id_number}</p>
+                      <p className="text-sm text-emerald-300 font-medium">{selectedCustomer.id_number}</p>
                     </div>
                   </div>
                   <Button
@@ -2471,7 +2471,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
               <Button
                 onClick={() => setCurrentStep(3)}
                 disabled={!selectedCustomer}
-                className="bg-primary glow-primary"
+                className="bg-primary-dark glow-primary"
               >
                 Continuar
                 <ChevronRight className="w-4 h-4 ml-2" />
@@ -2531,7 +2531,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
             <Button 
               size="sm" 
               variant={scanMode ? "default" : "outline"}
-              className={scanMode ? "px-3 bg-primary glow-primary" : "px-3 hover-glow"}
+              className={scanMode ? "px-3 bg-primary-dark glow-primary text-white" : "px-3 glass-input text-white hover:bg-primary/20"}
               title={scanMode ? "Modo escáner activo" : "Activar modo escáner"}
               onClick={() => setScanMode((v) => !v)}
             >
@@ -2548,7 +2548,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
           </div>
           <div className="flex items-center gap-2">
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-32 h-8 text-xs">
+              <SelectTrigger className="w-32 h-8 text-xs glass-input border-white/20 text-white">
                 <SelectValue placeholder="Categoría" />
               </SelectTrigger>
               <SelectContent>
@@ -2560,8 +2560,8 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                 ))}
               </SelectContent>
             </Select>
-            <Button variant={productView==='cards'? 'default':'outline'} size="sm" onClick={() => setProductView('cards')}>Cards</Button>
-            <Button variant={productView==='list'? 'default':'outline'} size="sm" onClick={() => setProductView('list')}>Lista</Button>
+            <Button variant={productView==='cards'? 'default':'outline'} size="sm" className={productView==='cards'? 'bg-primary-dark text-white':'glass-input text-white'} onClick={() => setProductView('cards')}>Cards</Button>
+            <Button variant={productView==='list'? 'default':'outline'} size="sm" className={productView==='list'? 'bg-primary-dark text-white':'glass-input text-white'} onClick={() => setProductView('list')}>Lista</Button>
             </div>
           </div>
 
@@ -2733,13 +2733,12 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                                       placeholder="Escanear o ingresar IMEI (15-17 dígitos)"
                                       value={imeiValue}
                                       onChange={(e) => updateIMEI(item.id, index, e.target.value)}
-                                      className={`h-8 text-xs font-mono flex-1
-                                        bg-background dark:bg-zinc-900
+                                      className={`h-8 text-xs font-mono flex-1 glass-input
                                         ${isValidLength 
-                                          ? 'border-green-500 dark:border-green-600 text-green-700 dark:text-green-400' 
+                                          ? 'border-green-500 text-green-300' 
                                           : isInvalidLength 
-                                            ? 'border-red-500 dark:border-red-600 text-red-700 dark:text-red-400' 
-                                            : 'border-amber-400 dark:border-amber-600'
+                                            ? 'border-red-500 text-red-300' 
+                                            : 'border-amber-400 text-amber-300'
                                         }`}
                                     />
                                     {isValidLength && <Check className="w-4 h-4 text-green-500 flex-shrink-0" />}
@@ -2772,7 +2771,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
               
               {/* Subtotal del carrito */}
               {cart.length > 0 && (
-                <div className="p-3 border-t border-green-500/30 bg-muted/30">
+                <div className="p-3 border-t border-green-500/30 glass-muted-dark">
                   <div className="flex justify-between items-center">
                     <span className="font-medium">Subtotal:</span>
                     <span className="text-xl font-bold text-green-600">${subtotalUSD.toFixed(2)}</span>
@@ -2795,7 +2794,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
             <Button 
               onClick={() => setCurrentStep(4)} 
               disabled={cart.length === 0}
-              className="bg-primary glow-primary"
+              className="bg-primary-dark glow-primary"
             >
               Continuar a Pago
               <ChevronRight className="w-4 h-4 ml-2" />
@@ -2842,7 +2841,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                       setKrecePercentageInput(""); // Limpiar input
                     }
                   }}
-                  className={`text-xs ${isKreceEnabled ? "bg-blue-600 hover:bg-blue-700" : ""}`}
+                  className={`text-xs ${isKreceEnabled ? "bg-blue-600 hover:bg-blue-700 text-white" : "glass-input text-white hover:bg-blue-500/20"}`}
                   disabled={isCasheaEnabled} // Deshabilitar si Cashea está activo
                 >
                   {isKreceEnabled ? "Activado" : "Activar"}
@@ -2895,7 +2894,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                         setKrecePercentageInput(normalizedPercentage.toString());
                       }
                     }}
-                    className="h-10 text-sm bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600"
+                    className="h-10 text-sm glass-input text-white border-white/20"
                     placeholder="Ejemplo: 30, 40, 50, 60"
                     min="0"
                     max="100"
@@ -2915,20 +2914,20 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
 
                 {/* Dashboard Financiero Dual (USD + BS) */}
                 {subtotalUSD > 0 && (
-                  <Card className="p-3 bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
+                  <Card className="p-3 glass-green-dark border border-blue-500/30">
                     <div className="space-y-3">
-                      <div className="text-xs font-semibold text-blue-900 mb-2">
+                      <div className="text-xs font-semibold text-blue-300 mb-2">
                         📊 Tablero de Control Financiero
                       </div>
                       
                       {/* Total Venta */}
-                      <div className="flex justify-between items-center pb-2 border-b border-blue-200">
-                        <span className="text-xs font-medium text-gray-700">TOTAL VENTA</span>
+                      <div className="flex justify-between items-center pb-2 border-b border-white/10">
+                        <span className="text-xs font-medium text-white/80">TOTAL VENTA</span>
                         <div className="text-right">
-                          <div className="font-bold text-sm text-gray-900">
+                          <div className="font-bold text-sm text-white">
                             ${subtotalUSD.toFixed(2)}
                           </div>
-                          <div className="text-[11px] text-gray-600">
+                          <div className="text-[11px] text-white/70">
                             Bs. {Number((subtotalUSD * bcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                         </div>
@@ -2936,29 +2935,29 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
 
                       {/* A Cobrar Hoy (Inicial) */}
                       <div className="flex justify-between items-center">
-                        <span className="text-xs font-medium text-green-700 flex items-center gap-1">
+                        <span className="text-xs font-medium text-emerald-300 flex items-center gap-1">
                           🟢 A COBRAR HOY:
                         </span>
                         <div className="text-right">
-                          <div className="font-bold text-sm text-green-700">
+                          <div className="font-bold text-sm text-emerald-400">
                             ${kreceInitialAmount.toFixed(2)}
                           </div>
-                          <div className="text-[11px] text-green-600">
+                          <div className="text-[11px] text-emerald-300">
                             Bs. {Number((kreceInitialAmount * bcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                         </div>
                       </div>
 
                       {/* A Financiar (Deuda) */}
-                      <div className="flex justify-between items-center pt-2 border-t border-blue-200">
-                        <span className="text-xs font-medium text-red-700 flex items-center gap-1">
+                      <div className="flex justify-between items-center pt-2 border-t border-white/10">
+                        <span className="text-xs font-medium text-red-400 flex items-center gap-1">
                           🔴 A FINANCIAR:
                         </span>
                         <div className="text-right">
-                          <div className="font-bold text-sm text-red-700">
+                          <div className="font-bold text-sm text-red-400">
                             ${(subtotalUSD - kreceInitialAmount).toFixed(2)}
                           </div>
-                          <div className="text-[11px] text-red-600">
+                          <div className="text-[11px] text-red-300">
                             Bs. {Number(((subtotalUSD - kreceInitialAmount) * bcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                         </div>
@@ -2966,8 +2965,8 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
 
                       {/* Porcentaje */}
                       <div className="flex justify-between items-center pt-1">
-                        <span className="text-xs text-muted-foreground">Porcentaje inicial:</span>
-                        <span className="text-xs font-semibold text-blue-700">
+                        <span className="text-xs text-white/70">Porcentaje inicial:</span>
+                        <span className="text-xs font-semibold text-blue-300">
                           {subtotalUSD > 0 ? ((kreceInitialAmount / subtotalUSD) * 100).toFixed(1) : '0'}%
                         </span>
                       </div>
@@ -3018,7 +3017,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                     setCasheaPercentageInput(""); // Limpiar input
                   }
                 }}
-                className={`text-xs ${isCasheaEnabled ? "bg-purple-600 hover:bg-purple-700" : ""}`}
+                className={`text-xs ${isCasheaEnabled ? "bg-purple-600 hover:bg-purple-700 text-white" : "glass-input text-white hover:bg-purple-500/20"}`}
                 disabled={isKreceEnabled} // Deshabilitar si KRECE está activo
               >
                 {isCasheaEnabled ? "Activado" : "Activar"}
@@ -3071,7 +3070,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                         setCasheaPercentageInput(normalizedPercentage.toString());
                       }
                     }}
-                    className="h-10 text-sm bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600"
+                    className="h-10 text-sm glass-input text-white border-white/20"
                     placeholder="Ejemplo: 30, 40, 50, 60"
                     min="0"
                     max="100"
@@ -3091,20 +3090,20 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                 
                 {/* Dashboard Financiero Dual (USD + BS) - Cashea */}
                 {subtotalUSD > 0 && (
-                  <Card className="p-3 bg-gradient-to-br from-purple-50 to-indigo-50 border-purple-200">
+                  <Card className="p-3 glass-green-dark border border-purple-500/30">
                     <div className="space-y-3">
-                      <div className="text-xs font-semibold text-purple-900 mb-2">
+                      <div className="text-xs font-semibold text-purple-300 mb-2">
                         📊 Tablero de Control Financiero
                       </div>
                       
                       {/* Total Venta */}
-                      <div className="flex justify-between items-center pb-2 border-b border-purple-200">
-                        <span className="text-xs font-medium text-gray-700">TOTAL VENTA</span>
+                      <div className="flex justify-between items-center pb-2 border-b border-white/10">
+                        <span className="text-xs font-medium text-white/80">TOTAL VENTA</span>
                         <div className="text-right">
-                          <div className="font-bold text-sm text-gray-900">
+                          <div className="font-bold text-sm text-white">
                             ${subtotalUSD.toFixed(2)}
                           </div>
-                          <div className="text-[11px] text-gray-600">
+                          <div className="text-[11px] text-white/70">
                             Bs. {Number((subtotalUSD * bcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                         </div>
@@ -3112,29 +3111,29 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
 
                       {/* A Cobrar Hoy (Inicial) */}
                       <div className="flex justify-between items-center">
-                        <span className="text-xs font-medium text-green-700 flex items-center gap-1">
+                        <span className="text-xs font-medium text-emerald-300 flex items-center gap-1">
                           🟢 A COBRAR HOY:
                         </span>
                         <div className="text-right">
-                          <div className="font-bold text-sm text-green-700">
+                          <div className="font-bold text-sm text-emerald-400">
                             ${casheaInitialAmount.toFixed(2)}
                           </div>
-                          <div className="text-[11px] text-green-600">
+                          <div className="text-[11px] text-emerald-300">
                             Bs. {Number((casheaInitialAmount * bcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                         </div>
                       </div>
 
                       {/* A Financiar (Deuda) */}
-                      <div className="flex justify-between items-center pt-2 border-t border-purple-200">
-                        <span className="text-xs font-medium text-red-700 flex items-center gap-1">
+                      <div className="flex justify-between items-center pt-2 border-t border-white/10">
+                        <span className="text-xs font-medium text-red-400 flex items-center gap-1">
                           🔴 A FINANCIAR:
                         </span>
                         <div className="text-right">
-                          <div className="font-bold text-sm text-red-700">
+                          <div className="font-bold text-sm text-red-400">
                             ${(subtotalUSD - casheaInitialAmount).toFixed(2)}
                           </div>
-                          <div className="text-[11px] text-red-600">
+                          <div className="text-[11px] text-red-300">
                             Bs. {Number(((subtotalUSD - casheaInitialAmount) * bcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                         </div>
@@ -3142,8 +3141,8 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
 
                       {/* Porcentaje */}
                       <div className="flex justify-between items-center pt-1">
-                        <span className="text-xs text-muted-foreground">Porcentaje inicial:</span>
-                        <span className="text-xs font-semibold text-purple-700">
+                        <span className="text-xs text-white/70">Porcentaje inicial:</span>
+                        <span className="text-xs font-semibold text-purple-300">
                           {subtotalUSD > 0 ? ((casheaInitialAmount / subtotalUSD) * 100).toFixed(1) : '0'}%
                         </span>
                       </div>
@@ -3169,7 +3168,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                     setSelectedPaymentMethod("");
                   }
                 }}
-                className={`text-xs ${isMixedPayment ? "bg-orange-600 hover:bg-orange-700" : ""}`}
+                className={`text-xs text-white ${isMixedPayment ? "bg-orange-600 hover:bg-orange-700" : "glass-input hover:bg-orange-500/20 border-white/20"}`}
               >
                   {isMixedPayment ? "Pagos Mixtos" : "Pago Único"}
                   </Button>
@@ -3190,7 +3189,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                       <Button 
                         key={method.id} 
                         variant={isSelected ? "default" : "outline"} 
-                        className={`justify-center h-10 ${isSelected ? "bg-primary glow-primary" : "hover-glow"}`} 
+                        className={`justify-center h-10 text-white ${isSelected ? "bg-primary-dark glow-primary" : "glass-input hover:bg-primary/20 border-white/20"}`} 
                         onClick={() => {
                           if (isFinancingActive) {
                             // Si hay financiamiento activo, actualizar el método de pago de la inicial
@@ -3231,7 +3230,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                       <Button 
                         key={method.id} 
                         variant={isSelected ? "default" : "outline"} 
-                        className={`justify-center h-10 ${isSelected ? "bg-primary glow-primary" : "hover-glow"}`} 
+                        className={`justify-center h-10 text-white ${isSelected ? "bg-primary-dark glow-primary" : "glass-input hover:bg-primary/20 border-white/20"}`} 
                         onClick={() => {
                           if (isFinancingActive) {
                             // Si hay financiamiento activo, actualizar el método de pago de la inicial
@@ -3279,7 +3278,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                           key={method.id} 
                           variant={isSelected ? "default" : "outline"} 
                           size="sm"
-                          className={`justify-center h-8 text-xs ${isSelected ? "bg-primary glow-primary" : "hover-glow"}`} 
+                          className={`justify-center h-8 text-xs ${isSelected ? "bg-primary-dark glow-primary" : "hover-glow"}`} 
                           onClick={() => {
                             if (isSelected) {
                               setMixedPayments(prev => prev.filter(p => p.method !== method.id));
@@ -3312,7 +3311,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                           key={method.id} 
                           variant={isSelected ? "default" : "outline"} 
                           size="sm"
-                          className={`justify-center h-8 text-xs ${isSelected ? "bg-primary glow-primary" : "hover-glow"}`} 
+                          className={`justify-center h-8 text-xs ${isSelected ? "bg-primary-dark glow-primary" : "hover-glow"}`} 
                           onClick={() => {
                             if (isSelected) {
                               setMixedPayments(prev => prev.filter(p => p.method !== method.id));
@@ -3388,7 +3387,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                     })}
                     
                     {/* Resumen */}
-                    <div className="text-xs space-y-2 bg-muted/30 p-3 rounded-sm shadow-sm shadow-green-500/30">
+                    <div className="text-xs space-y-2 glass-muted-dark p-3 rounded-sm shadow-sm shadow-green-500/30">
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Total pagado:</span>
                         <span className="font-semibold text-primary">${mixedPayments.reduce((sum, p) => sum + p.amount, 0).toFixed(2)}</span>
@@ -3519,7 +3518,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                   })()
                 )
               } 
-              className="w-full bg-primary glow-primary disabled:opacity-50" 
+              className="w-full bg-primary-dark glow-primary disabled:opacity-50" 
               size="lg"
             >
               Continuar a Resumen
@@ -3556,29 +3555,31 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
             
             {/* Resumen en Grid */}
             <div className="grid grid-cols-3 gap-4 mb-6">
-              <Card className="p-4 border border-green-500/30">
+              <Card className="p-4 border border-green-500/30 glass-green-dark">
                 <div className="flex items-center gap-2 mb-2">
-                  <Store className="w-4 h-4 text-green-600" />
-                  <span className="text-sm text-muted-foreground">Tienda</span>
+                  <Store className="w-4 h-4 text-emerald-300 brightness-150" />
+                  <span className="text-sm text-white/90 font-medium">Tienda</span>
                 </div>
-                <p className="font-bold">{selectedStore?.name}</p>
+                <p className="font-bold text-white">{selectedStore?.name}</p>
               </Card>
               
-              <Card className="p-4 border border-green-500/30">
+              <Card className="p-4 border border-green-500/30 glass-green-dark">
                 <div className="flex items-center gap-2 mb-2">
-                  <User className="w-4 h-4 text-green-600" />
-                  <span className="text-sm text-muted-foreground">Cliente</span>
+                  <User className="w-4 h-4 text-emerald-300 brightness-150" />
+                  <span className="text-sm text-white/90 font-medium">Cliente</span>
                 </div>
-                <p className="font-bold">{selectedCustomer?.name}</p>
-                <p className="text-xs text-muted-foreground">{selectedCustomer?.id_number}</p>
+                <p className="font-bold text-white">{selectedCustomer?.name}</p>
+                {selectedCustomer?.id_number && (
+                  <p className="text-xs text-emerald-300 font-medium mt-1 brightness-110">Cédula: {selectedCustomer.id_number}</p>
+                )}
               </Card>
               
-              <Card className="p-4 border border-accent-primary/30 bg-accent-hover/10">
+              <Card className="p-4 border border-emerald-500/40 glass-green-dark shadow-lg shadow-emerald-500/30">
                 <div className="flex items-center gap-2 mb-2">
-                  <DollarSign className="w-4 h-4 text-accent-primary" />
-                  <span className="text-sm text-muted-foreground">Tasa BCV</span>
+                  <DollarSign className="w-4 h-4 text-emerald-300 brightness-150" />
+                  <span className="text-sm text-white font-medium">Tasa BCV</span>
                 </div>
-                <p className="font-bold text-xl text-green-600">Bs {bcvRate.toFixed(2)}</p>
+                <p className="font-bold text-xl text-emerald-300 brightness-110">Bs {bcvRate.toFixed(2)}</p>
               </Card>
             </div>
             
@@ -3590,14 +3591,14 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
               </h3>
               <div className="space-y-2 max-h-48 overflow-y-auto">
                 {cart.map((item) => (
-                  <div key={item.id} className="flex justify-between items-center p-2 bg-muted/30 rounded">
+                  <div key={item.id} className="flex justify-between items-center p-2 glass-muted-dark rounded">
                     <div className="flex-1">
-                      <p className="font-medium text-sm">{item.name}</p>
-                      <p className="text-xs text-muted-foreground">SKU: {item.sku}</p>
+                      <p className="font-medium text-sm text-white">{item.name}</p>
+                      <p className="text-xs text-white/70">SKU: {item.sku}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-semibold">{item.quantity} x ${item.price.toFixed(2)}</p>
-                      <p className="text-xs text-green-600">${(item.price * item.quantity).toFixed(2)}</p>
+                      <p className="text-sm font-semibold text-white">{item.quantity} x ${item.price.toFixed(2)}</p>
+                      <p className="text-xs text-emerald-400">${(item.price * item.quantity).toFixed(2)}</p>
                     </div>
                   </div>
                 ))}
@@ -3605,7 +3606,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
             </Card>
             
             {/* Totales */}
-            <Card className="p-4 border border-green-500/40 bg-green-50/50 dark:bg-green-950/30 mb-6">
+            <Card className="p-4 border border-green-500/40 glass-green-dark mb-6">
               {(isKreceEnabled || isCasheaEnabled) ? (
                 // ✅ CASO B: VENTA FINANCIADA - Mostrar Inicial a Pagar
                 <div className="space-y-3">
@@ -3750,31 +3751,31 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
           <div className="space-y-4 py-4">
             {/* Fila 1: Cliente, Tienda y Tasa BCV (horizontal) */}
             <div className="grid grid-cols-3 gap-3">
-              <Card className="p-3 border border-green-500/30">
+              <Card className="p-3 border border-green-500/30 glass-green-dark">
                 <div className="flex items-center gap-2 mb-1">
-                  <User className="w-4 h-4 text-green-600" />
-                  <span className="text-xs text-muted-foreground">Cliente</span>
+                  <User className="w-4 h-4 text-emerald-300 brightness-150" />
+                  <span className="text-xs text-white/90 font-medium">Cliente</span>
                 </div>
-                <p className="font-semibold text-sm truncate">{selectedCustomer?.name || 'Cliente General'}</p>
+                <p className="font-semibold text-sm truncate text-white">{selectedCustomer?.name || 'Cliente General'}</p>
                 {selectedCustomer?.id_number && (
-                  <p className="text-xs text-muted-foreground">Cédula: {selectedCustomer.id_number}</p>
+                  <p className="text-xs text-emerald-300 font-medium brightness-110">Cédula: {selectedCustomer.id_number}</p>
                 )}
               </Card>
 
-              <Card className="p-3 border border-green-500/30">
+              <Card className="p-3 border border-green-500/30 glass-green-dark">
                 <div className="flex items-center gap-2 mb-1">
-                  <Store className="w-4 h-4 text-green-600" />
-                  <span className="text-xs text-muted-foreground">Tienda</span>
+                  <Store className="w-4 h-4 text-emerald-300 brightness-150" />
+                  <span className="text-xs text-white/90 font-medium">Tienda</span>
                 </div>
-                <p className="font-semibold text-sm truncate">{selectedStore?.name || 'No asignada'}</p>
+                <p className="font-semibold text-sm truncate text-white">{selectedStore?.name || 'No asignada'}</p>
               </Card>
 
-              <Card className="p-3 border border-accent-primary/30 bg-accent-hover/5">
+              <Card className="p-3 border border-emerald-500/40 glass-green-dark shadow-lg shadow-emerald-500/30">
                 <div className="flex items-center gap-2 mb-1">
-                  <DollarSign className="w-4 h-4 text-accent-primary" />
-                  <span className="text-xs text-muted-foreground">Tasa BCV</span>
+                  <DollarSign className="w-4 h-4 text-emerald-300 brightness-150" />
+                  <span className="text-xs text-white font-medium">Tasa BCV</span>
                 </div>
-                <p className="font-bold text-lg text-green-600">Bs {bcvRate.toFixed(2)}</p>
+                <p className="font-bold text-xl text-emerald-300 brightness-110">Bs {bcvRate.toFixed(2)}</p>
               </Card>
             </div>
 
@@ -3788,19 +3789,19 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                 </h3>
                 <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                   {cart.map((item) => (
-                    <div key={item.id} className="flex justify-between items-center p-2 bg-muted/30 rounded-sm">
+                    <div key={item.id} className="flex justify-between items-center p-2 glass-muted-dark rounded-sm">
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{item.name}</p>
-                        <p className="text-xs text-muted-foreground">SKU: {item.sku}</p>
+                        <p className="font-medium text-sm truncate text-white">{item.name}</p>
+                        <p className="text-xs text-white/70">SKU: {item.sku}</p>
                         {item.imeis && item.imeis.length > 0 && (
-                          <p className="text-xs text-muted-foreground truncate">
+                          <p className="text-xs text-white/70 truncate">
                             IMEIs: {item.imeis.join(', ')}
                           </p>
                         )}
                       </div>
                       <div className="text-right ml-3 flex-shrink-0">
-                        <p className="text-sm font-semibold">{item.quantity} x ${item.price.toFixed(2)}</p>
-                        <p className="text-xs text-green-600 font-medium">${(item.price * item.quantity).toFixed(2)}</p>
+                        <p className="text-sm font-semibold text-white">{item.quantity} x ${item.price.toFixed(2)}</p>
+                        <p className="text-xs text-emerald-400 font-medium">${(item.price * item.quantity).toFixed(2)}</p>
                       </div>
                     </div>
                   ))}
@@ -3810,30 +3811,30 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
               {/* Totales y Pago - 2 columnas */}
               <div className="col-span-2 space-y-3">
                 {/* Totales */}
-                <Card className="p-4 border border-green-500/40 bg-green-50/50 dark:bg-green-950/30">
+                <Card className="p-4 border border-green-500/40 glass-green-dark">
                   {(isKreceEnabled || isCasheaEnabled) ? (
                     // ✅ CASO B: VENTA FINANCIADA - Mostrar Inicial a Pagar
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm pb-2 border-b border-green-500/30">
-                        <span className="text-muted-foreground">Subtotal Venta:</span>
-                        <span className="font-semibold">${subtotalUSD.toFixed(2)}</span>
+                        <span className="text-white/80">Subtotal Venta:</span>
+                        <span className="font-semibold text-white">${subtotalUSD.toFixed(2)}</span>
                       </div>
                       <div className="space-y-2 pt-2">
                         <div className="flex justify-between items-center">
-                          <span className="font-bold text-sm text-green-700">Monto a cobrar hoy:</span>
+                          <span className="font-bold text-sm text-emerald-300">Monto a cobrar hoy:</span>
                           <div className="text-right">
-                            <div className="text-lg font-bold text-green-700">
+                            <div className="text-lg font-bold text-emerald-400">
                               ${(isKreceEnabled ? kreceInitialAmount : casheaInitialAmount).toFixed(2)}
                             </div>
-                            <div className="text-xs font-semibold text-primary">
+                            <div className="text-xs font-semibold text-emerald-300">
                               (Bs. {Number(((isKreceEnabled ? kreceInitialAmount : casheaInitialAmount) * bcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                             </div>
                           </div>
                         </div>
-                        <div className="pt-1 border-t border-green-500/20">
+                        <div className="pt-1 border-t border-white/10">
                           <div className="flex justify-between text-xs">
-                            <span className="text-muted-foreground">Restante Deuda:</span>
-                            <span className="text-muted-foreground">
+                            <span className="text-white/70">Restante Deuda:</span>
+                            <span className="text-white/70">
                               ${(subtotalUSD - (isKreceEnabled ? kreceInitialAmount : casheaInitialAmount)).toFixed(2)}
                             </span>
                           </div>
@@ -3844,18 +3845,18 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                     // ✅ CASO A: VENTA NORMAL - Mostrar Total Completo
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
-                        <span>Subtotal:</span>
-                        <span className="font-semibold">${subtotalUSD.toFixed(2)}</span>
+                        <span className="text-white/80">Subtotal:</span>
+                        <span className="font-semibold text-white">${subtotalUSD.toFixed(2)}</span>
                       </div>
                       {/* IVA eliminado - no se muestra */}
-                      <div className="border-t border-green-500/30 pt-2 mt-2 space-y-1">
+                      <div className="border-t border-white/10 pt-2 mt-2 space-y-1">
                         <div className="flex justify-between font-bold">
-                          <span>Total USD:</span>
-                          <span className="text-green-700 dark:text-green-400 text-lg">${totalUSD.toFixed(2)}</span>
+                          <span className="text-white">Total USD:</span>
+                          <span className="text-emerald-400 text-lg">${totalUSD.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between font-bold">
-                          <span>Total Bs:</span>
-                          <span className="text-primary text-lg">Bs {totalBs.toFixed(2)}</span>
+                          <span className="text-white">Total Bs:</span>
+                          <span className="text-emerald-400 text-lg">Bs {totalBs.toFixed(2)}</span>
                         </div>
                       </div>
                     </div>
@@ -3866,9 +3867,9 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                 <Card className="p-3 border border-green-500/30">
                   <div className="flex items-center gap-2 mb-2">
                     <CreditCard className="w-4 h-4 text-green-600" />
-                    <span className="text-xs text-muted-foreground">Método de Pago</span>
+                    <span className="text-xs text-white/70">Método de Pago</span>
                   </div>
-                  <p className="text-sm font-semibold">
+                  <p className="text-sm font-semibold text-white">
                     {isMixedPayment 
                       ? `Pagos Mixtos (${mixedPayments.length})`
                       : (isKreceEnabled || isCasheaEnabled)
@@ -3879,23 +3880,23 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                   {(isKreceEnabled || isCasheaEnabled) && (
                     <div className="mt-2 space-y-1.5">
                       <div className="flex justify-between items-center text-xs">
-                        <span className="text-muted-foreground">Inicial:</span>
+                        <span className="text-white/70">Inicial:</span>
                         <div className="text-right">
-                          <span className="font-semibold text-green-700">
+                          <span className="font-semibold text-emerald-400">
                             ${(isKreceEnabled ? kreceInitialAmount : casheaInitialAmount).toFixed(2)}
                           </span>
-                          <span className="text-[11px] text-muted-foreground ml-1">
+                          <span className="text-[11px] text-white/60 ml-1">
                             (Bs. {Number(((isKreceEnabled ? kreceInitialAmount : casheaInitialAmount) * bcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                           </span>
                         </div>
                       </div>
                       <div className="flex justify-between items-center text-xs">
-                        <span className="text-muted-foreground">Financiar:</span>
+                        <span className="text-white/70">Financiar:</span>
                         <div className="text-right">
-                          <span className="font-semibold text-red-700">
+                          <span className="font-semibold text-red-400">
                             ${((isKreceEnabled ? (subtotalUSD - kreceInitialAmount) : (subtotalUSD - casheaInitialAmount))).toFixed(2)}
                           </span>
-                          <span className="text-[11px] text-muted-foreground ml-1">
+                          <span className="text-[11px] text-white/60 ml-1">
                             (Bs. {Number(((isKreceEnabled ? (subtotalUSD - kreceInitialAmount) : (subtotalUSD - casheaInitialAmount)) * bcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                           </span>
                         </div>
@@ -3920,7 +3921,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                 setCurrentStep(4); // Avanzar al paso 4 (Revisión/Procesamiento)
                 await processSale();
               }}
-              className="bg-primary glow-primary"
+              className="bg-primary-dark glow-primary"
               disabled={isProcessingSale || !hasValidStore}
               title={!hasValidStore ? "Debes seleccionar una sucursal específica para realizar ventas" : undefined}
             >

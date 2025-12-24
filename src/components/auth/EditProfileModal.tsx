@@ -223,7 +223,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
 
           {success && (
             <Alert variant="success" className="p-3">
-              <AlertDescription className="text-main-text">
+              <AlertDescription className="text-white">
                 {success}
               </AlertDescription>
             </Alert>

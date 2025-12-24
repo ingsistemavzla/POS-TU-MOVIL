@@ -116,7 +116,7 @@ export function KreceAccountsTable() {
       case 'overdue':
         return <AlertTriangle className="w-4 h-4 text-red-600" />;
       default:
-        return <Clock className="w-4 h-4 text-gray-600" />;
+        return <Clock className="w-4 h-4 text-white/90" />;
     }
   };
 
@@ -143,8 +143,8 @@ export function KreceAccountsTable() {
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-            <span className="ml-2 text-muted-foreground">Cargando cuentas...</span>
+            <Loader2 className="w-8 h-8 animate-spin text-white/90" />
+            <span className="ml-2 text-white/90">Cargando cuentas...</span>
           </div>
         </CardContent>
       </Card>
@@ -177,7 +177,7 @@ export function KreceAccountsTable() {
   }
 
   return (
-    <Card>
+    <Card className="glass-panel-dense">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -221,7 +221,7 @@ export function KreceAccountsTable() {
                       <div>
                         <div className="font-medium">{account.customer.name}</div>
                         {account.customer.id_number && (
-                          <div className="text-sm text-muted-foreground">
+                          <div className="text-sm text-glass-secondary">
                             CI: {account.customer.id_number}
                           </div>
                         )}
@@ -246,10 +246,10 @@ export function KreceAccountsTable() {
                       {formatDate(account.krece_financing.due_date)}
                     </TableCell>
                     <TableCell>
-                      <div className="text-sm">
+                      <div className="text-sm text-glass-primary">
                         {account.krece_financing.initial_percentage.toFixed(1)}%
                       </div>
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-xs text-glass-secondary">
                         {formatCurrency(account.krece_financing.initial_amount_usd, 'USD')}
                       </div>
                     </TableCell>
@@ -259,7 +259,7 @@ export function KreceAccountsTable() {
             </Table>
           </div>
         ) : (
-          <div className="text-center py-8 text-muted-foreground">
+          <div className="text-center py-8 text-glass-secondary">
             <CreditCard className="w-12 h-12 mx-auto mb-4 opacity-50" />
             <p>No hay cuentas por cobrar de Krece</p>
           </div>

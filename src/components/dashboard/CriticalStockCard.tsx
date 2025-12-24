@@ -19,9 +19,9 @@ export function CriticalStockCard({ products, maxProducts = 15 }: CriticalStockC
   const displayProducts = products.slice(0, maxProducts);
 
   return (
-    <Card className="p-6 bg-white border-t-4 border-status-danger transition-all duration-300 shadow-lg shadow-status-danger/50 hover:shadow-status-danger/60">
+    <Card className="p-6 glass-panel border-t-4 border-status-danger transition-all duration-300 shadow-lg shadow-status-danger/50 hover:shadow-status-danger/60">
       <div className="flex items-center space-x-3 mb-6">
-        <AlertTriangle className="w-5 h-5 text-status-danger" />
+        <AlertTriangle className="w-5 h-5 text-status-danger brightness-125" />
         <h3 className="text-lg font-semibold text-status-danger">
           Stock Crítico - {products.length} productos
         </h3>
@@ -32,13 +32,13 @@ export function CriticalStockCard({ products, maxProducts = 15 }: CriticalStockC
           {displayProducts.map((product) => (
             <div
               key={product.id}
-              className="flex items-center justify-between p-4 bg-white rounded-lg border border-status-danger/20 shadow-sm hover:shadow-md transition-all"
+              className="flex items-center justify-between p-4 glass-panel rounded-lg border border-status-danger/30 shadow-sm hover:shadow-md transition-all"
             >
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-main-text text-sm sm:text-base truncate">
+                <p className="font-medium text-white text-sm sm:text-base truncate">
                   {product.name}
                 </p>
-                <p className="text-xs text-gray-600 mt-1">
+                <p className="text-xs text-white/90 mt-1">
                   SKU: {product.sku} • {product.storeName}
                 </p>
                 <p className="text-xs text-status-danger font-bold mt-1">

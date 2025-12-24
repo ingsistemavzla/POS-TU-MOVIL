@@ -182,7 +182,7 @@ export default function CustomerSelector({ selectedCustomer, onCustomerSelect }:
                 <CheckCircle className="w-5 h-5 text-accent-primary" />
               </div>
               <div>
-                <p className="font-semibold text-main-text">{selectedCustomer.name}</p>
+                <p className="font-semibold text-white">{selectedCustomer.name}</p>
                 <p className="text-sm text-accent-primary">Cédula: {selectedCustomer.id_number}</p>
               </div>
             </div>

@@ -751,22 +751,22 @@ export default function SalesPage() {
 
   const getPaymentMethodBadge = (method: string, isMixed: boolean) => {
     if (isMixed) {
-      return <Badge variant="outline" className="bg-purple-50 text-purple-700">Mixto</Badge>;
+      return <Badge variant="outline" className="bg-purple-500/20 text-purple-300 border-purple-500/30">Mixto</Badge>;
     }
     
     switch (method) {
       case 'cash_usd':
         return <Badge variant="outline" className="bg-green-50 text-green-600 shadow-sm">Efectivo USD</Badge>;
       case 'cash_bs':
-        return <Badge variant="outline" className="bg-blue-50 text-blue-700">Efectivo BS</Badge>;
+        return <Badge variant="outline" className="bg-blue-500/20 text-blue-300 border-blue-500/30">Efectivo BS</Badge>;
       case 'card':
-        return <Badge variant="outline" className="bg-orange-50 text-orange-700">Tarjeta</Badge>;
+        return <Badge variant="outline" className="bg-orange-500/20 text-orange-300 border-orange-500/30">Tarjeta</Badge>;
       case 'transfer':
         return <Badge variant="outline" className="bg-cyan-50 text-cyan-700">Transferencia</Badge>;
       case 'binance':
-        return <Badge variant="outline" className="bg-yellow-50 text-yellow-700">Binance</Badge>;
+        return <Badge variant="outline" className="bg-yellow-500/20 text-yellow-300 border-yellow-500/30">Binance</Badge>;
       case 'zelle':
-        return <Badge variant="outline" className="bg-indigo-50 text-indigo-700">Zelle</Badge>;
+        return <Badge variant="outline" className="bg-indigo-500/20 text-indigo-300 border-indigo-500/30">Zelle</Badge>;
       default:
         return <Badge variant="outline">{method}</Badge>;
     }
@@ -783,11 +783,11 @@ export default function SalesPage() {
       
       return (
         <div className="flex space-x-1">
-          <Badge variant="outline" className={isCashea ? "bg-purple-50 text-purple-700" : "bg-red-50 text-red-700"}>
+          <Badge variant="outline" className={isCashea ? "bg-purple-500/20 text-purple-300 border-purple-500/30" : "bg-red-500/20 text-red-300 border-red-500/30"}>
             {isCashea ? 'CASHEA' : 'KRECE'}
           </Badge>
           {sale.krece_initial_percentage && (
-            <Badge variant="outline" className={isCashea ? "bg-purple-100 text-purple-800" : "bg-orange-50 text-orange-700"}>
+            <Badge variant="outline" className={isCashea ? "bg-purple-500/30 text-purple-200 border-purple-500/40" : "bg-orange-500/20 text-orange-300 border-orange-500/30"}>
               {sale.krece_initial_percentage}%
             </Badge>
           )}
@@ -1153,7 +1153,7 @@ export default function SalesPage() {
         <div className="text-center">
           <Receipt className="w-12 h-12 text-destructive mx-auto mb-4" />
           <h3 className="text-lg font-semibold mb-2">Error al cargar ventas</h3>
-          <p className="text-muted-foreground mb-4">{error}</p>
+          <p className="text-white/90 mb-4">{error}</p>
           <Button onClick={refreshData} variant="outline">
             <RefreshCw className="w-4 h-4 mr-2" />
             Reintentar
@@ -1181,7 +1181,7 @@ export default function SalesPage() {
           >
             v-valid
           </Badge>
-          <p className="text-sm text-muted-foreground sm:text-base sm:mt-2">
+          <p className="text-sm text-white/90 sm:text-base sm:mt-2">
             Administra y analiza todas las ventas de tu empresa
           </p>
         </div>
@@ -1217,7 +1217,7 @@ export default function SalesPage() {
       </div>
 
       {/* Sales Table */}
-      <Card>
+      <Card className="glass-panel-dense">
         <CardHeader>
           <div className="flex flex-col space-y-4">
             {/* Primera fila: Título y Registros por página */}
@@ -1416,22 +1416,22 @@ export default function SalesPage() {
           <div className="px-6 pb-4 border-b">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {/* Tarjeta 1: Teléfonos */}
-              <Card className="bg-white rounded-lg shadow-sm border border-gray-200">
+              <Card className="glass-panel rounded-lg shadow-sm border border-white/10">
                 <CardContent className="p-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1.5">
-                        <div className="p-1.5 bg-purple-50 rounded-lg">
-                          <Smartphone className="h-4 w-4 text-purple-600" />
+                        <div className="p-1.5 bg-purple-500/20 rounded-lg border border-purple-500/30">
+                          <Smartphone className="h-4 w-4 text-purple-400 brightness-125" />
                         </div>
-                        <p className="text-xs font-medium text-gray-600">Teléfonos</p>
+                        <p className="text-xs font-medium text-white/90">Teléfonos</p>
                       </div>
                       {/* Unidades primero (más pequeño) */}
-                      <p className="text-lg font-bold text-gray-900">
+                      <p className="text-lg font-bold text-white">
                         {(categoryTotals.phones?.units || 0).toLocaleString()} Unidades
                       </p>
                       {/* USD y BS debajo (más pequeño) */}
-                      <p className="text-[10px] text-gray-500 mt-0.5">
+                      <p className="text-[10px] text-white/90 mt-0.5">
                         {formatCurrency(categoryTotals.phones?.usd || 0)} • Bs. {(categoryTotals.phones?.bs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
                     </div>
@@ -1440,22 +1440,22 @@ export default function SalesPage() {
               </Card>
 
               {/* Tarjeta 2: Accesorios */}
-              <Card className="bg-white rounded-lg shadow-sm border border-gray-200">
+              <Card className="glass-panel rounded-lg shadow-sm border border-white/10">
                 <CardContent className="p-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1.5">
-                        <div className="p-1.5 bg-indigo-50 rounded-lg">
-                          <Headphones className="h-4 w-4 text-indigo-600" />
+                        <div className="p-1.5 bg-indigo-500/20 rounded-lg border border-indigo-500/30">
+                          <Headphones className="h-4 w-4 text-indigo-400 brightness-125" />
                         </div>
-                        <p className="text-xs font-medium text-gray-600">Accesorios</p>
+                        <p className="text-xs font-medium text-white/90">Accesorios</p>
                       </div>
                       {/* Unidades primero (más pequeño) */}
-                      <p className="text-lg font-bold text-gray-900">
+                      <p className="text-lg font-bold text-white">
                         {(categoryTotals.accessories?.units || 0).toLocaleString()} Unidades
                       </p>
                       {/* USD y BS debajo (más pequeño) */}
-                      <p className="text-[10px] text-gray-500 mt-0.5">
+                      <p className="text-[10px] text-white/90 mt-0.5">
                         {formatCurrency(categoryTotals.accessories?.usd || 0)} • Bs. {(categoryTotals.accessories?.bs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
                     </div>
@@ -1464,22 +1464,22 @@ export default function SalesPage() {
               </Card>
 
               {/* Tarjeta 3: Servicio */}
-              <Card className="bg-white rounded-lg shadow-sm border border-gray-200">
+              <Card className="glass-panel rounded-lg shadow-sm border border-white/10">
                 <CardContent className="p-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1.5">
-                        <div className="p-1.5 bg-orange-50 rounded-lg">
-                          <Wrench className="h-4 w-4 text-orange-600" />
+                        <div className="p-1.5 bg-orange-500/20 rounded-lg border border-orange-500/30">
+                          <Wrench className="h-4 w-4 text-orange-400 brightness-125" />
                         </div>
-                        <p className="text-xs font-medium text-gray-600">Servicio</p>
+                        <p className="text-xs font-medium text-white/90">Servicio</p>
                       </div>
                       {/* Unidades primero (más pequeño) */}
-                      <p className="text-lg font-bold text-gray-900">
+                      <p className="text-lg font-bold text-white">
                         {(categoryTotals.technical_service?.units || 0).toLocaleString()} Unidades
                       </p>
                       {/* USD y BS debajo (más pequeño) */}
-                      <p className="text-[10px] text-gray-500 mt-0.5">
+                      <p className="text-[10px] text-white/90 mt-0.5">
                         {formatCurrency(categoryTotals.technical_service?.usd || 0)} • Bs. {(categoryTotals.technical_service?.bs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
                     </div>
@@ -1572,7 +1572,7 @@ export default function SalesPage() {
                               <div>
                                 <div className="font-medium">{sale.client_name || sale.customer_name || 'Sin Cliente'}</div>
                                 {(sale.client_doc || sale.customer_id_number) && (
-                                  <div className="text-sm text-muted-foreground">
+                                  <div className="text-sm text-white/90">
                                     {sale.client_doc || sale.customer_id_number}
                                   </div>
                                 )}
@@ -1588,7 +1588,7 @@ export default function SalesPage() {
                             </TableCell>
                             <TableCell>
                               {/* Mantener columna BS separada para compatibilidad */}
-                              <span className="text-sm text-muted-foreground">
+                              <span className="text-sm text-white/90">
                                 Bs {sale.total_bs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}
                               </span>
                             </TableCell>
@@ -1653,7 +1653,7 @@ export default function SalesPage() {
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => handleDeleteSale(sale.id, sale.invoice_number)}
-                                  className="flex items-center justify-center h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  className="flex items-center justify-center h-8 w-8 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/20 brightness-125"
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
@@ -1662,14 +1662,14 @@ export default function SalesPage() {
                           </TableRow>
                           {isExpanded && (
                             <TableRow key={`${sale.id}-details`}>
-                              <TableCell colSpan={11} className="bg-muted/30 p-0">
+                              <TableCell colSpan={11} className="glass-muted-dark p-0">
                                 <div className="p-4 space-y-2">
                                   <div className="flex items-center gap-2 mb-3">
-                                    <Package className="h-4 w-4 text-primary" />
-                                    <h4 className="font-semibold text-sm">Productos de {sale.invoice_number}</h4>
+                                    <Package className="h-4 w-4 text-emerald-300 brightness-125" />
+                                    <h4 className="font-semibold text-sm text-white">Productos de {sale.invoice_number}</h4>
                                   </div>
                                   {isLoading ? (
-                                    <div className="text-center py-4 text-muted-foreground">
+                                    <div className="text-center py-4 text-white/90">
                                       <div className="flex items-center justify-center gap-2">
                                         <RefreshCw className="h-4 w-4 animate-spin" />
                                         <p className="text-sm">Cargando productos...</p>
@@ -1679,19 +1679,19 @@ export default function SalesPage() {
                                     <div className="overflow-x-auto">
                                       <table className="w-full text-sm">
                                         <thead>
-                                          <tr className="border-b">
-                                            <th className="text-left py-2 px-3 font-medium">SKU</th>
-                                            <th className="text-left py-2 px-3 font-medium">Producto</th>
-                                            <th className="text-left py-2 px-3 font-medium">Categoría</th>
-                                            <th className="text-right py-2 px-3 font-medium">Cantidad</th>
-                                            <th className="text-right py-2 px-3 font-medium">Precio Unit.</th>
-                                            <th className="text-right py-2 px-3 font-medium">Subtotal</th>
+                                          <tr className="border-b border-white/10">
+                                            <th className="text-left py-2 px-3 font-medium text-emerald-300">SKU</th>
+                                            <th className="text-left py-2 px-3 font-medium text-emerald-300">Producto</th>
+                                            <th className="text-left py-2 px-3 font-medium text-emerald-300">Categoría</th>
+                                            <th className="text-right py-2 px-3 font-medium text-emerald-300">Cantidad</th>
+                                            <th className="text-right py-2 px-3 font-medium text-emerald-300">Precio Unit.</th>
+                                            <th className="text-right py-2 px-3 font-medium text-emerald-300">Subtotal</th>
                                           </tr>
                                         </thead>
                                         <tbody>
                                           {itemsToDisplay.map((item) => (
-                                            <tr key={item.id} className="border-b last:border-b-0">
-                                              <td className="py-2 px-3 font-mono text-xs text-muted-foreground">
+                                            <tr key={item.id} className="border-b border-white/10 last:border-b-0 hover:bg-white/5">
+                                              <td className="py-2 px-3 font-mono text-xs text-white/90">
                                                 {/* ✅ CORRECCIÓN: Priorizar sku (viene de RPC o de fetchSaleItems corregido) */}
                                                 {item.sku || item.product_sku || 'N/A'}
                                               </td>
@@ -1701,22 +1701,22 @@ export default function SalesPage() {
                                               </td>
                                               <td className="py-2 px-3">
                                                 {item.category ? (
-                                                  <Badge variant="outline" className="text-xs">
+                                                  <Badge variant="outline" className="text-xs text-emerald-300 font-semibold border-emerald-400/60 bg-emerald-500/10 brightness-125">
                                                     {PRODUCT_CATEGORIES.find(c => c.value === item.category)?.label || item.category}
                                                   </Badge>
                                                 ) : (
-                                                  <span className="text-xs text-muted-foreground">Sin categoría</span>
+                                                  <span className="text-xs text-white/90">Sin categoría</span>
                                                 )}
                                               </td>
-                                              <td className="py-2 px-3 text-right font-medium">
+                                              <td className="py-2 px-3 text-right font-medium text-white">
                                                 {/* ✅ NUEVO: Usar qty de la RPC */}
                                                 {item.qty || item.quantity || 0}
                                               </td>
-                                              <td className="py-2 px-3 text-right">
+                                              <td className="py-2 px-3 text-right text-white/90">
                                                 {/* ✅ NUEVO: Usar price de la RPC */}
                                                 {formatCurrency(item.price || item.unit_price_usd || 0)}
                                               </td>
-                                              <td className="py-2 px-3 text-right font-medium text-green-600">
+                                              <td className="py-2 px-3 text-right font-bold text-emerald-300">
                                                 {/* ✅ NUEVO: Usar subtotal de la RPC */}
                                                 {formatCurrency(item.subtotal || item.total_price_usd || 0)}
                                               </td>
@@ -1726,7 +1726,7 @@ export default function SalesPage() {
                                       </table>
                                     </div>
                                   ) : (
-                                    <div className="text-center py-4 text-muted-foreground">
+                                    <div className="text-center py-4 text-white/90">
                                       <p className="text-sm">No se encontraron productos para esta venta.</p>
                                     </div>
                                   )}
@@ -1744,7 +1744,7 @@ export default function SalesPage() {
               {/* Pagination */}
               {data && data.totalPages > 1 && (
                 <div className="flex items-center justify-between mt-4">
-                  <div className="text-sm text-muted-foreground">
+                  <div className="text-sm text-white/90">
                     Página {data.currentPage} de {data.totalPages} ({data.totalCount} registros totales)
                   </div>
                   <div className="flex space-x-2">
@@ -1866,14 +1866,14 @@ export default function SalesPage() {
                 className="w-full h-[70vh]"
               />
             ) : (
-              <div className="h-[70vh] flex items-center justify-center text-sm text-muted-foreground">
+              <div className="h-[70vh] flex items-center justify-center text-sm text-white/90">
                 Generando vista previa...
               </div>
             )}
           </div>
 
           <DialogFooter className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-4">
-            <div className="text-xs text-muted-foreground">
+            <div className="text-xs text-white/90">
               Puedes descargar o imprimir directamente desde esta vista previa.
             </div>
             <div className="flex items-center gap-2 sm:ml-auto">

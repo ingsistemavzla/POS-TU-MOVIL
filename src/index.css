@@ -23,10 +23,24 @@
     --color-neon: #00ff9d;
     --color-neon-secondary: #00ff40;
     --color-accent: #00FF00;
-    --gradient-diagonal: linear-gradient(135deg, #022601 0%, #00FF00 100%);
+    /* Gradiente del Login (más oscuro) */
+    --gradient-diagonal: linear-gradient(135deg, #000A00 0%, #006600 100%);
     --btn-gradient: linear-gradient(135deg, #00FF7F 0%, #00FF00 50%, #00CC66 100%);
-    --glass-navbar: rgba(2, 38, 1, 0.85);
+    --glass-navbar: rgba(2, 38, 1, 0.85); /* Navbar del login (original) */
+    --glass-navbar-internal: #021302; /* Navbar de paneles internos */
     --glass-card: rgba(13, 13, 13, 0.7);
+
+    /* Sistema de Diseño "Vanguardia de Cristal" */
+    /* Colores Base (RGB para usar con opacidad) */
+    --color-glass-bg: 13, 13, 13;
+    --color-neon-primary: #00FF7F;
+    --color-neon-secondary: #00FF00;
+    
+    /* Gradientes */
+    /* Login usa --gradient-diagonal (sin cambios) */
+    /* App interna usa --gradient-app-bg (más oscuro) */
+    --gradient-app-bg: linear-gradient(135deg, #000A00 0%, #006600 100%);
+    --gradient-btn-primary: linear-gradient(135deg, #00FF7F 0%, #00FF00 50%, #00CC66 100%);
 
     /* --- MODO CLARO: "Minty Platinum" --- */
     /* Fondo principal: No blanco, sino un platino menta muy suave */
@@ -151,8 +165,8 @@
   }
 
   body {
-    @apply bg-app-background text-main-text font-sans;
-    background: var(--gradient-diagonal);
+    @apply text-white font-sans;
+    /* El fondo gradiente se aplica en MainLayout con .bg-app-gradient */
   }
 
   /* Ocultar flechas (spinners) de inputs numéricos */
@@ -168,13 +182,69 @@
 }
 
 @layer components {
-  /* Glass card effect */
+  /* Sistema de Diseño "Vanguardia de Cristal" */
+  
+  /* Fondo gradiente global de la aplicación */
+  .bg-app-gradient {
+    position: fixed;
+    inset: 0;
+    z-index: -50;
+    background: var(--gradient-app-bg);
+  }
+
+  /* Glass card effect (Login) */
   .glass-card {
     background-color: var(--glass-card);
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
     border: 1px solid rgba(0, 255, 127, 0.2);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Glass panel - Tarjeta estándar para Dashboard (10% más claro para efecto glass) */
+  .glass-panel {
+    background-color: rgba(8, 8, 8, 0.88);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(0, 255, 127, 0.2);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Glass panel con hover interactivo */
+  .glass-panel:hover {
+    border-color: rgba(0, 255, 127, 0.4);
+  }
+
+  /* Glass panel dense - Para tablas y listas de datos densos (10% más claro para efecto glass) */
+  .glass-panel-dense {
+    background-color: rgba(5, 5, 5, 0.88);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(0, 255, 127, 0.2);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Glass panel dense con hover */
+  .glass-panel-dense:hover {
+    border-color: rgba(0, 255, 127, 0.4);
+  }
+
+  /* Glass input - Inputs dentro de paneles glass */
+  .glass-input {
+    background-color: rgba(15, 23, 42, 0.5);
+    color: #ffffff;
+    border-color: rgba(16, 185, 129, 0.3);
+  }
+
+  .glass-input:focus {
+    background-color: rgba(15, 23, 42, 0.7);
+    border-color: var(--color-neon-primary);
+    outline-color: var(--color-neon-primary);
+    --tw-ring-color: var(--color-neon-primary);
+  }
+
+  .glass-input::placeholder {
+    color: rgba(255, 255, 255, 0.5);
   }
 
   /* Forzar color blanco en inputs dentro de glass-card */
@@ -200,8 +270,74 @@
     color: rgba(255, 255, 255, 0.5) !important;
   }
 
+  /* Reglas de Tipografía para Glass (Alta Legibilidad) */
+  .text-glass-primary {
+    color: #FFFFFF;
+    font-weight: 500;
+  }
+
+  .text-glass-secondary {
+    color: rgba(255, 255, 255, 0.75);
+  }
+
+  .text-glass-muted {
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  /* Fondo verde oscuro para destacar información (más negro pero translúcido) */
+  .glass-green-dark {
+    background-color: rgba(8, 20, 12, 0.85); /* Más negro pero mantiene translucidez */
+    border: 1px solid rgba(0, 255, 127, 0.3);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+
+  /* Verde oscuro para elementos activos con texto blanco (20% más oscuro que #00FF7F) */
+  .bg-primary-dark {
+    background-color: #00CC66; /* #00FF7F con 20% menos brillo */
+  }
+  
+  .bg-primary-dark:hover {
+    background-color: #00B359; /* Hover aún más oscuro */
+  }
+
+  /* Fondo muted oscuro para elementos de lista */
+  .glass-muted-dark {
+    background-color: rgba(15, 30, 20, 0.75); /* Verde casi negro más oscuro */
+    border: 1px solid rgba(0, 255, 127, 0.2);
+  }
+
+  /* Estilos de Tabla para Glass Design */
+  .glass-table thead {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .glass-table thead th {
+    color: var(--color-neon-primary); /* #00FF7F */
+    font-weight: 600;
+  }
+
+  .glass-table tbody tr {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .glass-table tbody tr:hover {
+    background-color: rgba(0, 255, 127, 0.1);
+  }
+
+  .glass-table td {
+    color: rgba(255, 255, 255, 0.9);
+  }
+
   .glass-navbar {
     background-color: var(--glass-navbar);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+
+  /* Navbar para paneles internos (después del login) */
+  .glass-navbar-internal {
+    background-color: var(--glass-navbar-internal);
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
   }

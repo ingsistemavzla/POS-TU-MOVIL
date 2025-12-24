@@ -30,7 +30,7 @@ export const ArticlesStatsRow: React.FC = () => {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {[1, 2, 3, 4].map((i) => (
-          <Card key={i} className="bg-white rounded-lg shadow-sm border border-gray-200">
+          <Card key={i} className="glass-panel rounded-lg shadow-sm border border-white/10">
             <CardContent className="p-5">
               <div className="space-y-3">
                 <div className="h-4 bg-gray-200 rounded animate-pulse" />
@@ -86,20 +86,20 @@ export const ArticlesStatsRow: React.FC = () => {
       {/* 4 Cards de KPIs Superiores */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {/* Tarjeta 1: Valor Total (Verde) */}
-        <Card className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <Card className="glass-panel rounded-lg shadow-sm border border-white/10 border-l-4 border-l-emerald-400">
           <CardContent className="p-5">
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className="p-2 bg-emerald-50 rounded-lg">
-                    <DollarSign className="h-5 w-5 text-emerald-600" />
+                  <div className="p-2 bg-emerald-500/20 rounded-lg border border-emerald-500/30">
+                    <DollarSign className="h-5 w-5 text-emerald-400 brightness-125" />
                   </div>
-                  <p className="text-sm font-medium text-gray-600">Valor Total</p>
+                  <p className="text-sm font-medium text-white/90">Valor Total</p>
                 </div>
-                <p className="text-2xl font-bold text-gray-900">
+                <p className="text-2xl font-bold text-white">
                   {formatCurrency(statsData.totalValue)}
                 </p>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-white/90 mt-1">
                   {statsData.totalProducts} productos registrados • {statsData.totalUnits.toLocaleString()} unidades totales
                 </p>
               </div>
@@ -108,20 +108,20 @@ export const ArticlesStatsRow: React.FC = () => {
         </Card>
 
         {/* Tarjeta 2: Sin Stock (Rojo) */}
-        <Card className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <Card className="glass-panel rounded-lg shadow-sm border border-white/10 border-l-4 border-l-red-400">
           <CardContent className="p-5">
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className="p-2 bg-red-50 rounded-lg">
-                    <AlertOctagon className="h-5 w-5 text-red-600" />
+                  <div className="p-2 bg-red-500/20 rounded-lg border border-red-500/30">
+                    <AlertOctagon className="h-5 w-5 text-red-400 brightness-125" />
                   </div>
-                  <p className="text-sm font-medium text-gray-600">Sin Stock</p>
+                  <p className="text-sm font-medium text-white/90">Sin Stock</p>
                 </div>
-                <p className="text-2xl font-bold text-gray-900">
+                <p className="text-2xl font-bold text-white">
                   {statsData.outOfStock}
                 </p>
-                <Badge className="bg-red-100 text-red-800 border-red-300 mt-2">
+                <Badge className="bg-red-500/20 text-red-300 border-red-500/30 mt-2">
                   Atención Inmediata
                 </Badge>
               </div>
@@ -130,20 +130,20 @@ export const ArticlesStatsRow: React.FC = () => {
         </Card>
 
         {/* Tarjeta 3: Stock Bajo (Amarillo) */}
-        <Card className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <Card className="glass-panel rounded-lg shadow-sm border border-white/10 border-l-4 border-l-yellow-400">
           <CardContent className="p-5">
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className="p-2 bg-yellow-50 rounded-lg">
-                    <AlertTriangle className="h-5 w-5 text-yellow-600" />
+                  <div className="p-2 bg-yellow-500/20 rounded-lg border border-yellow-500/30">
+                    <AlertTriangle className="h-5 w-5 text-yellow-400 brightness-125" />
                   </div>
-                  <p className="text-sm font-medium text-gray-600">Stock Bajo</p>
+                  <p className="text-sm font-medium text-white/90">Stock Bajo</p>
                 </div>
-                <p className="text-2xl font-bold text-gray-900">
+                <p className="text-2xl font-bold text-white">
                   {statsData.lowStock}
                 </p>
-                <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300 mt-2">
+                <Badge className="bg-yellow-500/20 text-yellow-300 border-yellow-500/30 mt-2">
                   Reabastecer
                 </Badge>
               </div>
@@ -152,17 +152,17 @@ export const ArticlesStatsRow: React.FC = () => {
         </Card>
 
         {/* Tarjeta 4: Unidades (Azul) */}
-        <Card className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <Card className="glass-panel rounded-lg shadow-sm border border-white/10 border-l-4 border-l-blue-400">
           <CardContent className="p-5">
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className="p-2 bg-blue-50 rounded-lg">
-                    <Package className="h-5 w-5 text-blue-600" />
+                  <div className="p-2 bg-blue-500/20 rounded-lg border border-blue-500/30">
+                    <Package className="h-5 w-5 text-blue-400 brightness-125" />
                   </div>
-                  <p className="text-sm font-medium text-gray-600">Unidades</p>
+                  <p className="text-sm font-medium text-white/90">Unidades</p>
                 </div>
-                <p className="text-2xl font-bold text-gray-900">
+                <p className="text-2xl font-bold text-white">
                   {statsData.totalUnits.toLocaleString()}
                 </p>
               </div>
@@ -174,22 +174,22 @@ export const ArticlesStatsRow: React.FC = () => {
       {/* 🔥 NUEVO: 3 Cards de Categorías (mismo ancho total que las 4 de arriba) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         {/* Tarjeta 1: Teléfonos */}
-        <Card className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <Card className="glass-panel rounded-lg shadow-sm border border-white/10 border-l-4 border-l-purple-400">
           <CardContent className="p-5">
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className="p-2.5 bg-purple-50 rounded-lg">
-                    <Smartphone className="h-6 w-6 text-purple-600" />
+                  <div className="p-2.5 bg-purple-500/20 rounded-lg border border-purple-500/30">
+                    <Smartphone className="h-6 w-6 text-purple-400 brightness-125" />
                   </div>
-                  <p className="text-sm font-medium text-gray-600">Teléfonos</p>
+                  <p className="text-sm font-medium text-white/90">Teléfonos</p>
                 </div>
                 {/* 🔥 ORDEN CORREGIDO: Unidades primero (grande) */}
-                <p className="text-2xl font-bold text-gray-900">
+                <p className="text-2xl font-bold text-white">
                   {telefonosData.total_quantity.toLocaleString()} Unidades
                 </p>
                 {/* Valor y productos debajo (pequeño) */}
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-white/90 mt-1">
                   {formatCurrency(telefonosData.total_retail_value)} • {telefonosData.items_count} productos
                 </p>
               </div>
@@ -198,22 +198,22 @@ export const ArticlesStatsRow: React.FC = () => {
         </Card>
 
         {/* Tarjeta 2: Accesorios */}
-        <Card className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <Card className="glass-panel rounded-lg shadow-sm border border-white/10 border-l-4 border-l-indigo-400">
           <CardContent className="p-5">
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className="p-2.5 bg-indigo-50 rounded-lg">
-                    <Headphones className="h-6 w-6 text-indigo-600" />
+                  <div className="p-2.5 bg-indigo-500/20 rounded-lg border border-indigo-500/30">
+                    <Headphones className="h-6 w-6 text-indigo-400 brightness-125" />
                   </div>
-                  <p className="text-sm font-medium text-gray-600">Accesorios</p>
+                  <p className="text-sm font-medium text-white/90">Accesorios</p>
                 </div>
                 {/* 🔥 ORDEN CORREGIDO: Unidades primero (grande) */}
-                <p className="text-2xl font-bold text-gray-900">
+                <p className="text-2xl font-bold text-white">
                   {accesoriosData.total_quantity.toLocaleString()} Unidades
                 </p>
                 {/* Valor y productos debajo (pequeño) */}
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-white/90 mt-1">
                   {formatCurrency(accesoriosData.total_retail_value)} • {accesoriosData.items_count} productos
                 </p>
               </div>
@@ -222,22 +222,22 @@ export const ArticlesStatsRow: React.FC = () => {
         </Card>
 
         {/* Tarjeta 3: Servicio */}
-        <Card className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <Card className="glass-panel rounded-lg shadow-sm border border-white/10 border-l-4 border-l-orange-400">
           <CardContent className="p-5">
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className="p-2.5 bg-orange-50 rounded-lg">
-                    <Wrench className="h-6 w-6 text-orange-600" />
+                  <div className="p-2.5 bg-orange-500/20 rounded-lg border border-orange-500/30">
+                    <Wrench className="h-6 w-6 text-orange-400 brightness-125" />
                   </div>
-                  <p className="text-sm font-medium text-gray-600">Servicio</p>
+                  <p className="text-sm font-medium text-white/90">Servicio</p>
                 </div>
                 {/* 🔥 ORDEN CORREGIDO: Unidades primero (grande) */}
-                <p className="text-2xl font-bold text-gray-900">
+                <p className="text-2xl font-bold text-white">
                   {servicioData.total_quantity.toLocaleString()} Unidades
                 </p>
                 {/* Valor y productos debajo (pequeño) */}
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-white/90 mt-1">
                   {formatCurrency(servicioData.total_retail_value)} • {servicioData.items_count} productos
                 </p>
               </div>

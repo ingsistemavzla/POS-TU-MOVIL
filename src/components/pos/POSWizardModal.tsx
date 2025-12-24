@@ -132,7 +132,7 @@ const StepIndicator: React.FC<{ currentStep: number; totalSteps: number }> = ({ 
   ];
 
   return (
-    <div className="flex items-center justify-center gap-2 py-3 px-4 bg-muted/30 rounded-lg mb-4">
+    <div className="flex items-center justify-center gap-2 py-3 px-4 glass-panel rounded-lg mb-4 border border-white/10">
       {steps.map((step, index) => {
         const Icon = step.icon;
         const isActive = currentStep === step.num;
@@ -142,10 +142,10 @@ const StepIndicator: React.FC<{ currentStep: number; totalSteps: number }> = ({ 
           <React.Fragment key={step.num}>
             <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full transition-all ${
               isActive 
-                ? 'bg-primary text-primary-foreground shadow-md' 
+                ? 'bg-primary text-white shadow-md' 
                 : isCompleted 
-                  ? 'bg-green-500/20 text-green-600' 
-                  : 'bg-muted text-muted-foreground'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' 
+                  : 'glass-input text-white/70 border border-white/10'
             }`}>
               {isCompleted ? (
                 <Check className="w-4 h-4" />
@@ -613,9 +613,9 @@ export const POSWizardModal: React.FC<POSWizardModalProps> = ({
             </DialogHeader>
             
             {/* BCV Rate Badge */}
-            <Card className="p-2 px-3 bg-green-500/10 border-green-500/30">
-              <div className="text-xs text-muted-foreground">Tasa BCV</div>
-              <div className="text-lg font-bold text-green-600">Bs {bcvRate.toFixed(2)}</div>
+            <Card className="p-2 px-3 glass-green-dark border-emerald-500/40 shadow-lg shadow-emerald-500/20">
+              <div className="text-xs text-white/90 font-medium">Tasa BCV</div>
+              <div className="text-lg font-bold text-emerald-300">Bs {bcvRate.toFixed(2)}</div>
             </Card>
           </div>
         </div>

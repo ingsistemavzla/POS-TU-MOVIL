@@ -87,7 +87,7 @@ export function StoreSummaryChart({
     return (
       <Card className="p-6">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold text-main-text flex items-center gap-2">
+          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
             <Building2 className="w-5 h-5" />
             Resumen por Tienda
           </h3>
@@ -96,12 +96,12 @@ export function StoreSummaryChart({
           </Button>
         </div>
         <div className="w-full" style={{ height: '280px' }}>
-          <div className="flex items-center justify-center h-full text-gray-500">
+          <div className="flex items-center justify-center h-full text-white/90">
             <p>No hay tiendas disponibles</p>
           </div>
         </div>
-        <div className="space-y-0 border-t border-gray-100 pt-4 mt-4">
-          <div className="grid grid-cols-4 gap-4 p-3 bg-gray-50/50 rounded-t-lg text-xs font-medium text-gray-500 uppercase">
+        <div className="space-y-0 border-t border-white/10 pt-4 mt-4">
+          <div className="grid grid-cols-4 gap-4 p-3 bg-white/5 rounded-t-lg text-xs font-medium text-white/90 uppercase">
             <div className="flex items-center gap-2">
               <Store className="w-4 h-4" />
               Tienda
@@ -172,8 +172,8 @@ export function StoreSummaryChart({
         </div>
 
         {/* Tabla de Detalles */}
-        <div className="flex-shrink-0 space-y-0 border-t border-gray-100 pt-4">
-          <div className="grid grid-cols-4 gap-4 p-3 bg-gray-50/50 rounded-t-lg border-b border-gray-100 text-xs font-medium text-gray-500 uppercase">
+        <div className="flex-shrink-0 space-y-0 border-t border-white/10 pt-4">
+          <div className="grid grid-cols-4 gap-4 p-3 bg-white/5 rounded-t-lg border-b border-white/10 text-xs font-medium text-white/90 uppercase">
             <div className="flex items-center gap-2">
               <Store className="w-4 h-4" />
               Tienda
@@ -191,11 +191,11 @@ export function StoreSummaryChart({
             return (
               <div
                 key={store.id}
-                className={`grid grid-cols-4 gap-4 p-3 hover:bg-gray-50 transition-colors ${
-                  isLast ? 'rounded-b-lg' : 'border-b border-gray-100'
+                className={`grid grid-cols-4 gap-4 p-3 hover:bg-white/10 transition-colors ${
+                  isLast ? 'rounded-b-lg' : 'border-b border-white/10'
                 }`}
               >
-                <div className="font-medium text-main-text flex items-center gap-2">
+                <div className="font-medium text-white flex items-center gap-2">
                   <div
                     className="w-2 h-8 rounded"
                     style={{ backgroundColor: COLORS[index % COLORS.length] }}
@@ -220,7 +220,7 @@ export function StoreSummaryChart({
                       : (store.netIncome || storeData.averageOrder * storeData.orders)
                   )}
                 </div>
-                <div className="text-right text-gray-600">
+                <div className="text-right text-white/90">
                   {storeData.orders}
                 </div>
               </div>

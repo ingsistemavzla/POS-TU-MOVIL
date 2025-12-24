@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useStore } from '@/contexts/StoreContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,8 +41,6 @@ import { sanitizeInventoryData } from '@/utils/inventoryValidation';
 import { InventoryFinancialHeader } from '@/components/inventory/InventoryFinancialHeader';
 import { BranchStockMatrix } from '@/components/inventory/BranchStockMatrix';
 import { InventoryDashboardHeader } from '@/components/inventory/InventoryDashboardHeader';
-import { StoreFilterBar } from '@/components/inventory/StoreFilterBar';
-import { Skeleton } from '@/components/ui/skeleton';
 
 interface Product {
   id: string;
@@ -60,6 +57,10 @@ interface Product {
   stockByStore?: Record<string, number>;
 }
 
+interface Store {
+  id: string;
+  name: string;
+}
 
 interface StoreInventory {
   store_id: string;
@@ -71,12 +72,13 @@ interface StoreInventory {
 
 export const AlmacenPage: React.FC = () => {
   const { userProfile } = useAuth();
-  const { selectedStoreId, availableStores } = useStore();
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
+  const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [storeFilter, setStoreFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('name');
   const [sortOrder, setSortOrder] = useState<string>('asc');
   const [lowStockOnly, setLowStockOnly] = useState<boolean>(false);
@@ -132,53 +134,42 @@ export const AlmacenPage: React.FC = () => {
 
       // 🛡️ SEGURIDAD: RLS maneja el filtrado automáticamente
       // El backend solo retorna stores que el usuario tiene permiso de ver
-      // Usar availableStores del StoreContext en lugar de cargar localmente
-      const storesData = availableStores;
+      // Cargar tiendas
+      const storesQuery = (supabase.from('stores') as any)
+        .select('id, name')
+        // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
+        .eq('active', true)
+        .order('name');
+
+      const { data: storesData, error: storesError } = await storesQuery;
+
+      if (storesError) {
+        console.error('Error fetching stores:', storesError);
+        console.error('Stores error details:', {
+          message: storesError.message,
+          code: storesError.code,
+          details: storesError.details,
+          hint: storesError.hint
+        });
+        toast({
+          title: "Advertencia",
+          description: "No se pudieron cargar las tiendas",
+          variant: "warning",
+        });
+        setStores([]);
+      } else {
+        setStores(storesData || []);
+      }
 
       // Cargar inventario
       // ⚠️ FILTRO CRÍTICO: JOIN con products para filtrar solo productos activos
-      // 🛡️ EXCEPCIÓN QUIRÚRGICA: Cargar TODOS los datos de inventario (sin filtro de sucursal)
-      // para garantizar consistencia con ArticulosPage y que productos de Servicio Técnico
-      // tengan datos completos de todas las sucursales
-      // El filtrado por sucursal se hará en memoria después para otras categorías
-      let inventoryQuery = (supabase.from('inventories') as any)
+      // 🛡️ SEGURIDAD: RLS maneja el filtrado automáticamente por store_id y company_id
+      const inventoryQuery = (supabase.from('inventories') as any)
         .select('product_id, store_id, qty, products!inner(active)')
         // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
         .eq('products.active', true);  // ⚠️ Solo inventario de productos activos
 
-      // 🔥 NO APLICAR FILTRO DE SUCURSAL EN SQL: Cargar todos los datos
-      // El filtrado se hará en memoria para otras categorías, pero Servicio Técnico necesita todos los datos
-
-      // 🔥 PAGINACIÓN: Obtener todos los registros (Supabase limita a 1000 por defecto)
-      const fetchAllInventory = async () => {
-        const allData: any[] = [];
-        const pageSize = 1000;
-        let from = 0;
-        let hasMore = true;
-
-        while (hasMore) {
-          const pageQuery = inventoryQuery.range(from, from + pageSize - 1);
-          const { data, error } = await pageQuery;
-          
-          if (error) {
-            console.error('Error fetching inventory page:', error);
-            break;
-          }
-
-          if (data && data.length > 0) {
-            allData.push(...data);
-            from += pageSize;
-            hasMore = data.length === pageSize; // Si devolvió menos de pageSize, no hay más
-          } else {
-            hasMore = false;
-          }
-        }
-
-        console.log(`[AlmacenPage] Inventario obtenido: ${allData.length} registros (en ${Math.ceil(from / pageSize)} páginas)`);
-        return { data: allData, error: null };
-      };
-
-      const { data: inventoryData, error: inventoryError } = await fetchAllInventory();
+      const { data: inventoryData, error: inventoryError } = await inventoryQuery;
 
       if (inventoryError) {
         console.error('Error fetching inventory:', inventoryError);
@@ -226,87 +217,43 @@ export const AlmacenPage: React.FC = () => {
         });
       }
 
-      // 🔥 RESTAURACIÓN: Determinar la sucursal activa para el filtro
-      const activeStoreId = selectedStoreId && selectedStoreId !== 'all' 
-        ? selectedStoreId 
-        : null;
-
-      // 🔥 RESTAURACIÓN: Si hay filtro de sucursal, solo mostrar productos con stock en esa sucursal
-      // Si no hay filtro, asegurar que todos los productos tengan inventario para todas las tiendas
-      if (activeStoreId) {
-        // FILTRADO POR SUCURSAL: Solo productos con stock en la sucursal seleccionada
-        productsData?.forEach((product: Product) => {
-          if (!inventoriesByProduct[product.id]) {
-            inventoriesByProduct[product.id] = [];
-          }
-          // Solo agregar la sucursal seleccionada
+      // Asegurar que todos los productos tengan inventario para todas las tiendas
+      productsData?.forEach((product: Product) => {
+        if (!inventoriesByProduct[product.id]) {
+          inventoriesByProduct[product.id] = [];
+        }
+        storesData?.forEach((store: Store) => {
           const exists = inventoriesByProduct[product.id].some(
-            inv => inv.store_id === activeStoreId
+            inv => inv.store_id === store.id
           );
           if (!exists) {
-            const store = storesData?.find((s: Store) => s.id === activeStoreId);
             inventoriesByProduct[product.id].push({
-              store_id: activeStoreId,
-              store_name: store?.name || 'Tienda Desconocida',
+              store_id: store.id,
+              store_name: store.name,
               qty: 0,
             });
           }
         });
-      } else {
-        // SIN FILTRO: Asegurar que todos los productos tengan inventario para todas las tiendas
-        productsData?.forEach((product: Product) => {
-          if (!inventoriesByProduct[product.id]) {
-            inventoriesByProduct[product.id] = [];
-          }
-          storesData?.forEach((store: Store) => {
-            const exists = inventoriesByProduct[product.id].some(
-              inv => inv.store_id === store.id
-            );
-            if (!exists) {
-              inventoriesByProduct[product.id].push({
-                store_id: store.id,
-                store_name: store.name,
-                qty: 0,
-              });
-            }
-          });
-          inventoriesByProduct[product.id].sort((a, b) => 
-            a.store_name.localeCompare(b.store_name)
-          );
-        });
-      }
-
-      // 🔥 RESTAURACIÓN: Calcular total_stock según el filtro activo
-      const productsWithStock = (productsData || []).map((product: any) => {
-        const stockByStore = stockByProductStore.get(product.id) || {};
-        
-        // 🛡️ EXCEPCIÓN QUIRÚRGICA: Para Servicio Técnico, siempre mostrar total de todas las sucursales
-        // Esto asegura consistencia entre paneles y refleja correctamente el stock total
-        const totalStock = product.category === 'technical_service'
-          ? Object.values(stockByStore).reduce((sum, qty) => sum + (qty || 0), 0) // Siempre suma todas las sucursales
-          : activeStoreId
-            ? (stockByStore[activeStoreId] || 0) // Para otras categorías, respetar filtro
-            : Object.values(stockByStore).reduce((sum, qty) => sum + (qty || 0), 0); // Sin filtro, suma todas
-        
-        return {
-          ...product,
-          total_stock: totalStock,
-          stockByStore: stockByStore,
-        };
-      }).filter((product: any) => {
-        // 🔥 RESTAURACIÓN: Si hay filtro de sucursal, solo mostrar productos con stock > 0 en esa sucursal
-        if (activeStoreId) {
-          // 🛡️ EXCEPCIÓN QUIRÚRGICA: Servicio Técnico siempre visible (incluso con stock 0)
-          // Esto permite que servicios técnicos aparezcan aunque no tengan inventario físico
-          if (product.category === 'technical_service') {
-            return true; // Siempre mostrar Servicio Técnico
-          }
-          // Para otras categorías, mantener lógica de stock físico
-          return product.total_stock > 0;
-        }
-        // Sin filtro, mostrar todos los productos
-        return true;
+        inventoriesByProduct[product.id].sort((a, b) => 
+          a.store_name.localeCompare(b.store_name)
+        );
       });
+
+      // Combinar datos - total_stock calculado sumando todas las tiendas
+        // 🛡️ SEGURIDAD: RLS ya filtró el inventario por store_id
+        // Calculamos total_stock sumando todas las tiendas visibles (ya filtradas por RLS)
+        const productsWithStock = (productsData || []).map((product: any) => {
+          const stockByStore = stockByProductStore.get(product.id) || {};
+          
+          // Sumar todas las tiendas visibles (RLS ya filtró por store_id)
+          const totalStock = Object.values(stockByStore).reduce((sum, qty) => sum + (qty || 0), 0);
+          
+          return {
+            ...product,
+            total_stock: totalStock,
+            stockByStore: stockByStore,
+          };
+        });
 
       setProducts(productsWithStock);
       setStoreInventories(inventoriesByProduct);
@@ -326,7 +273,7 @@ export const AlmacenPage: React.FC = () => {
     if (userProfile?.company_id) {
       fetchData();
     }
-  }, [userProfile?.company_id, selectedStoreId, availableStores]);
+  }, [userProfile?.company_id]);
 
   // Toggle expandir producto
   const toggleExpand = (productId: string) => {
@@ -471,20 +418,18 @@ export const AlmacenPage: React.FC = () => {
   // Ejecutar transferencia
   const executeTransfer = async (productId: string) => {
     const transfer = transferring[productId];
-    // 🛡️ VALIDACIÓN CRÍTICA: Prevenir valores negativos o cero
-    const safeQty = Math.max(0, Math.floor(transfer?.qty || 0));
-    if (!transfer || !transfer.to || safeQty <= 0) {
+    if (!transfer || !transfer.to || transfer.qty <= 0) {
       toast({
         title: "Error",
-        description: "Completa todos los campos de la transferencia con una cantidad válida mayor a 0",
+        description: "Completa todos los campos de la transferencia",
         variant: "destructive",
       });
       return;
     }
 
     // Obtener nombres de tiendas para la confirmación
-    const fromStore = availableStores.find(s => s.id === transfer.from);
-    const toStore = availableStores.find(s => s.id === transfer.to);
+    const fromStore = stores.find(s => s.id === transfer.from);
+    const toStore = stores.find(s => s.id === transfer.to);
     const product = products.find(p => p.id === productId);
 
     // Confirmación antes de transferir
@@ -493,7 +438,7 @@ export const AlmacenPage: React.FC = () => {
       `Producto: ${product?.name || 'N/A'}\n` +
       `Desde: ${fromStore?.name || 'N/A'}\n` +
       `Hacia: ${toStore?.name || 'N/A'}\n` +
-      `Cantidad: ${safeQty} unidades\n\n` +
+      `Cantidad: ${transfer.qty} unidades\n\n` +
       `Esta acción no se puede deshacer.`
     );
 
@@ -517,7 +462,7 @@ export const AlmacenPage: React.FC = () => {
         p_product_id: productId,
         p_from_store_id: transfer.from,
         p_to_store_id: transfer.to,
-        p_quantity: safeQty, // 🛡️ Usar valor validado
+        p_quantity: transfer.qty,
         p_company_id: userProfile?.company_id,
         p_transferred_by: userProfile?.id,
       });
@@ -533,7 +478,7 @@ export const AlmacenPage: React.FC = () => {
 
       toast({
         title: "Transferencia exitosa",
-        description: `Se transfirieron ${safeQty} unidades de ${fromStore?.name || ''} a ${toStore?.name || ''}`,
+        description: `Se transfirieron ${transfer.qty} unidades de ${fromStore?.name || ''} a ${toStore?.name || ''}`,
         variant: "success",
       });
 
@@ -574,14 +519,14 @@ export const AlmacenPage: React.FC = () => {
       
       const matchesCategory = categoryFilter === 'all' || product.category === categoryFilter;
       
-      // ✅ FILTRO DE SUCURSAL ELIMINADO: Ahora se hace a nivel SQL, no en JavaScript
-      // El filtro por tienda ya se aplicó en la consulta SQL, así que todos los productos
-      // que lleguen aquí ya están filtrados por la sucursal seleccionada
+      // Filtro por tienda (basado en inventario)
+      const matchesStore = storeFilter === 'all' || 
+        (storeInventories[product.id]?.some(inv => inv.store_id === storeFilter && inv.qty > 0));
       
       // Filtro de stock bajo
       const matchesLowStock = !lowStockOnly || (product.total_stock || 0) < 5;
       
-      return matchesSearch && matchesCategory && matchesLowStock;
+      return matchesSearch && matchesCategory && matchesStore && matchesLowStock;
     })
     .sort((a, b) => {
       let comparison = 0;
@@ -611,22 +556,19 @@ export const AlmacenPage: React.FC = () => {
     return (product.total_stock || 0) * product.sale_price_usd;
   };
 
-  // ✅ NUEVO: Componente Skeleton para filas de tabla
-  const TableRowSkeleton = () => (
-    <tr className="border-b">
-      <td className="py-4 px-4"><Skeleton className="h-4 w-20" /></td>
-      <td className="py-4 px-4"><Skeleton className="h-4 w-48" /></td>
-      <td className="py-4 px-4"><Skeleton className="h-5 w-24 rounded-full" /></td>
-      <td className="py-4 px-4 text-right"><Skeleton className="h-4 w-16 ml-auto" /></td>
-      <td className="py-4 px-4 text-right"><Skeleton className="h-4 w-16 ml-auto" /></td>
-      <td className="py-4 px-4 text-right"><Skeleton className="h-4 w-12 ml-auto" /></td>
-      <td className="py-4 px-4 text-center"><Skeleton className="h-5 w-16 rounded-full mx-auto" /></td>
-      <td className="py-4 px-4 text-center"><Skeleton className="h-8 w-24 rounded mx-auto" /></td>
-    </tr>
-  );
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-md h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Cargando almacén...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="container mx-auto p-6 space-y-6 bg-gray-50 min-h-screen">
+    <div className="container mx-auto p-6 space-y-6 min-h-screen">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
@@ -644,9 +586,6 @@ export const AlmacenPage: React.FC = () => {
         </Button>
       </div>
 
-      {/* 🔥 SÚPER FILTRO GLOBAL DE SUCURSAL - Barra Dominante */}
-      <StoreFilterBar pageTitle="Almacén" />
-
       {/* Header del Dashboard de Inventario */}
       <InventoryDashboardHeader
         searchTerm={searchTerm}
@@ -656,53 +595,46 @@ export const AlmacenPage: React.FC = () => {
       />
 
       {/* Tabla de Productos */}
-      <Card>
+      <Card className="glass-panel-dense">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full glass-table">
               <thead>
-                <tr className="border-b">
-                  <th className="text-left py-4 px-4 font-semibold">SKU</th>
-                  <th className="text-left py-4 px-4 font-semibold">Nombre</th>
-                  <th className="text-left py-4 px-4 font-semibold">Categoría</th>
-                  <th className="text-right py-4 px-4 font-semibold">Costo</th>
-                  <th className="text-right py-4 px-4 font-semibold">Precio</th>
-                  <th className="text-right py-4 px-4 font-semibold">Stock Total</th>
-                  <th className="text-center py-4 px-4 font-semibold">Estado</th>
-                  <th className="text-center py-4 px-4 font-semibold">Acciones</th>
+                <tr>
+                  <th className="text-left py-4 px-4">SKU</th>
+                  <th className="text-left py-4 px-4">Nombre</th>
+                  <th className="text-left py-4 px-4">Categoría</th>
+                  <th className="text-right py-4 px-4">Costo</th>
+                  <th className="text-right py-4 px-4">Precio</th>
+                  <th className="text-right py-4 px-4">Stock Total</th>
+                  <th className="text-center py-4 px-4">Estado</th>
+                  <th className="text-center py-4 px-4">Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
-                  <>
-                    {[1, 2, 3, 4, 5, 6, 7].map((i) => (
-                      <TableRowSkeleton key={i} />
-                    ))}
-                  </>
-                ) : (
-                  filteredProducts.map((product) => {
-                    const isExpanded = expandedProducts.has(product.id);
-                    const inventories = storeInventories[product.id] || [];
-                    const transfer = transferring[product.id];
+                {filteredProducts.map((product) => {
+                  const isExpanded = expandedProducts.has(product.id);
+                  const inventories = storeInventories[product.id] || [];
+                  const transfer = transferring[product.id];
 
-                    return (
-                      <React.Fragment key={product.id}>
-                      <tr className="border-b hover:bg-muted/50">
-                        <td className="py-4 px-4 font-mono text-sm">{product.sku}</td>
-                        <td className="py-4 px-4 font-medium">{product.name}</td>
+                  return (
+                    <React.Fragment key={product.id}>
+                      <tr>
+                        <td className="py-4 px-4 font-mono text-sm text-white/90">{product.sku}</td>
+                        <td className="py-4 px-4 font-medium text-white">{product.name}</td>
                         <td className="py-4 px-4">
-                          <Badge variant="outline">
+                          <Badge variant="outline" className="text-emerald-300 font-semibold border-emerald-400/60 bg-emerald-500/10 brightness-125">
                             {getCategoryLabel(product.category)}
                           </Badge>
                         </td>
-                        <td className="py-4 px-4 text-right text-gray-600">
+                        <td className="py-4 px-4 text-right text-white/75">
                           ${product.cost_usd.toFixed(2)}
                         </td>
-                        <td className="py-4 px-4 text-right font-bold text-gray-900">
+                        <td className="py-4 px-4 text-right font-bold text-white">
                           ${product.sale_price_usd.toFixed(2)}
                         </td>
                         <td className="py-4 px-4 text-right">
-                          <span className={product.total_stock === 0 ? 'text-status-danger font-bold' : 'font-semibold text-main-text'}>
+                          <span className={product.total_stock === 0 ? 'text-red-400 font-bold' : 'font-semibold text-white'}>
                             {product.total_stock || 0}
                           </span>
                         </td>
@@ -764,21 +696,21 @@ export const AlmacenPage: React.FC = () => {
                       {isExpanded && (
                         <tr>
                           <td colSpan={8} className="p-0">
-                            <div className="bg-muted/30 p-6 border-t">
+                            <div className="glass-muted-dark p-6 border-t border-white/10">
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     {/* Información del Producto */}
                                     <div className="space-y-4">
-                                      <h3 className="text-xl font-bold">{product.name}</h3>
+                                      <h3 className="text-xl font-bold text-white">{product.name}</h3>
                                       <div className="space-y-2">
-                                        <p className="text-sm text-muted-foreground">
-                                          <span className="font-semibold">Categoría:</span> {getCategoryLabel(product.category)}
+                                        <p className="text-sm text-white/70">
+                                          <span className="font-semibold text-white/90">Categoría:</span> {getCategoryLabel(product.category)}
                                         </p>
-                                        <p className="text-sm text-muted-foreground">
-                                          <span className="font-semibold">SKU:</span> {product.sku}
+                                        <p className="text-sm text-white/70">
+                                          <span className="font-semibold text-white/90">SKU:</span> {product.sku}
                                         </p>
                                         {product.barcode && (
-                                          <p className="text-sm text-muted-foreground">
-                                            <span className="font-semibold">Código de Barras:</span> {product.barcode}
+                                          <p className="text-sm text-white/70">
+                                            <span className="font-semibold text-white/90">Código de Barras:</span> {product.barcode}
                                           </p>
                                         )}
                                       </div>
@@ -788,24 +720,20 @@ export const AlmacenPage: React.FC = () => {
                                     <div className="space-y-4">
                                       <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                          <p className="text-sm text-muted-foreground">Stock Total</p>
-                                          <p className="text-2xl font-bold">{product.total_stock || 0}</p>
+                                          <p className="text-sm text-white/70">Stock Total</p>
+                                          <p className="text-2xl font-bold text-white">{product.total_stock || 0}</p>
                                         </div>
                                         <div>
-                                          <p className="text-sm text-muted-foreground">Tiendas</p>
-                                          <p className="text-2xl font-bold">
-                                            {selectedStoreId && selectedStoreId !== 'all' 
-                                              ? inventories.filter(inv => inv.store_id === selectedStoreId).length 
-                                              : inventories.length}
-                                          </p>
+                                          <p className="text-sm text-white/70">Tiendas</p>
+                                          <p className="text-2xl font-bold text-white">{inventories.length}</p>
                                         </div>
                                         <div>
-                                          <p className="text-sm text-muted-foreground">Precio USD</p>
-                                          <p className="text-2xl font-bold">${product.sale_price_usd.toFixed(2)}</p>
+                                          <p className="text-sm text-white/70">Precio USD</p>
+                                          <p className="text-2xl font-bold text-white">${product.sale_price_usd.toFixed(2)}</p>
                                         </div>
                                         <div>
-                                          <p className="text-sm text-muted-foreground">Valor Total USD</p>
-                                          <p className="text-2xl font-bold text-green-600">
+                                          <p className="text-sm text-white/70">Valor Total USD</p>
+                                          <p className="text-2xl font-bold text-emerald-300">
                                             ${getTotalValue(product).toFixed(2)}
                                           </p>
                                         </div>
@@ -814,19 +742,14 @@ export const AlmacenPage: React.FC = () => {
 
                                     {/* Stock por Tienda */}
                                     <div className="md:col-span-2">
-                                      <h4 className="font-semibold mb-4 flex items-center gap-2">
-                                        <Store className="w-4 h-4" />
+                                      <h4 className="font-semibold mb-4 flex items-center gap-2 text-white">
+                                        <Store className="w-4 h-4 text-emerald-300 brightness-125" />
                                         Stock por Tienda
                                       </h4>
                                       <div className="space-y-2">
                                         {inventories
-                                          // 🔥 RESTAURACIÓN: Filtrar por sucursal seleccionada cuando hay filtro activo
-                                          .filter((inv) => {
-                                            if (selectedStoreId && selectedStoreId !== 'all') {
-                                              return inv.store_id === selectedStoreId;
-                                            }
-                                            return true; // Sin filtro, mostrar todas las sucursales
-                                          })
+                                          // 🛡️ SEGURIDAD: RLS ya filtró el inventario por store_id
+                                          // No necesitamos filtrar manualmente en el frontend
                                           .map((inv) => {
                                             const isEditing = inv.editing;
                                             const isTransferring = transfer?.from === inv.store_id;
@@ -837,48 +760,29 @@ export const AlmacenPage: React.FC = () => {
                                           return (
                                             <div
                                               key={inv.store_id}
-                                              className="flex items-center justify-between p-3 bg-background rounded-none shadow-xl shadow-green-500/10"
+                                              className="flex items-center justify-between p-3 glass-muted-dark rounded-lg border border-emerald-500/20 shadow-lg"
                                             >
                                               <div className="flex-1">
-                                                <p className="font-medium">{inv.store_name}</p>
+                                                <p className="font-medium text-white">{inv.store_name}</p>
                                               </div>
                                               
                                               {isEditing ? (
                                                 <div className="flex items-center gap-2">
                                                   <Input
                                                     type="number"
-                                                    step="1"
                                                     min="0"
-                                                    value={inv.tempQty || ''}
+                                                    value={inv.tempQty || 0}
                                                     onChange={(e) => {
-                                                      const val = e.target.value;
                                                       setStoreInventories(prev => {
                                                         const updated = { ...prev };
                                                         updated[product.id] = updated[product.id].map(i => {
                                                           if (i.store_id === inv.store_id) {
-                                                            // 🛡️ VALIDACIÓN CRÍTICA: Prevenir valores negativos
-                                                            if (val === '' || val === '-') {
-                                                              return { ...i, tempQty: 0 };
-                                                            }
-                                                            const num = parseInt(val, 10);
-                                                            if (!isNaN(num) && num >= 0) {
-                                                              return { ...i, tempQty: num };
-                                                            } else if (num < 0) {
-                                                              // Si es negativo, forzar a 0
-                                                              return { ...i, tempQty: 0 };
-                                                            }
-                                                            return { ...i, tempQty: 0 };
+                                                            return { ...i, tempQty: parseInt(e.target.value) || 0 };
                                                           }
                                                           return i;
                                                         });
                                                         return updated;
                                                       });
-                                                    }}
-                                                    onKeyDown={(e) => {
-                                                      // 🛡️ Prevenir que se escriba el signo "-"
-                                                      if (e.key === '-' || e.key === 'e' || e.key === 'E' || e.key === '+') {
-                                                        e.preventDefault();
-                                                      }
                                                     }}
                                                     className="w-24"
                                                   />
@@ -911,7 +815,7 @@ export const AlmacenPage: React.FC = () => {
                                                       <SelectValue placeholder="A tienda..." />
                                                     </SelectTrigger>
                                                     <SelectContent>
-                                                      {availableStores
+                                                      {stores
                                                         .filter(s => s.id !== transfer.from)
                                                         .map(store => (
                                                           <SelectItem key={store.id} value={store.id}>
@@ -922,38 +826,14 @@ export const AlmacenPage: React.FC = () => {
                                                   </Select>
                                                   <Input
                                                     type="number"
-                                                    step="1"
-                                                    min="0"
-                                                    value={transfer.qty || ''}
+                                                    min="1"
+                                                    max={inv.qty}
+                                                    value={transfer.qty}
                                                     onChange={(e) => {
-                                                      const val = e.target.value;
-                                                      // 🛡️ VALIDACIÓN CRÍTICA: Prevenir valores negativos
-                                                      if (val === '' || val === '-') {
-                                                        setTransferring(prev => ({
-                                                          ...prev,
-                                                          [product.id]: { ...transfer, qty: 0 },
-                                                        }));
-                                                        return;
-                                                      }
-                                                      const num = parseInt(val, 10);
-                                                      if (!isNaN(num) && num >= 0) {
-                                                        setTransferring(prev => ({
-                                                          ...prev,
-                                                          [product.id]: { ...transfer, qty: num },
-                                                        }));
-                                                      } else if (num < 0) {
-                                                        // Si es negativo, forzar a 0
-                                                        setTransferring(prev => ({
-                                                          ...prev,
-                                                          [product.id]: { ...transfer, qty: 0 },
-                                                        }));
-                                                      }
-                                                    }}
-                                                    onKeyDown={(e) => {
-                                                      // 🛡️ Prevenir que se escriba el signo "-"
-                                                      if (e.key === '-' || e.key === 'e' || e.key === 'E' || e.key === '+') {
-                                                        e.preventDefault();
-                                                      }
+                                                      setTransferring(prev => ({
+                                                        ...prev,
+                                                        [product.id]: { ...transfer, qty: parseInt(e.target.value) || 0 },
+                                                      }));
                                                     }}
                                                     className="w-24"
                                                     placeholder="Cantidad"
@@ -982,9 +862,13 @@ export const AlmacenPage: React.FC = () => {
                                                 </div>
                                               ) : (
                                                 <div className="flex items-center gap-2">
-                                                  <span className={inv.qty === 0 ? 'text-status-danger font-normal' : 'font-semibold text-main-text'}>
-                                                    {inv.qty === 0 ? 'SIN STOCK' : inv.qty}
-                                                  </span>
+                                                  {inv.qty === 0 ? (
+                                                    <Badge className="bg-red-500/20 text-red-300 border border-red-500/50 text-xs px-2 py-0 font-bold">
+                                                      SIN STOCK
+                                                    </Badge>
+                                                  ) : (
+                                                    <span className="font-semibold text-white">{inv.qty}</span>
+                                                  )}
                                                   {/* 🛡️ SEGURIDAD: RLS maneja los permisos de edición/transferencia */}
                                                   {/* Si el usuario no tiene permiso, las acciones fallarán en el backend */}
                                                   {!isReadOnly && (
@@ -1019,10 +903,9 @@ export const AlmacenPage: React.FC = () => {
                           </td>
                         </tr>
                       )}
-                      </React.Fragment>
-                    );
-                  })
-                )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1040,7 +923,7 @@ export const AlmacenPage: React.FC = () => {
       {showForm && (
         <ProductForm
           product={editingProduct || undefined}
-          stores={availableStores}
+          stores={stores}
           onClose={() => {
             setShowForm(false);
             setEditingProduct(null);

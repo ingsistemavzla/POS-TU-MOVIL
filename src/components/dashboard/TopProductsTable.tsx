@@ -24,7 +24,7 @@ export function TopProductsTable({ products, maxProducts = 10 }: TopProductsTabl
   // Si no hay productos, mostrar estructura vacía pero visible
   if (displayProducts.length === 0) {
     return (
-      <Card className="p-6 bg-[#1a1a1a] border border-[#333]">
+      <Card className="p-6 glass-panel-dense">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-semibold text-white">Top 10 Productos Más Vendidos</h3>
           <Button variant="outline" size="sm" className="border-[#333] hover:bg-[#2a2a2a] text-white">
@@ -40,14 +40,14 @@ export function TopProductsTable({ products, maxProducts = 10 }: TopProductsTabl
               key={index}
               className="flex items-center space-x-4 p-4 rounded-lg bg-white border border-gray-200 shadow-sm opacity-50"
             >
-              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-sm font-medium text-main-text flex-shrink-0">
+              <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-sm font-medium text-white flex-shrink-0">
                 {index}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-main-text text-sm sm:text-base truncate">
+                <p className="font-medium text-white text-sm sm:text-base truncate">
                   Sin datos
                 </p>
-                <p className="text-xs text-gray-600 sm:text-sm">
+                <p className="text-xs text-white/70 sm:text-sm">
                   0 unidades • N/A
                 </p>
                 <div className="mt-2 w-full bg-gray-200 rounded-full h-2 overflow-hidden">
@@ -68,9 +68,9 @@ export function TopProductsTable({ products, maxProducts = 10 }: TopProductsTabl
   }
 
   return (
-    <Card className="p-6">
+    <Card className="p-6 glass-panel-dense">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-semibold text-main-text">Top 10 Productos Más Vendidos</h3>
+        <h3 className="text-lg font-semibold text-white">Top 10 Productos Más Vendidos</h3>
         <Button variant="outline" size="sm">
           <BarChart3 className="w-4 h-4 mr-2" />
           Ver Todo
@@ -84,26 +84,26 @@ export function TopProductsTable({ products, maxProducts = 10 }: TopProductsTabl
           return (
             <div
               key={product.id}
-              className="flex items-center space-x-4 p-4 rounded-lg bg-white border border-gray-200 hover:border-accent-primary/30 hover:shadow-md transition-all shadow-sm"
+              className="flex items-center space-x-4 p-4 rounded-lg bg-white/5 border border-white/10 hover:border-[rgba(0,255,127,0.3)] hover:bg-white/10 transition-all"
             >
               {/* Ranking */}
-              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-sm font-medium text-main-text flex-shrink-0">
+              <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-sm font-medium text-white flex-shrink-0">
                 {index + 1}
               </div>
               
               {/* Product Info */}
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-main-text text-sm sm:text-base truncate">
+                <p className="font-medium text-white text-sm sm:text-base truncate">
                   {product.name}
                 </p>
-                <p className="text-xs text-gray-600 sm:text-sm">
+                <p className="text-xs text-white/70 sm:text-sm">
                   {product.quantity} unidades • {product.storeName || 'N/A'}
                 </p>
                 
                 {/* Horizontal Bar */}
-                <div className="mt-2 w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                <div className="mt-2 w-full bg-white/10 rounded-full h-2 overflow-hidden">
                   <div
-                    className="h-2 rounded-full bg-accent-primary transition-all duration-300"
+                    className="h-2 rounded-full bg-[#00FF7F] transition-all duration-300"
                     style={{ width: `${barWidth}%` }}
                   />
                 </div>
@@ -111,10 +111,10 @@ export function TopProductsTable({ products, maxProducts = 10 }: TopProductsTabl
               
               {/* Revenue */}
               <div className="text-right flex-shrink-0">
-                <p className="font-semibold text-accent-primary text-sm sm:text-base">
+                <p className="font-semibold text-[#00FF7F] text-sm sm:text-base">
                   {formatCurrency(product.revenueUSD)}
                 </p>
-                <p className="text-xs text-muted-foreground">USD</p>
+                <p className="text-xs text-white/70">USD</p>
               </div>
             </div>
           );

@@ -63,7 +63,7 @@ export function KreceStats() {
   const getChangeIcon = (change: number) => {
     if (change > 0) return <ArrowUpRight className="w-4 h-4 text-accent-primary" />;
     if (change < 0) return <ArrowDownRight className="w-4 h-4 text-status-danger" />;
-    return <TrendingUp className="w-4 h-4 text-gray-600" />;
+    return <TrendingUp className="w-4 h-4 text-white/90" />;
   };
 
   // Cambios para este mes vs mes anterior
@@ -87,7 +87,7 @@ export function KreceStats() {
         {/* LO QUE REALMENTE INGRESÓ A LA TIENDA (Iniciales) */}
         <Card className="border-none bg-accent-hover/10 shadow-md shadow-accent-primary/50">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-main-text">Ingresos Reales</CardTitle>
+            <CardTitle className="text-sm font-medium text-white">Ingresos Reales</CardTitle>
             <PiggyBank className="h-4 w-4 text-accent-primary" />
           </CardHeader>
           <CardContent>
@@ -99,7 +99,7 @@ export function KreceStats() {
             </p>
             <div className="flex items-center text-xs text-accent-primary mt-1">
               {getChangeIcon(initialAmountChange)}
-              <span className={initialAmountChange > 0 ? 'text-accent-primary' : initialAmountChange < 0 ? 'text-status-danger' : 'text-gray-600'}>
+              <span className={initialAmountChange > 0 ? 'text-accent-primary' : initialAmountChange < 0 ? 'text-status-danger' : 'text-white/90'}>
                 {Math.abs(initialAmountChange).toFixed(1)}% vs mes anterior
               </span>
             </div>
@@ -124,7 +124,7 @@ export function KreceStats() {
             </p>
             <div className="flex items-center text-xs text-orange-600 mt-1">
               {getChangeIcon(financedAmountChange)}
-              <span className={financedAmountChange > 0 ? 'text-orange-700' : financedAmountChange < 0 ? 'text-red-600' : 'text-gray-600'}>
+              <span className={financedAmountChange > 0 ? 'text-orange-700' : financedAmountChange < 0 ? 'text-red-600' : 'text-white/90'}>
                 {Math.abs(financedAmountChange).toFixed(1)}% vs mes anterior
               </span>
             </div>
@@ -137,15 +137,15 @@ export function KreceStats() {
         {/* Ventas con Krece */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-main-text">Ventas con Krece</CardTitle>
-            <TrendingUp className="h-4 w-4 text-gray-500" />
+            <CardTitle className="text-sm font-medium text-white">Ventas con Krece</CardTitle>
+            <TrendingUp className="h-4 w-4 text-white/90" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-main-text">{stats.totalKreceSales}</div>
-            <p className="text-xs text-gray-600">
+            <div className="text-2xl font-bold text-white">{stats.totalKreceSales}</div>
+            <p className="text-xs text-white/90">
               {stats.thisMonthKreceSales} este mes
             </p>
-            <div className="flex items-center text-xs text-gray-600 mt-1">
+            <div className="flex items-center text-xs text-white/90 mt-1">
               <span className="text-blue-600">
                 Promedio inicial: {formatCurrency(stats.averageInitialAmount, 'USD')}
               </span>
@@ -157,16 +157,16 @@ export function KreceStats() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-legacy-text">Por Cobrar</CardTitle>
-            <Clock className="h-4 w-4 text-gray-500" />
+            <Clock className="h-4 w-4 text-white/90" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-orange-600">
               {formatCurrency(stats.totalPendingUSD, 'USD')}
             </div>
-            <p className="text-xs text-gray-600">
+            <p className="text-xs text-white/90">
               {formatCurrency(stats.totalPendingBS, 'VES')}
             </p>
-            <div className="flex items-center text-xs text-gray-600 mt-1">
+            <div className="flex items-center text-xs text-white/90 mt-1">
               <Badge variant="outline" className="text-orange-600 border-orange-200">
                 {stats.countPending} cuentas pendientes
               </Badge>
@@ -187,10 +187,10 @@ export function KreceStats() {
             <div className="text-2xl font-bold text-accent-primary">
               {formatCurrency(stats.totalPaidUSD, 'USD')}
             </div>
-            <p className="text-xs text-gray-600">
+            <p className="text-xs text-white/90">
               {formatCurrency(stats.totalPaidBS, 'VES')}
             </p>
-            <div className="flex items-center text-xs text-gray-600 mt-1">
+            <div className="flex items-center text-xs text-white/90 mt-1">
               <Badge variant="outline" className="text-accent-primary border-none shadow-md shadow-accent-primary/10">
                 {stats.countPaid} cuentas pagadas
               </Badge>
@@ -208,7 +208,7 @@ export function KreceStats() {
             <div className="text-2xl font-bold text-blue-600">
               {stats.countActiveFinancing}
             </div>
-            <p className="text-xs text-gray-600">
+            <p className="text-xs text-white/90">
               En proceso de pago
             </p>
           </CardContent>
@@ -224,7 +224,7 @@ export function KreceStats() {
             <div className="text-2xl font-bold text-purple-600">
               {stats.averageInitialPercentage.toFixed(1)}%
             </div>
-            <p className="text-xs text-gray-600">
+            <p className="text-xs text-white/90">
               Del total de ventas
             </p>
           </CardContent>
@@ -243,7 +243,7 @@ export function KreceStats() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* INGRESOS REALES (Iniciales) */}
             <div className="space-y-3 p-4 border-none rounded-none bg-accent-hover/10 shadow-lg shadow-accent-primary/20">
-              <h4 className="font-medium text-main-text flex items-center gap-2">
+              <h4 className="font-medium text-white flex items-center gap-2">
                 <PiggyBank className="h-4 w-4 text-accent-primary" />
                 Ingresos Reales a la Tienda
               </h4>

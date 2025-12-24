@@ -231,7 +231,10 @@ export default function MainLayout() {
   }, [isSlowNetwork, retryProfileFetch, toast]);
 
   return (
-    <div className="min-h-screen bg-app-background text-main-text font-sans w-full">
+    <div className="min-h-screen relative text-white font-sans w-full">
+      {/* Fondo gradiente global */}
+      <div className="bg-app-gradient" />
+      
       {/* Sidebar - Mobile First */}
       <div
         className={cn(
@@ -344,12 +347,12 @@ export default function MainLayout() {
       {/* Main Content - Mobile First */}
       <div
         className={cn(
-          "transition-all duration-300 ease-in-out",
+          "transition-all duration-300 ease-in-out relative z-10",
           sidebarOpen ? "ml-64" : "ml-14 xs:ml-16"
         )}
       >
         {/* Top Bar - Mobile First */}
-        <header className="h-14 xs:h-16 shadow-sm" style={{ backgroundColor: 'rgba(2, 38, 1, 0.9)' }}>
+        <header className="h-14 xs:h-16 glass-navbar-internal border-b border-emerald-500/20">
           <div className="flex h-full items-center justify-between px-3 xs:px-6">
             <div className="min-w-0 flex-1 flex items-center space-x-2">
               <Link to="/dashboard" className="flex items-center space-x-2">
@@ -373,7 +376,7 @@ export default function MainLayout() {
 
 
         {/* Page Content - Mobile First */}
-        <main className="flex-1 p-3 xs:p-4 sm:p-6 min-h-screen">
+        <main className="flex-1 p-3 xs:p-4 sm:p-6 min-h-screen relative">
           {/* Alerta global de stock negativo - Solo para admins */}
           {userProfile?.role === 'admin' && (
             <div className="mb-4">

@@ -1,0 +1,312 @@
+{
+  "design_system": {
+    "name": "Login/Auth Page Design System",
+    "version": "1.0.0",
+    "description": "Ingeniería inversa del diseño de Login/Home - Sistema de estilos base para replicar en el resto de la aplicación"
+  },
+
+  "1_background_global": {
+    "css_variable": "--gradient-diagonal",
+    "css_value": "linear-gradient(135deg, #022601 0%, #00FF00 100%)",
+    "type": "linear-gradient",
+    "direction_degrees": 135,
+    "direction_name": "diagonal (top-left to bottom-right)",
+    "color_start": {
+      "hex": "#022601",
+      "rgb": "rgb(2, 38, 1)",
+      "description": "Verde oscuro muy profundo"
+    },
+    "color_end": {
+      "hex": "#00FF00",
+      "rgb": "rgb(0, 255, 0)",
+      "description": "Verde brillante (lime green)"
+    },
+    "implementation_css": "background: var(--gradient-diagonal);",
+    "implementation_tailwind": "style={{ background: 'var(--gradient-diagonal)' }}",
+    "implementation_inline": "background: linear-gradient(135deg, #022601 0%, #00FF00 100%);"
+  },
+
+  "2_glass_card": {
+    "css_class": "glass-card",
+    "css_variables": {
+      "background": "--glass-card: rgba(13, 13, 13, 0.7);"
+    },
+    "background_color": {
+      "rgba": "rgba(13, 13, 13, 0.7)",
+      "rgb": "rgb(13, 13, 13)",
+      "alpha_opacity": 0.7,
+      "hex_approximation": "#0D0D0D",
+      "description": "Negro muy oscuro con 70% de opacidad"
+    },
+    "backdrop_filter": {
+      "value": "blur(12px)",
+      "webkit_value": "-webkit-backdrop-filter: blur(12px);",
+      "standard_value": "backdrop-filter: blur(12px);",
+      "blur_pixels": 12,
+      "description": "Desenfoque de fondo para efecto glassmorphism"
+    },
+    "border": {
+      "width": "1px",
+      "style": "solid",
+      "color": "rgba(0, 255, 127, 0.2)",
+      "color_hex": "#00FF7F",
+      "color_rgb": "rgb(0, 255, 127)",
+      "opacity": 0.2,
+      "full_css": "border: 1px solid rgba(0, 255, 127, 0.2);",
+      "description": "Borde verde esmeralda sutil para efecto iluminado"
+    },
+    "box_shadow": {
+      "x_offset": "0px",
+      "y_offset": "4px",
+      "blur_radius": "20px",
+      "spread_radius": "0px",
+      "color": "rgba(0, 0, 0, 0.3)",
+      "full_css": "box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);",
+      "description": "Sombra suave para profundidad"
+    },
+    "border_radius": {
+      "tailwind_class": "rounded-2xl",
+      "value": "1rem",
+      "css": "border-radius: 1rem;"
+    },
+    "full_css_class": ".glass-card { background-color: rgba(13, 13, 13, 0.7); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border: 1px solid rgba(0, 255, 127, 0.2); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3); }"
+  },
+
+  "3_typography": {
+    "headings": {
+      "primary": {
+        "color": "#FFFFFF",
+        "css": "color: #ffffff;",
+        "tailwind": "text-white",
+        "example": "h2, h1 dentro de glass-card"
+      },
+      "style": {
+        "font_family": "'Poppins', sans-serif",
+        "font_weight": "bold",
+        "font_size_example": "text-2xl (1.5rem)"
+      }
+    },
+    "body_text": {
+      "primary": {
+        "color": "rgba(255, 255, 255, 0.9)",
+        "css": "color: rgba(255, 255, 255, 0.9);",
+        "tailwind": "text-white/90",
+        "description": "Texto principal en labels"
+      },
+      "secondary": {
+        "color": "rgba(255, 255, 255, 0.7)",
+        "css": "color: rgba(255, 255, 255, 0.7);",
+        "tailwind": "text-white/70",
+        "description": "Texto secundario/descripción"
+      },
+      "placeholder": {
+        "color": "rgba(255, 255, 255, 0.5)",
+        "css": "color: rgba(255, 255, 255, 0.5);",
+        "tailwind": "placeholder:text-white/50"
+      }
+    },
+    "inputs": {
+      "background": {
+        "rgba": "rgba(15, 23, 42, 0.5)",
+        "tailwind": "bg-slate-950/50",
+        "css": "background-color: rgba(15, 23, 42, 0.5);",
+        "description": "Fondo oscuro semitransparente"
+      },
+      "background_focus": {
+        "rgba": "rgba(15, 23, 42, 0.7)",
+        "css": "background-color: rgba(15, 23, 42, 0.7);",
+        "description": "Más oscuro en focus"
+      },
+      "border": {
+        "color": "rgba(16, 185, 129, 0.3)",
+        "tailwind": "border-emerald-500/30",
+        "css": "border-color: rgba(16, 185, 129, 0.3);"
+      },
+      "border_focus": {
+        "color": "#00FF7F",
+        "hex": "#00FF7F",
+        "tailwind": "focus:border-[#00FF7F]",
+        "css": "border-color: #00FF7F;"
+      },
+      "ring_focus": {
+        "color": "#00FF7F",
+        "tailwind": "focus:ring-[#00FF7F]",
+        "css": "outline-color: #00FF7F;"
+      },
+      "height": {
+        "value": "2.5rem",
+        "tailwind": "h-10",
+        "css": "height: 2.5rem;"
+      }
+    }
+  },
+
+  "4_primary_button": {
+    "css_variable": "--btn-gradient",
+    "css_value": "linear-gradient(135deg, #00FF7F 0%, #00FF00 50%, #00CC66 100%)",
+    "background": {
+      "type": "linear-gradient",
+      "direction_degrees": 135,
+      "stops": [
+        {
+          "position": "0%",
+          "hex": "#00FF7F",
+          "rgb": "rgb(0, 255, 127)",
+          "name": "Esmeralda brillante"
+        },
+        {
+          "position": "50%",
+          "hex": "#00FF00",
+          "rgb": "rgb(0, 255, 0)",
+          "name": "Verde lime"
+        },
+        {
+          "position": "100%",
+          "hex": "#00CC66",
+          "rgb": "rgb(0, 204, 102)",
+          "name": "Verde medio"
+        }
+      ]
+    },
+    "text": {
+      "color": "#FFFFFF",
+      "tailwind": "text-white",
+      "weight": "bold",
+      "css": "color: #ffffff; font-weight: bold;"
+    },
+    "hover_state": {
+      "filter": "brightness(1.1)",
+      "css": "filter: brightness(1.1);",
+      "javascript": "onMouseEnter: (e) => { e.currentTarget.style.filter = 'brightness(1.1)'; }",
+      "description": "Aumenta brillo en 10% al hacer hover"
+    },
+    "dimensions": {
+      "height": "2.5rem",
+      "tailwind_height": "h-10",
+      "width_full": "w-full",
+      "css": "width: 100%; height: 2.5rem;"
+    },
+    "transitions": {
+      "duration": "300ms",
+      "tailwind": "transition-all duration-300",
+      "css": "transition: all 0.3s ease;"
+    },
+    "implementation_css": "background: var(--btn-gradient);",
+    "implementation_inline": "background: linear-gradient(135deg, #00FF7F 0%, #00FF00 50%, #00CC66 100%);"
+  },
+
+  "5_secondary_button": {
+    "variant": "outline",
+    "background": "transparent",
+    "border": {
+      "width": "2px",
+      "color": "rgba(0, 255, 127, 0.5)",
+      "css": "border: 2px solid rgba(0, 255, 127, 0.5);",
+      "tailwind": "border-2 border-[#00FF7F]/50"
+    },
+    "border_hover": {
+      "color": "#00FF7F",
+      "css": "border-color: #00FF7F;",
+      "tailwind": "hover:border-[#00FF7F]"
+    },
+    "text": {
+      "color": "#00FF7F",
+      "css": "color: #00FF7F;",
+      "tailwind": "text-[#00FF7F]"
+    },
+    "transitions": {
+      "duration": "300ms",
+      "tailwind": "transition-all duration-300"
+    }
+  },
+
+  "6_link_button": {
+    "color": "#00FF7F",
+    "color_hover": "#00ff9d",
+    "css": "color: #00FF7F;",
+    "css_hover": "color: #00ff9d;",
+    "tailwind": "text-[#00FF7F] hover:text-[#00ff9d]",
+    "underline": {
+      "offset": "4px",
+      "tailwind": "underline-offset-4"
+    }
+  },
+
+  "7_glass_navbar": {
+    "css_class": "glass-navbar",
+    "css_variable": "--glass-navbar: rgba(2, 38, 1, 0.85);",
+    "background_color": {
+      "rgba": "rgba(2, 38, 1, 0.85)",
+      "rgb": "rgb(2, 38, 1)",
+      "alpha_opacity": 0.85,
+      "hex_approximation": "#022601",
+      "description": "Verde oscuro con 85% de opacidad"
+    },
+    "backdrop_filter": {
+      "value": "blur(12px)",
+      "css": "backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);"
+    },
+    "border": {
+      "bottom": "1px solid rgba(16, 185, 129, 0.2)",
+      "tailwind": "border-b border-emerald-500/20"
+    },
+    "full_css_class": ".glass-navbar { background-color: rgba(2, 38, 1, 0.85); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }"
+  },
+
+  "8_colors_palette": {
+    "primary_neon": {
+      "hex": "#00FF7F",
+      "rgb": "rgb(0, 255, 127)",
+      "css_variable": "--color-primary: #00FF7F;",
+      "description": "Verde esmeralda brillante principal"
+    },
+    "neon_secondary": {
+      "hex": "#00ff9d",
+      "rgb": "rgb(0, 255, 157)",
+      "css_variable": "--color-neon: #00ff9d;",
+      "description": "Verde esmeralda alternativo"
+    },
+    "accent_green": {
+      "hex": "#00FF00",
+      "rgb": "rgb(0, 255, 0)",
+      "css_variable": "--color-accent: #00FF00;",
+      "description": "Verde lime/accent"
+    },
+    "dark_base": {
+      "hex": "#022601",
+      "rgb": "rgb(2, 38, 1)",
+      "description": "Verde oscuro base para fondos"
+    }
+  },
+
+  "9_tailwind_utilities": {
+    "glass_card_usage": "className=\"glass-card rounded-2xl p-8\"",
+    "background_gradient": "style={{ background: 'var(--gradient-diagonal)' }}",
+    "button_primary": "style={{ background: 'var(--btn-gradient)' }} className=\"text-white font-bold transition-all duration-300\"",
+    "text_primary": "text-white",
+    "text_secondary": "text-white/70",
+    "text_label": "text-white/90",
+    "input_base": "bg-slate-950/50 border-emerald-500/30 text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
+  },
+
+  "10_css_variables_reference": {
+    ":root": {
+      "--color-bg": "#0a0a0a",
+      "--color-primary": "#00FF7F",
+      "--color-neon": "#00ff9d",
+      "--color-neon-secondary": "#00ff40",
+      "--color-accent": "#00FF00",
+      "--gradient-diagonal": "linear-gradient(135deg, #022601 0%, #00FF00 100%)",
+      "--btn-gradient": "linear-gradient(135deg, #00FF7F 0%, #00FF00 50%, #00CC66 100%)",
+      "--glass-navbar": "rgba(2, 38, 1, 0.85)",
+      "--glass-card": "rgba(13, 13, 13, 0.7)"
+    }
+  },
+
+  "11_complete_css_example": {
+    "glass_card_class": ".glass-card { background-color: rgba(13, 13, 13, 0.7); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border: 1px solid rgba(0, 255, 127, 0.2); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3); }",
+    "background_base": "background: linear-gradient(135deg, #022601 0%, #00FF00 100%);",
+    "primary_button": "background: linear-gradient(135deg, #00FF7F 0%, #00FF00 50%, #00CC66 100%); color: #ffffff; font-weight: bold; transition: all 0.3s ease;",
+    "primary_button_hover": "filter: brightness(1.1);"
+  }
+}

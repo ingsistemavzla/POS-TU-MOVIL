@@ -550,12 +550,12 @@ export const ArticulosPage: React.FC = () => {
   );
 
   return (
-    <div className="container mx-auto p-6 space-y-6 bg-gray-50 min-h-screen">
+    <div className="container mx-auto px-4 py-6 space-y-6 min-h-screen">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Artículos</h1>
-          <p className="text-muted-foreground">Vista de tarjetas - Gestión de productos e inventario</p>
+          <h1 className="text-3xl font-bold text-white">Artículos</h1>
+          <p className="text-white/70">Vista de tarjetas - Gestión de productos e inventario</p>
         </div>
         {/* Solo admins pueden crear productos */}
         {userProfile?.role === 'admin' && (
@@ -581,17 +581,17 @@ export const ArticulosPage: React.FC = () => {
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/90 w-4 h-4" />
                 <Input
                   placeholder="Buscar por nombre, SKU o código de barras..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="pl-10 glass-input"
                 />
               </div>
             </div>
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-full md:w-[200px]">
+              <SelectTrigger className="w-full md:w-[200px] glass-input">
                 <SelectValue placeholder="Todas las categorías" />
               </SelectTrigger>
               <SelectContent>
@@ -615,7 +615,7 @@ export const ArticulosPage: React.FC = () => {
           ))}
         </div>
       ) : filteredProducts.length === 0 ? (
-        <div className="p-8 text-center text-muted-foreground">
+        <div className="p-8 text-center text-white/90">
           <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
           <p>No se encontraron productos</p>
         </div>
@@ -640,12 +640,14 @@ export const ArticulosPage: React.FC = () => {
                   {/* Información básica */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">SKU:</span>
+                      <span className="text-white/90">SKU:</span>
                       <span className="font-mono font-semibold">{product.sku}</span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Categoría:</span>
-                      <Badge variant="outline">{getCategoryLabel(product.category)}</Badge>
+                      <span className="text-white/90">Categoría:</span>
+                      <Badge variant="outline" className="text-emerald-300 font-semibold border-emerald-400/60 bg-emerald-500/10 brightness-125">
+                        {getCategoryLabel(product.category)}
+                      </Badge>
                     </div>
                   </div>
 
@@ -679,20 +681,22 @@ export const ArticulosPage: React.FC = () => {
                           const isManager = userProfile?.role === 'manager';
 
                           return (
-                            <div key={inv.store_id} className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded">
-                              <span className="text-muted-foreground">{inv.store_name}:</span>
+                            <div key={inv.store_id} className="flex items-center justify-between text-sm p-2 glass-muted-dark rounded-lg border border-emerald-500/20">
+                              <span className="text-white font-medium">{inv.store_name}:</span>
                               
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-2">
                                 {inv.qty === 0 ? (
-                                  <Badge className="bg-white text-red-600 border border-red-500 text-[9px] px-1 py-0 font-medium hover:bg-red-600 hover:text-white transition-colors">
+                                  <Badge className="bg-red-500/20 text-red-300 border border-red-500/50 text-[9px] px-1 py-0 font-medium hover:bg-red-500/30 hover:text-red-200 transition-colors">
                                     Sin Stock
                                   </Badge>
                                 ) : (
-                                  <span className="font-semibold text-green-700">
+                                  <span className="font-semibold text-emerald-300">
                                     {inv.qty}
                                   </span>
                                 )}
                                 
+                                {/* Iconos de Acción: Edición y Transferencia */}
+                                <div className="flex items-center gap-2">
                                 {/* Popover de Edición */}
                                 <Popover open={isEditingOpen} onOpenChange={(open) => {
                                   if (!open) {
@@ -704,36 +708,35 @@ export const ArticulosPage: React.FC = () => {
                                   {/* Solo admins pueden editar stock - Managers NO pueden */}
                                   {userProfile?.role === 'admin' && !isManager && (
                                     <PopoverTrigger asChild>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="h-7 w-7 p-0"
+                                      <button
+                                        className="group p-1.5 bg-indigo-500/20 rounded-lg border border-indigo-500/30 hover:bg-indigo-400 hover:border-indigo-400 transition-colors"
                                         title="Editar stock"
                                       >
-                                        <Edit className="w-3 h-3 text-[#1e3a8a]" />
-                                      </Button>
+                                        <Edit className="h-3 w-3 text-indigo-400 brightness-125 group-hover:text-white transition-colors" />
+                                      </button>
                                     </PopoverTrigger>
                                   )}
                                   {/* Managers NO pueden editar */}
                                   {isManager && (
-                                    <span className="text-xs text-muted-foreground ml-1">Solo lectura</span>
+                                    <span className="text-xs text-white/90 ml-1">Solo lectura</span>
                                   )}
                                   <PopoverContent className="w-64" align="end">
                                     <div className="space-y-3">
                                       <div className="space-y-2">
-                                        <Label className="text-sm font-semibold">Editar Stock</Label>
-                                        <p className="text-xs text-muted-foreground">
+                                        <Label className="text-sm font-semibold text-white">Editar Stock</Label>
+                                        <p className="text-xs text-white/70">
                                           {inv.store_name}
                                         </p>
                                       </div>
                                       <div className="space-y-2">
-                                        <Label htmlFor={`edit-qty-${inv.store_id}`}>Nueva Cantidad</Label>
+                                        <Label htmlFor={`edit-qty-${inv.store_id}`} className="text-white/90">Nueva Cantidad</Label>
                                         <Input
                                           id={`edit-qty-${inv.store_id}`}
                                           type="number"
                                           step="1"
                                           min="0"
                                           value={editQty}
+                                          className="glass-input text-white w-full"
                                           onChange={(e) => {
                                             const val = e.target.value;
                                             // 🛡️ VALIDACIÓN CRÍTICA: Prevenir valores negativos
@@ -755,14 +758,13 @@ export const ArticulosPage: React.FC = () => {
                                               e.preventDefault();
                                             }
                                           }}
-                                          className="w-full"
                                           placeholder="0"
                                         />
                                       </div>
                                       <div className="flex items-center gap-2">
                                         <Button
                                           size="sm"
-                                          className="flex-1"
+                                          className="flex-1 bg-primary-dark text-white hover:bg-primary-dark/90"
                                           onClick={() => saveStock(product.id, inv.store_id)}
                                         >
                                           <Save className="w-3 h-3 mr-1" />
@@ -771,7 +773,7 @@ export const ArticulosPage: React.FC = () => {
                                         <Button
                                           size="sm"
                                           variant="outline"
-                                          className="flex-1"
+                                          className="flex-1 glass-input text-white hover:bg-white/10"
                                           onClick={() => setEditingPopover(null)}
                                         >
                                           <X className="w-3 h-3 mr-1" />
@@ -797,28 +799,26 @@ export const ArticulosPage: React.FC = () => {
                                     }
                                   }}>
                                     <PopoverTrigger asChild>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="h-7 w-7 p-0"
+                                      <button
+                                        className="group p-1.5 bg-purple-500/20 rounded-lg border border-purple-500/30 hover:bg-purple-400 hover:border-purple-400 transition-colors"
                                         title="Transferir stock"
                                       >
-                                        <ArrowRightLeft className="w-3 h-3 text-[#581c87]" />
-                                      </Button>
+                                        <ArrowRightLeft className="h-3 w-3 text-purple-400 brightness-125 group-hover:text-white transition-colors" />
+                                      </button>
                                     </PopoverTrigger>
                                     <PopoverContent className="w-72" align="end">
                                       <div className="space-y-3">
                                         <div className="space-y-2">
-                                          <Label className="text-sm font-semibold">Transferir Stock</Label>
+                                          <Label className="text-sm font-semibold text-white">Transferir Stock</Label>
                                           {/* Origen inferido del contexto - Destacado */}
-                                          <div className="p-2 bg-primary/10 rounded-sm shadow-md shadow-green-500/40 border border-green-500/30">
-                                            <p className="text-xs font-medium text-primary">
-                                              Desde: <span className="font-bold">{inv.store_name}</span>
+                                          <div className="p-2 glass-green-dark rounded-sm shadow-md shadow-emerald-500/30 border border-emerald-500/40">
+                                            <p className="text-xs font-medium text-emerald-300">
+                                              Desde: <span className="font-bold text-white">{inv.store_name}</span>
                                             </p>
                                           </div>
                                         </div>
                                         <div className="space-y-2">
-                                          <Label htmlFor={`transfer-to-${inv.store_id}`}>Tienda Destino</Label>
+                                          <Label htmlFor={`transfer-to-${inv.store_id}`} className="text-white/90">Tienda Destino</Label>
                                           <Select
                                             value={transfer?.to || ''}
                                             onValueChange={(value) => {
@@ -831,7 +831,7 @@ export const ArticulosPage: React.FC = () => {
                                               }));
                                             }}
                                           >
-                                            <SelectTrigger id={`transfer-to-${inv.store_id}`}>
+                                            <SelectTrigger id={`transfer-to-${inv.store_id}`} className="glass-input">
                                               <SelectValue placeholder="Selecciona destino..." />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -847,13 +847,14 @@ export const ArticulosPage: React.FC = () => {
                                           </Select>
                                         </div>
                                         <div className="space-y-2">
-                                          <Label htmlFor={`transfer-qty-${inv.store_id}`}>Cantidad</Label>
+                                          <Label htmlFor={`transfer-qty-${inv.store_id}`} className="text-white/90">Cantidad</Label>
                                           <Input
                                             id={`transfer-qty-${inv.store_id}`}
                                             type="number"
                                             step="1"
                                             min="0"
                                             value={transfer?.qty || ''}
+                                            className="glass-input"
                                             onChange={(e) => {
                                               const val = e.target.value;
                                               // 🛡️ VALIDACIÓN CRÍTICA: Prevenir valores negativos
@@ -896,14 +897,14 @@ export const ArticulosPage: React.FC = () => {
                                             className="w-full"
                                             placeholder="Cantidad a transferir"
                                           />
-                                          <p className="text-xs text-muted-foreground">
+                                          <p className="text-xs text-white/90">
                                             Disponible: {inv.qty} unidades
                                           </p>
                                         </div>
                                         <div className="flex items-center gap-2">
                                           <Button
                                             size="sm"
-                                            className="flex-1"
+                                            className="flex-1 bg-primary-dark text-white hover:bg-primary-dark/90"
                                             onClick={() => executeTransfer(product.id)}
                                             disabled={!transfer?.to || !transfer?.qty || transfer.qty <= 0}
                                           >
@@ -913,7 +914,7 @@ export const ArticulosPage: React.FC = () => {
                                           <Button
                                             size="sm"
                                             variant="outline"
-                                            className="flex-1"
+                                            className="flex-1 glass-input text-white hover:bg-white/10"
                                             onClick={() => {
                                               setTransferPopover(null);
                                               setTransferring(prev => {
@@ -931,6 +932,7 @@ export const ArticulosPage: React.FC = () => {
                                     </PopoverContent>
                                   </Popover>
                                 )}
+                                </div>
                               </div>
                             </div>
                           );
@@ -940,7 +942,7 @@ export const ArticulosPage: React.FC = () => {
                   )}
 
                   {inventories.length === 0 && (
-                    <div className="text-sm text-muted-foreground text-center p-2 bg-muted/30 rounded">
+                    <div className="text-sm text-white/90 text-center p-2 glass-muted-dark rounded-lg border border-emerald-500/20">
                       Sin stock en ninguna tienda
                     </div>
                   )}
@@ -956,7 +958,7 @@ export const ArticulosPage: React.FC = () => {
                         {product.total_stock || 0}
                       </span>
                     </div>
-                    <div className="mt-2 text-xs text-muted-foreground">
+                    <div className="mt-2 text-xs text-white/90">
                       Valor: ${getTotalValue(product).toFixed(2)}
                     </div>
                   </div>
@@ -964,12 +966,12 @@ export const ArticulosPage: React.FC = () => {
                   {/* Precio y Valor */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Precio:</span>
+                      <span className="text-white/90">Precio:</span>
                       <span className="font-semibold">${product.sale_price_usd.toFixed(2)}</span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Valor:</span>
-                      <span className="font-semibold text-gray-600">${getTotalValue(product).toFixed(2)}</span>
+                      <span className="text-white/90">Valor:</span>
+                      <span className="font-semibold text-white/90">${getTotalValue(product).toFixed(2)}</span>
                     </div>
                   </div>
 

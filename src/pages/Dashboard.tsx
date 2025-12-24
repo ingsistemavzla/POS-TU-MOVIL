@@ -223,7 +223,7 @@ export default function Dashboard() {
       <CardContent>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="p-4 bg-white rounded-lg border">
+            <div key={i} className="p-4 glass-panel rounded-lg border">
               <Skeleton className="h-4 w-32 mb-2" />
               <Skeleton className="h-8 w-40 mb-2" />
               <Skeleton className="h-3 w-24" />
@@ -246,8 +246,8 @@ export default function Dashboard() {
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-legacy-text mb-2">Error al cargar datos</h3>
-            <p className="text-gray-600">{error}</p>
+            <h3 className="text-lg font-semibold text-white mb-2">Error al cargar datos</h3>
+            <p className="text-white/90">{error}</p>
           </div>
         </div>
       </div>
@@ -259,8 +259,8 @@ export default function Dashboard() {
     return (
       <div className="space-y-6 p-4 sm:p-6">
         <div className="text-center py-8">
-          <Package className="w-12 h-12 mx-auto mb-4 opacity-50 text-gray-400" />
-          <p className="text-gray-600">No hay datos para mostrar</p>
+          <Package className="w-12 h-12 mx-auto mb-4 opacity-50 text-white/90" />
+          <p className="text-white/90">No hay datos para mostrar</p>
         </div>
       </div>
     );
@@ -271,8 +271,8 @@ export default function Dashboard() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-legacy-text">Dashboard Multitienda</h1>
-          <p className="text-sm text-gray-600 mt-1">
+          <h1 className="text-2xl font-bold text-white">Dashboard Multitienda</h1>
+          <p className="text-sm text-white/90 mt-1">
             {company?.name} - Resumen de ventas y métricas
           </p>
         </div>
@@ -282,7 +282,7 @@ export default function Dashboard() {
             className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
               selectedPeriod === 'today'
                 ? 'bg-brand-primary text-legacy-sidebar font-medium'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                : 'glass-panel text-white/90 hover:bg-white/10'
             }`}
           >
             Hoy
@@ -292,7 +292,7 @@ export default function Dashboard() {
             className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
               selectedPeriod === 'yesterday'
                 ? 'bg-brand-primary text-legacy-sidebar font-medium'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                : 'glass-panel text-white/90 hover:bg-white/10'
             }`}
           >
             Ayer
@@ -302,7 +302,7 @@ export default function Dashboard() {
             className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
               selectedPeriod === 'thisMonth'
                 ? 'bg-brand-primary text-legacy-sidebar font-medium'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                : 'glass-panel text-white/90 hover:bg-white/10'
             }`}
           >
             Este Mes
@@ -381,18 +381,18 @@ export default function Dashboard() {
         {/* Tarjeta 1: Venta Bruta */}
         <Card className="border-l-4 border-blue-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-legacy-text">Venta Bruta</CardTitle>
+            <CardTitle className="text-sm font-medium text-white">Venta Bruta</CardTitle>
             <DollarSign className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-legacy-text">
+            <div className="text-2xl font-bold text-white">
               {formatCurrency(periodData?.sales || 0)}
             </div>
-            <p className="text-xs text-gray-600 mt-1">
+            <p className="text-xs text-white/90 mt-1">
               Volumen total transaccionado • {periodData?.periodLabel}
             </p>
             {periodData && (
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-white/90 mt-1">
                 {calculateChange(periodData.sales, periodData.previousSales).toFixed(1)}% vs {periodData.previousPeriodLabel}
               </p>
             )}
@@ -402,14 +402,14 @@ export default function Dashboard() {
         {/* Tarjeta 2: Ingreso Neto (Caja) */}
         <Card className="border-l-4 border-green-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-legacy-text">Ingreso Neto (Caja)</CardTitle>
+            <CardTitle className="text-sm font-medium text-white">Ingreso Neto (Caja)</CardTitle>
             <Wallet className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
               {formatCurrency(currentFinancialHealth?.net_income_usd || 0)}
             </div>
-            <p className="text-xs text-gray-600 mt-1">
+            <p className="text-xs text-white/90 mt-1">
               Disponible real • {periodData?.periodLabel}
             </p>
             <p className="text-xs text-green-600 mt-1 font-medium">
@@ -423,14 +423,14 @@ export default function Dashboard() {
         {/* Tarjeta 3: Crédito Pendiente */}
         <Card className="border-l-4 border-orange-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-legacy-text">Crédito Pendiente</CardTitle>
+            <CardTitle className="text-sm font-medium text-white">Crédito Pendiente</CardTitle>
             <Clock className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-orange-600">
               {formatCurrency(currentFinancialHealth?.receivables_usd || 0)}
             </div>
-            <p className="text-xs text-gray-600 mt-1">
+            <p className="text-xs text-white/90 mt-1">
               Cashea + Krece • {periodData?.periodLabel}
             </p>
             {currentFinancialHealth?.receivables_breakdown && (
@@ -468,7 +468,7 @@ export default function Dashboard() {
         return (
           <Card className={`border-l-4 ${health.borderColor}`}>
             <CardHeader>
-              <CardTitle className="text-sm font-medium text-legacy-text flex items-center gap-2">
+              <CardTitle className="text-sm font-medium text-white flex items-center gap-2">
                 <TrendingUp className="w-4 h-4" />
                 Salud de Liquidez (Cash Flow vs Deuda)
               </CardTitle>
@@ -489,14 +489,14 @@ export default function Dashboard() {
         {/* Financiamiento Krece */}
         <Card className="border-l-4 border-blue-400">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-legacy-text">Financiamiento Krece</CardTitle>
+            <CardTitle className="text-sm font-medium text-white">Financiamiento Krece</CardTitle>
             <CreditCard className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-legacy-text">
+            <div className="text-2xl font-bold text-white">
               {formatCurrency(kreceStats.totalFinancedAmountUSD || 0)}
             </div>
-            <p className="text-xs text-gray-600 mt-1">{periodData?.periodLabel}</p>
+            <p className="text-xs text-white/90 mt-1">{periodData?.periodLabel}</p>
             <p className="text-xs text-blue-600 mt-1">
               {currentFinancialHealth?.sales_by_method_count?.krece || 0} transacciones
             </p>
@@ -506,14 +506,14 @@ export default function Dashboard() {
         {/* Ingreso por Krece */}
         <Card className="border-l-4 border-blue-400">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-legacy-text">Ingreso por Krece</CardTitle>
+            <CardTitle className="text-sm font-medium text-white">Ingreso por Krece</CardTitle>
             <TrendingUp className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-legacy-text">
+            <div className="text-2xl font-bold text-white">
               {formatCurrency(kreceStats.totalInitialAmountUSD || 0)}
             </div>
-            <p className="text-xs text-gray-600 mt-1">{periodData?.periodLabel}</p>
+            <p className="text-xs text-white/90 mt-1">{periodData?.periodLabel}</p>
             <p className="text-xs text-blue-600 mt-1">
               Iniciales recibidas
             </p>
@@ -523,14 +523,14 @@ export default function Dashboard() {
         {/* Financiamiento Cashea */}
         <Card className="border-l-4 border-indigo-400">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-legacy-text">Financiamiento Cashea</CardTitle>
+            <CardTitle className="text-sm font-medium text-white">Financiamiento Cashea</CardTitle>
             <CreditCard className="h-4 w-4 text-indigo-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-legacy-text">
+            <div className="text-2xl font-bold text-white">
               {formatCurrency(currentFinancialHealth?.receivables_breakdown?.cashea_usd || 0)}
             </div>
-            <p className="text-xs text-gray-600 mt-1">{periodData?.periodLabel}</p>
+            <p className="text-xs text-white/90 mt-1">{periodData?.periodLabel}</p>
             <p className="text-xs text-indigo-600 mt-1">
               {currentFinancialHealth?.sales_by_method_count?.cashea || 0} transacciones
             </p>
@@ -540,14 +540,14 @@ export default function Dashboard() {
         {/* Ventas Contado */}
         <Card className="border-l-4 border-green-400">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-legacy-text">Ventas Contado</CardTitle>
+            <CardTitle className="text-sm font-medium text-white">Ventas Contado</CardTitle>
             <ShoppingCart className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-legacy-text">
+            <div className="text-2xl font-bold text-white">
               {currentFinancialHealth?.sales_by_method_count?.cash || 0}
             </div>
-            <p className="text-xs text-gray-600 mt-1">Transacciones • {periodData?.periodLabel}</p>
+            <p className="text-xs text-white/90 mt-1">Transacciones • {periodData?.periodLabel}</p>
             <p className="text-xs text-green-600 mt-1">
               {periodData?.orders && periodData.orders > 0
                 ? ((currentFinancialHealth?.sales_by_method_count?.cash || 0) / periodData.orders * 100).toFixed(1)
@@ -565,7 +565,7 @@ export default function Dashboard() {
           {/* Bar Chart - Resumen por Tienda */}
           <Card>
           <CardHeader>
-            <CardTitle className="text-lg font-semibold text-legacy-text flex items-center gap-2">
+            <CardTitle className="text-lg font-semibold text-white flex items-center gap-2">
               <BarChart3 className="w-5 h-5" />
               Resumen por Tienda
             </CardTitle>
@@ -598,7 +598,7 @@ export default function Dashboard() {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex items-center justify-center h-[300px] text-gray-500">
+              <div className="flex items-center justify-center h-[300px] text-white/90">
                 <p>No hay datos de tiendas</p>
               </div>
             )}
@@ -608,7 +608,7 @@ export default function Dashboard() {
         {/* Donut Chart - Métodos de Pago */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg font-semibold text-legacy-text flex items-center gap-2">
+            <CardTitle className="text-lg font-semibold text-white flex items-center gap-2">
               <PieChartIcon className="w-5 h-5" />
               Métodos de Pago
             </CardTitle>
@@ -648,9 +648,9 @@ export default function Dashboard() {
                 </ResponsiveContainer>
                 {/* ✅ NUEVO: Resumen de Financiamiento */}
                 {currentFinancialHealth?.receivables_usd && currentFinancialHealth.receivables_usd > 0 && (
-                  <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-sm font-semibold text-gray-700 mb-2">Resumen de Crédito Pendiente:</p>
-                    <div className="space-y-1 text-xs text-gray-600">
+                  <div className="mt-4 p-3 glass-panel rounded-lg border border-white/10">
+                    <p className="text-sm font-semibold text-white/90 mb-2">Resumen de Crédito Pendiente:</p>
+                    <div className="space-y-1 text-xs text-white/90">
                       <div className="flex justify-between">
                         <span>Total Crédito:</span>
                         <span className="font-semibold">{formatCurrency(currentFinancialHealth.receivables_usd)}</span>
@@ -682,7 +682,7 @@ export default function Dashboard() {
                 )}
               </>
             ) : (
-              <div className="flex items-center justify-center h-[300px] text-gray-500">
+              <div className="flex items-center justify-center h-[300px] text-white/90">
                 <p>No hay datos de pagos</p>
               </div>
             )}
@@ -697,7 +697,7 @@ export default function Dashboard() {
       ) : (
         <Card className="bg-gradient-to-r from-slate-50 to-blue-50 border-2 border-slate-200">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg font-semibold text-legacy-text">
+          <CardTitle className="flex items-center gap-2 text-lg font-semibold text-white">
             <Wallet className="w-5 h-5 text-green-600" />
             Resumen Ejecutivo para Cierre - {periodData?.periodLabel}
           </CardTitle>
@@ -719,7 +719,7 @@ export default function Dashboard() {
             </div>
 
             {/* Columna 2: Crédito Otorgado */}
-            <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
+            <div className="p-4 glass-panel rounded-lg border border-orange-500/30">
               <div className="flex items-center gap-2 mb-2">
                 <Clock className="w-4 h-4 text-orange-600" />
                 <span className="text-sm font-medium text-orange-800">Crédito Otorgado {periodData?.periodLabel}</span>
@@ -738,7 +738,7 @@ export default function Dashboard() {
             </div>
 
             {/* Columna 3: Total Transaccionado */}
-            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <div className="p-4 glass-panel rounded-lg border border-blue-500/30">
               <div className="flex items-center gap-2 mb-2">
                 <DollarSign className="w-4 h-4 text-blue-600" />
                 <span className="text-sm font-medium text-blue-800">Total Transaccionado</span>
@@ -772,7 +772,7 @@ export default function Dashboard() {
         {/* Top Productos */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg font-semibold text-legacy-text flex items-center gap-2">
+            <CardTitle className="text-lg font-semibold text-white flex items-center gap-2">
               <Package className="w-5 h-5" />
               Top Productos Vendidos
             </CardTitle>
@@ -788,28 +788,28 @@ export default function Dashboard() {
                   .map((product, index) => (
                   <div
                     key={`top-product-${product.id}-${index}`}
-                    className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                    className="flex items-center justify-between p-4 glass-panel rounded-lg hover:bg-white/10 transition-colors"
                   >
                     <div className="flex items-center space-x-3">
                       <div className="w-8 h-8 rounded-full bg-brand-primary/10 flex items-center justify-center text-sm font-medium text-brand-primary">
                         {index + 1}
                       </div>
                       <div>
-                        <p className="font-medium text-legacy-text text-sm">{product.name}</p>
-                        <p className="text-xs text-gray-600">{product.storeName}</p>
+                        <p className="font-medium text-white text-sm">{product.name}</p>
+                        <p className="text-xs text-white/90">{product.storeName}</p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-legacy-text text-sm">
+                      <p className="font-semibold text-white text-sm">
                         {formatCurrency(product.revenueUSD)}
                       </p>
-                      <p className="text-xs text-gray-600">{product.quantity} unidades</p>
+                      <p className="text-xs text-white/90">{product.quantity} unidades</p>
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-white/90">
                 <p>No hay productos vendidos</p>
               </div>
             )}
@@ -835,11 +835,11 @@ export default function Dashboard() {
                   .map((product, index) => (
                   <div
                     key={`critical-stock-${product.id}-${index}`}
-                    className="flex items-center justify-between p-4 bg-red-50 rounded-lg border border-red-200"
+                    className="flex items-center justify-between p-4 glass-panel rounded-lg border border-red-500/30"
                   >
                     <div className="flex-1">
-                      <p className="font-medium text-legacy-text text-sm">{product.name}</p>
-                      <p className="text-xs text-gray-600">SKU: {product.sku} • {product.storeName}</p>
+                      <p className="font-medium text-white text-sm">{product.name}</p>
+                      <p className="text-xs text-white/90">SKU: {product.sku} • {product.storeName}</p>
                       <p className="text-xs text-red-600 mt-1">
                         Stock: {product.currentStock} / Mín: {product.minStock}
                       </p>

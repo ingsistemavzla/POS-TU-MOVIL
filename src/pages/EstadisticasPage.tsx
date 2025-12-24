@@ -607,7 +607,7 @@ export const EstadisticasPage: React.FC = () => {
           </div>
           {/* Texto de carga */}
           <div className="space-y-2">
-            <p className="text-lg font-semibold text-foreground animate-pulse">Cargando estadísticas...</p>
+            <p className="text-lg font-semibold text-white animate-pulse">Cargando estadísticas...</p>
             <div className="flex justify-center gap-1">
               <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
               <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
@@ -629,15 +629,16 @@ export const EstadisticasPage: React.FC = () => {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold flex items-center gap-2">
+            <h1 className="text-3xl font-bold flex items-center gap-2 text-white">
               <BarChart3 className="w-8 h-8" />
               Estadísticas
             </h1>
-            <Badge variant="destructive" className="text-sm font-bold px-3 py-1 animate-pulse">
-              🔴 PRUEBA
+            <Badge className="text-sm font-bold px-3 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-400/50 shadow-lg shadow-emerald-500/30 flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              V-NEON GLASS
             </Badge>
           </div>
-          <p className="text-muted-foreground">Resumen completo del inventario y productos</p>
+          <p className="text-white/70">Resumen completo del inventario y productos</p>
         </div>
         <Button 
           onClick={fetchStatistics} 
@@ -663,7 +664,7 @@ export const EstadisticasPage: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="shadow-md shadow-accent-primary/40 border border-accent-primary/30">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-sm font-medium text-white/90">
               Valor Total del Inventario
             </CardTitle>
           </CardHeader>
@@ -674,7 +675,7 @@ export const EstadisticasPage: React.FC = () => {
                 maximumFractionDigits: 2 
               })}
             </div>
-            <p className="text-sm text-muted-foreground mt-2">
+            <p className="text-sm text-white/90 mt-2">
               {inventorySummary.uniqueProducts} productos únicos en {inventorySummary.totalStores} tiendas
             </p>
           </CardContent>
@@ -691,7 +692,7 @@ export const EstadisticasPage: React.FC = () => {
             <div className="text-3xl font-bold text-status-danger">
               {inventorySummary.outOfStock}
             </div>
-            <p className="text-sm text-muted-foreground mt-2">
+            <p className="text-sm text-white/90 mt-2">
               {inventorySummary.outOfStockPercentage}% de productos únicos
             </p>
             <Badge variant="destructive" className="mt-2">
@@ -711,7 +712,7 @@ export const EstadisticasPage: React.FC = () => {
             <div className="text-3xl font-bold text-yellow-600">
               {inventorySummary.lowStock + inventorySummary.criticalStock}
             </div>
-            <p className="text-sm text-muted-foreground mt-2">
+            <p className="text-sm text-white/90 mt-2">
               {inventorySummary.criticalStock} críticos • {inventorySummary.lowStock} bajo mínimo
             </p>
             <Badge variant="outline" className="mt-2 border-none shadow-xl shadow-yellow-500/20 text-yellow-600">
@@ -731,10 +732,10 @@ export const EstadisticasPage: React.FC = () => {
             <div className="text-3xl font-bold">
               {inventorySummary.totalUnits.toLocaleString()}
             </div>
-            <p className="text-sm text-muted-foreground mt-2">
+            <p className="text-sm text-white/90 mt-2">
               unidades en total
             </p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-white/90">
               {inventorySummary.uniqueProducts} productos únicos
             </p>
           </CardContent>
@@ -748,7 +749,7 @@ export const EstadisticasPage: React.FC = () => {
             <Store className="w-5 h-5" />
             Resumen por Sucursal
           </CardTitle>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-white/90">
             {inventorySummary.totalStores} sucursales
           </p>
         </CardHeader>
@@ -795,26 +796,26 @@ export const EstadisticasPage: React.FC = () => {
           {/* Totales Globales */}
           <div className="mt-6 pt-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="flex items-center justify-between p-4 bg-blue-50 dark:bg-blue-950 rounded-sm border-none shadow-md shadow-blue-500/50">
+              <div className="flex items-center justify-between p-4 bg-purple-500/20 rounded-lg border border-purple-500/30 shadow-md shadow-purple-500/30">
                 <div className="flex items-center gap-2">
-                  <Smartphone className="w-5 h-5 text-blue-600" />
-                  <span className="font-semibold">TOTAL TELÉFONOS</span>
+                  <Smartphone className="w-5 h-5 text-purple-400 brightness-125" />
+                  <span className="font-semibold text-white">TOTAL TELÉFONOS</span>
                 </div>
-                <span className="font-bold text-xl">{globalCategoryTotals.phones}</span>
+                <span className="font-bold text-xl text-white">{globalCategoryTotals.phones}</span>
               </div>
-              <div className="flex items-center justify-between p-4 bg-green-50 dark:bg-green-950 rounded-sm border-none shadow-md shadow-green-500/50">
+              <div className="flex items-center justify-between p-4 bg-indigo-500/20 rounded-lg border border-indigo-500/30 shadow-md shadow-indigo-500/30">
                 <div className="flex items-center gap-2">
-                  <Headphones className="w-5 h-5 text-green-600" />
-                  <span className="font-semibold">TOTAL ACCESORIOS</span>
+                  <Headphones className="w-5 h-5 text-indigo-400 brightness-125" />
+                  <span className="font-semibold text-white">TOTAL ACCESORIOS</span>
                 </div>
-                <span className="font-bold text-xl">{globalCategoryTotals.accessories}</span>
+                <span className="font-bold text-xl text-white">{globalCategoryTotals.accessories}</span>
               </div>
-              <div className="flex items-center justify-between p-4 bg-orange-50 dark:bg-orange-950 rounded-sm border-none shadow-md shadow-orange-500/50">
+              <div className="flex items-center justify-between p-4 bg-orange-500/20 rounded-lg border border-orange-500/30 shadow-md shadow-orange-500/30">
                 <div className="flex items-center gap-2">
-                  <Wrench className="w-5 h-5 text-orange-600" />
-                  <span className="font-semibold">TOTAL SERVICIOS TÉCNICOS</span>
+                  <Wrench className="w-5 h-5 text-orange-400 brightness-125" />
+                  <span className="font-semibold text-white">TOTAL SERVICIOS TÉCNICOS</span>
                 </div>
-                <span className="font-bold text-xl">{globalCategoryTotals.technical_service}</span>
+                <span className="font-bold text-xl text-white">{globalCategoryTotals.technical_service}</span>
               </div>
             </div>
           </div>
@@ -828,7 +829,7 @@ export const EstadisticasPage: React.FC = () => {
             <DollarSign className="w-5 h-5" />
             Valor por Categorías
           </CardTitle>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-white/90">
             Solo categorías con productos
           </p>
         </CardHeader>
@@ -860,7 +861,7 @@ export const EstadisticasPage: React.FC = () => {
                         {cat.category === 'technical_service' && <Wrench className="w-5 h-5 text-orange-500" />}
                         <h3 className="text-lg font-semibold">{cat.label}</h3>
                       </div>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm text-muted-foreground">
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm text-white/90">
                         <div>
                           <span className="font-semibold">USD {cat.totalValue.toLocaleString('es-VE', { 
                             minimumFractionDigits: 2, 
@@ -906,21 +907,21 @@ export const EstadisticasPage: React.FC = () => {
                 <BarChart3 className="w-5 h-5" />
                 Análisis de Financiamiento
               </CardTitle>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-white/90">
                 Comparativa de ticket promedio y distribución por método de pago (Este Mes)
               </p>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* A) Tarjetas de Ticket Promedio */}
               <div>
-                <h3 className="text-sm font-semibold text-muted-foreground mb-4">Ticket Promedio por Método</h3>
+                <h3 className="text-sm font-semibold text-white/90 mb-4">Ticket Promedio por Método</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Tarjeta Contado */}
                   <Card className="border-l-4 border-green-500">
                     <CardContent className="pt-4">
                       <div className="flex items-center gap-2 mb-2">
                         <Wallet className="w-4 h-4 text-green-600" />
-                        <span className="text-sm font-medium text-muted-foreground">Contado</span>
+                        <span className="text-sm font-medium text-white/90">Contado</span>
                       </div>
                       <p className="text-2xl font-bold text-green-700">
                         {formatCurrency(financialHealth.avg_ticket_cash || 0)}
@@ -936,7 +937,7 @@ export const EstadisticasPage: React.FC = () => {
                     <CardContent className="pt-4">
                       <div className="flex items-center gap-2 mb-2">
                         <Zap className="w-4 h-4 text-blue-600" />
-                        <span className="text-sm font-medium text-muted-foreground">Krece</span>
+                        <span className="text-sm font-medium text-white/90">Krece</span>
                       </div>
                       <p className="text-2xl font-bold text-blue-700">
                         {formatCurrency(financialHealth.avg_ticket_krece || 0)}
@@ -952,7 +953,7 @@ export const EstadisticasPage: React.FC = () => {
                     <CardContent className="pt-4">
                       <div className="flex items-center gap-2 mb-2">
                         <ShoppingBag className="w-4 h-4 text-indigo-600" />
-                        <span className="text-sm font-medium text-muted-foreground">Cashea</span>
+                        <span className="text-sm font-medium text-white/90">Cashea</span>
                       </div>
                       <p className="text-2xl font-bold text-indigo-700">
                         {formatCurrency(financialHealth.avg_ticket_cashea || 0)}
@@ -967,7 +968,7 @@ export const EstadisticasPage: React.FC = () => {
 
               {/* B) Gráfico "Comparativa de Gigantes" (Stacked Bar Chart) */}
               <div>
-                <h3 className="text-sm font-semibold text-muted-foreground mb-4">Distribución por Método de Financiamiento</h3>
+                <h3 className="text-sm font-semibold text-white/90 mb-4">Distribución por Método de Financiamiento</h3>
                 {(() => {
                   // Calcular totales por método (ticket promedio * cantidad de transacciones)
                   const cashTotal = (financialHealth.sales_by_method_count?.cash || 0) * (financialHealth.avg_ticket_cash || 0);
@@ -1034,7 +1035,7 @@ export const EstadisticasPage: React.FC = () => {
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="flex items-center justify-center h-[300px] text-gray-500">
+                  <div className="flex items-center justify-center h-[300px] text-white/90">
                     <p>No hay datos de financiamiento para mostrar</p>
                   </div>
                 );

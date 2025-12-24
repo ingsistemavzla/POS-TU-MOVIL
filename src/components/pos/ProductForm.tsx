@@ -370,47 +370,49 @@ export const ProductForm: React.FC<ProductFormProps> = ({
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Fila 1: Nombre (ancho completo) */}
           <div className="space-y-2">
-            <Label htmlFor="name">Nombre del Producto *</Label>
+            <Label htmlFor="name" className="text-white/90">Nombre del Producto *</Label>
             <Input
               id="name"
               value={formData.name}
               onChange={(e) => handleInputChange('name', e.target.value)}
               placeholder="Nombre del producto"
               required
-              className="text-lg"
+              className="text-lg glass-input text-white"
             />
           </div>
 
           {/* Fila 2: SKU, Código de Barras, Categoría (3 columnas) */}
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="sku">SKU *</Label>
+              <Label htmlFor="sku" className="text-white/90">SKU *</Label>
               <Input
                 id="sku"
                 value={formData.sku}
                 onChange={(e) => handleInputChange('sku', e.target.value)}
                 placeholder="Código del producto"
                 required
+                className="glass-input text-white"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="barcode">Código de Barras</Label>
+              <Label htmlFor="barcode" className="text-white/90">Código de Barras</Label>
               <Input
                 id="barcode"
                 value={formData.barcode}
                 onChange={(e) => handleInputChange('barcode', e.target.value)}
                 placeholder="Código de barras"
+                className="glass-input text-white"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="category">Categoría</Label>
+              <Label htmlFor="category" className="text-white/90">Categoría</Label>
               <Select
                 value={formData.category}
                 onValueChange={(value) => handleInputChange('category', value)}
               >
-                <SelectTrigger>
+                <SelectTrigger className="glass-input text-white">
                   <SelectValue placeholder="Seleccionar categoría" />
                 </SelectTrigger>
                 <SelectContent>
@@ -427,7 +429,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
           {/* Fila 3: Precios y Estado (3 columnas) */}
           <div className="grid grid-cols-3 gap-4 items-end">
             <div className="space-y-2">
-              <Label htmlFor="cost_usd">Costo (USD) *</Label>
+              <Label htmlFor="cost_usd" className="text-white/90">Costo (USD) *</Label>
               <Input
                 id="cost_usd"
                 type="number"
@@ -437,11 +439,12 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                 onChange={(e) => handleInputChange('cost_usd', parseFloat(e.target.value) || 0)}
                 placeholder="0.00"
                 required
+                className="glass-input text-white"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="sale_price_usd">Precio Venta (USD) *</Label>
+              <Label htmlFor="sale_price_usd" className="text-white/90">Precio Venta (USD) *</Label>
               <Input
                 id="sale_price_usd"
                 type="number"
@@ -451,15 +454,16 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                 onChange={(e) => handleInputChange('sale_price_usd', parseFloat(e.target.value) || 0)}
                 placeholder="0.00"
                 required
+                className="glass-input text-white"
               />
             </div>
 
-            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+            <div className="flex items-center justify-between p-3 glass-muted-dark rounded-lg">
               <div>
-                <Label htmlFor="active" className="cursor-pointer">Producto activo</Label>
+                <Label htmlFor="active" className="cursor-pointer text-white/90">Producto activo</Label>
                 {formData.cost_usd > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    Margen: <span className="font-semibold text-accent-primary">{calculateMargin().toFixed(1)}%</span>
+                  <p className="text-xs text-white/70">
+                    Margen: <span className="font-semibold text-emerald-300">{calculateMargin().toFixed(1)}%</span>
                   </p>
                 )}
               </div>
@@ -484,9 +488,9 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                     if (!store) return null;
 
                     return (
-                      <div key={store.id} className="flex items-center gap-2 p-2 bg-muted/30 rounded-lg">
+                      <div key={store.id} className="flex items-center gap-2 p-2 glass-muted-dark rounded-lg">
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm truncate">{store.name}</p>
+                          <p className="font-medium text-sm truncate text-white">{store.name}</p>
                         </div>
                         <Input
                           type="number"
@@ -513,7 +517,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                               e.preventDefault();
                             }
                           }}
-                          className="h-8 w-20 text-center"
+                          className="h-8 w-20 text-center glass-input text-white"
                         />
                       </div>
                     );

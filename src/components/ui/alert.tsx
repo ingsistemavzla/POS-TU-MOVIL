@@ -12,7 +12,7 @@ const alertVariants = cva(
         destructive:
           "border-status-danger/50 text-status-danger dark:border-status-danger [&>svg]:text-status-danger",
         success:
-          "border-accent-hover bg-accent-hover/10 text-main-text [&>svg]:text-accent-hover",
+          "border-accent-hover bg-accent-hover/10 text-white [&>svg]:text-accent-hover",
       },
     },
     defaultVariants: {

@@ -77,8 +77,8 @@ export default {
 					foreground: 'hsl(var(--card-foreground))'
 				},
 				// Paleta "Legacy Pro" Estricta
-				'dark-bg': '#022601',        // Sidebar/Navbar
-				'main-text': '#0D0D0D',      // Texto principal
+				'dark-bg': '#001200',        // Sidebar (un poco más claro que #000A00)
+				'main-text': '#FFFFFF',      // Texto principal (blanco)
 				'accent-primary': '#30D96B', // Acción principal, iconos, bordes
 				'accent-hover': '#64F23D',   // Estado hover, alertas success
 				'app-background': '#E6E6E6', // Fondo general (15% del blanco)
