@@ -261,15 +261,15 @@ export const SaleCompletionModal: React.FC<SaleCompletionModalProps> = ({
           
           {/* Mensaje de impresión secuencial */}
           {isPrinting && (
-            <div className="flex items-center gap-2 mt-4 px-4 py-2 bg-green-100 dark:bg-green-900/50 rounded-lg animate-in slide-in-from-top duration-300">
-              <Loader2 className="h-5 w-5 animate-spin text-green-700 dark:text-green-400" />
-              <p className="text-base text-green-700 dark:text-green-400 font-medium">🖨️ Imprimiendo Factura...</p>
+            <div className="flex items-center gap-2 mt-4 px-4 py-2 glass-green-dark border border-emerald-500/40 rounded-lg animate-in slide-in-from-top duration-300 shadow-lg shadow-emerald-500/30">
+              <Loader2 className="h-5 w-5 animate-spin text-emerald-300 brightness-125" />
+              <p className="text-base text-emerald-300 font-medium brightness-125">🖨️ Imprimiendo Factura...</p>
             </div>
           )}
           {printCompleted && !isPrinting && (
-            <div className="flex items-center gap-2 mt-4 px-4 py-2 bg-green-200 dark:bg-green-800/50 rounded-lg animate-in slide-in-from-top duration-300">
-              <CheckCircle className="h-5 w-5 text-green-700 dark:text-green-400" />
-              <p className="text-base text-green-700 dark:text-green-400 font-medium">✅ Factura Impresa</p>
+            <div className="flex items-center gap-2 mt-4 px-4 py-2 glass-green-dark border border-emerald-500/40 rounded-lg animate-in slide-in-from-top duration-300 shadow-lg shadow-emerald-500/30">
+              <CheckCircle className="h-5 w-5 text-emerald-300 brightness-125" />
+              <p className="text-base text-emerald-300 font-medium brightness-125">✅ Factura Impresa</p>
             </div>
           )}
         </div>
@@ -448,14 +448,14 @@ export const SaleCompletionModal: React.FC<SaleCompletionModalProps> = ({
               <div className="flex gap-2">
                 <button
                   onClick={onPrintInvoice}
-                  className="flex-1 flex items-center justify-center space-x-2 bg-gray-100 dark:bg-zinc-700 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-zinc-600 transition-colors font-medium text-sm border border-gray-300 dark:border-zinc-600"
+                  className="flex-1 flex items-center justify-center space-x-2 glass-input text-white border border-white/20 px-4 py-2 rounded-lg hover:bg-emerald-500/20 hover:border-emerald-500/40 transition-colors font-medium text-sm"
                 >
                   <Printer className="h-4 w-4" />
                   <span>Reimprimir</span>
                 </button>
                 <button
                   onClick={handleDownloadPDF}
-                  className="flex-1 flex items-center justify-center space-x-2 bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 px-4 py-2 rounded-lg hover:bg-purple-200 dark:hover:bg-purple-800/50 transition-colors font-medium text-sm border border-purple-300 dark:border-purple-600"
+                  className="flex-1 flex items-center justify-center space-x-2 glass-input text-white border border-white/20 px-4 py-2 rounded-lg hover:bg-purple-500/20 hover:border-purple-500/40 transition-colors font-medium text-sm"
                   disabled={isGeneratingPDF}
                 >
                   {isGeneratingPDF ? (
@@ -473,7 +473,7 @@ export const SaleCompletionModal: React.FC<SaleCompletionModalProps> = ({
                 {onNewSale && (
                   <button
                     onClick={onNewSale}
-                    className="flex-1 flex items-center justify-center space-x-2 bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 transition-colors font-semibold text-base shadow-md"
+                    className="flex-1 flex items-center justify-center space-x-2 bg-primary-dark hover:bg-primary-dark-hover text-white px-4 py-3 rounded-lg transition-colors font-semibold text-base shadow-lg shadow-emerald-500/30"
                   >
                     <ShoppingCart className="h-5 w-5" />
                     <span>Nueva Venta</span>
@@ -483,7 +483,7 @@ export const SaleCompletionModal: React.FC<SaleCompletionModalProps> = ({
                 {/* Botón Salir del POS - Redirige a Dashboard */}
                 <button
                   onClick={handleExitPOS}
-                  className="flex-1 flex items-center justify-center space-x-2 bg-gray-700 text-white px-4 py-3 rounded-lg hover:bg-gray-800 transition-colors font-semibold text-base shadow-md"
+                  className="flex-1 flex items-center justify-center space-x-2 glass-input text-white border border-white/20 px-4 py-3 rounded-lg hover:bg-white/10 transition-colors font-semibold text-base"
                 >
                   <LogOut className="h-5 w-5" />
                   <span>Salir del POS</span>
@@ -494,8 +494,8 @@ export const SaleCompletionModal: React.FC<SaleCompletionModalProps> = ({
             <>
               {/* Mientras imprime, mostrar mensaje de estado grande y visible */}
               <div className="flex flex-col items-center justify-center gap-3 py-6">
-                <Loader2 className="h-8 w-8 animate-spin text-green-600" />
-                <span className="text-base text-gray-700 dark:text-gray-300 font-medium">🖨️ Imprimiendo factura, por favor espere...</span>
+                <Loader2 className="h-8 w-8 animate-spin text-emerald-300 brightness-125" />
+                <span className="text-base text-white font-medium">🖨️ Imprimiendo factura, por favor espere...</span>
               </div>
             </>
           )}

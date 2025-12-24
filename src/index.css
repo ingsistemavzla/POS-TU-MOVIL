@@ -28,7 +28,7 @@
     --btn-gradient: linear-gradient(135deg, #00FF7F 0%, #00FF00 50%, #00CC66 100%);
     --glass-navbar: rgba(2, 38, 1, 0.85); /* Navbar del login (original) */
     --glass-navbar-internal: #021302; /* Navbar de paneles internos */
-    --glass-card: rgba(13, 13, 13, 0.7);
+    --glass-card: rgba(15, 15, 15, 0.6);
 
     /* Sistema de Diseño "Vanguardia de Cristal" */
     /* Colores Base (RGB para usar con opacidad) */
@@ -38,8 +38,8 @@
     
     /* Gradientes */
     /* Login usa --gradient-diagonal (sin cambios) */
-    /* App interna usa --gradient-app-bg (más oscuro) */
-    --gradient-app-bg: linear-gradient(135deg, #000A00 0%, #006600 100%);
+    /* App interna usa --gradient-app-bg (gris oscuro verdoso, 10% más oscuro, toque verde sutil) */
+    --gradient-app-bg: linear-gradient(135deg, #3d4a3d 0%, #495749 100%);
     --gradient-btn-primary: linear-gradient(135deg, #00FF7F 0%, #00FF00 50%, #00CC66 100%);
 
     /* --- MODO CLARO: "Minty Platinum" --- */
@@ -201,9 +201,9 @@
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   }
 
-  /* Glass panel - Tarjeta estándar para Dashboard (10% más claro para efecto glass) */
+  /* Glass panel - Tarjeta estándar para Dashboard (14% menos oscuro, 15% más transparente) */
   .glass-panel {
-    background-color: rgba(8, 8, 8, 0.88);
+    background-color: rgba(9, 9, 9, 0.75);
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
     border: 1px solid rgba(0, 255, 127, 0.2);
@@ -215,9 +215,9 @@
     border-color: rgba(0, 255, 127, 0.4);
   }
 
-  /* Glass panel dense - Para tablas y listas de datos densos (10% más claro para efecto glass) */
+  /* Glass panel dense - Para tablas y listas de datos densos (14% menos oscuro, 15% más transparente) */
   .glass-panel-dense {
-    background-color: rgba(5, 5, 5, 0.88);
+    background-color: rgba(6, 6, 6, 0.75);
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
     border: 1px solid rgba(0, 255, 127, 0.2);
@@ -284,9 +284,9 @@
     color: rgba(255, 255, 255, 0.5);
   }
 
-  /* Fondo verde oscuro para destacar información (más negro pero translúcido) */
+  /* Fondo verde oscuro para destacar información (14% menos oscuro, 15% más transparente) */
   .glass-green-dark {
-    background-color: rgba(8, 20, 12, 0.85); /* Más negro pero mantiene translucidez */
+    background-color: rgba(9, 23, 14, 0.72); /* 14% menos oscuro, 15% más transparente */
     border: 1px solid rgba(0, 255, 127, 0.3);
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
@@ -301,10 +301,12 @@
     background-color: #00B359; /* Hover aún más oscuro */
   }
 
-  /* Fondo muted oscuro para elementos de lista */
+  /* Fondo muted oscuro para elementos de lista (14% menos oscuro, 15% más transparente) */
   .glass-muted-dark {
-    background-color: rgba(15, 30, 20, 0.75); /* Verde casi negro más oscuro */
+    background-color: rgba(17, 34, 23, 0.64); /* 14% menos oscuro, 15% más transparente */
     border: 1px solid rgba(0, 255, 127, 0.2);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
   }
 
   /* Estilos de Tabla para Glass Design */

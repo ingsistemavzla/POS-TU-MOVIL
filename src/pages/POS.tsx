@@ -2331,7 +2331,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                 <div className="space-y-4">
                   <div className="flex gap-2">
                     <div className="relative flex-1">
-                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/70" />
                       <Input
                         type="text"
                         placeholder="Ingresa la Cédula o RIF..."
@@ -2342,7 +2342,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                             searchCustomerById(idSearchTerm);
                           }
                         }}
-                        className="pl-10 h-12 text-lg"
+                        className="pl-10 h-12 text-lg glass-input text-white"
                       />
                     </div>
                     <Button
@@ -2391,47 +2391,51 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                     </h3>
                     <div className="space-y-4">
                       <div>
-                        <Label className="text-sm text-muted-foreground">Cédula / RIF</Label>
+                        <Label className="text-sm text-white/90">Cédula / RIF</Label>
                         <Input
                           value={newCustomer.id_number}
                           disabled
-                          className="font-mono bg-muted/50"
+                          className="font-mono glass-input text-white/70"
                         />
                       </div>
                       <div>
-                        <Label className="text-sm text-muted-foreground">Nombre Completo *</Label>
+                        <Label className="text-sm text-white/90">Nombre Completo *</Label>
                         <Input
                           placeholder="Ej: Juan Pérez"
                           value={newCustomer.name}
                           onChange={(e) => setNewCustomer(prev => ({ ...prev, name: e.target.value }))}
                           autoFocus
+                          className="glass-input text-white"
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <Label className="text-sm text-muted-foreground">Teléfono (opcional)</Label>
+                          <Label className="text-sm text-white/90">Teléfono (opcional)</Label>
                           <Input
                             placeholder="04XX-XXXXXXX"
                             value={newCustomer.phone}
                             onChange={(e) => setNewCustomer(prev => ({ ...prev, phone: e.target.value }))}
+                            className="glass-input text-white"
                           />
                         </div>
                         <div>
-                          <Label className="text-sm text-muted-foreground">Email (opcional)</Label>
+                          <Label className="text-sm text-white/90">Email (opcional)</Label>
                           <Input
                             type="email"
                             placeholder="correo@ejemplo.com"
                             value={newCustomer.email}
                             onChange={(e) => setNewCustomer(prev => ({ ...prev, email: e.target.value }))}
+                            className="glass-input text-white"
                           />
                         </div>
                       </div>
                       <div>
-                        <Label className="text-sm text-muted-foreground">Dirección (opcional)</Label>
+                        <Label className="text-sm text-white/90">Dirección (opcional)</Label>
                         <Input
                           placeholder="Dirección del cliente"
                           value={newCustomer.address}
                           onChange={(e) => setNewCustomer(prev => ({ ...prev, address: e.target.value }))}
+                          className="glass-input text-white"
                         />
                       </div>
                       <div className="flex gap-2 pt-2">
@@ -2491,7 +2495,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
             <Card className="p-4 glass-card shrink-0">
           <div className="flex items-center gap-3">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/70" />
               <Input
                 type="text"
                 placeholder={scanMode ? "Escanear código de barras..." : "Buscar productos..."}
@@ -2525,7 +2529,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                     }
                   }
                 }}
-                className="pl-10 pr-4 h-12 text-lg glass-card border border-green-500/30 shadow-md shadow-green-500/40 focus:shadow-lg focus:shadow-green-500/50 focus:glow-primary"
+                className="pl-10 pr-4 h-12 text-lg glass-input text-white border border-green-500/30 shadow-md shadow-green-500/40 focus:shadow-lg focus:shadow-green-500/50 focus:glow-primary"
               />
             </div>
             <Button 
@@ -2673,7 +2677,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                               value={priceInputs[item.id] ?? item.price.toFixed(2)}
                               onChange={(e) => handleUnitPriceChange(item.id, e.target.value)}
                               onBlur={() => commitUnitPrice(item)}
-                              className="w-20 h-8 text-sm text-right"
+                              className="w-20 h-8 text-sm text-right glass-input text-white"
                               step="0.01"
                             />
                           </div>
@@ -2738,7 +2742,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                                           ? 'border-green-500 text-green-300' 
                                           : isInvalidLength 
                                             ? 'border-red-500 text-red-300' 
-                                            : 'border-amber-400 text-amber-300'
+                                            : 'border-amber-400 text-amber-300 text-white'
                                         }`}
                                     />
                                     {isValidLength && <Check className="w-4 h-4 text-green-500 flex-shrink-0" />}
@@ -2852,7 +2856,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
               <div className="space-y-3">
                 {/* ✅ Input Manual de Porcentaje (Reemplaza botones predefinidos) */}
                 <div className="space-y-2">
-                  <label className="text-xs font-medium text-muted-foreground">
+                  <label className="text-xs font-medium text-white/90">
                     Porcentaje de inicial (%):
                   </label>
                   <Input
@@ -2860,6 +2864,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                     ref={kreceInputRef}
                     type="number"
                     value={krecePercentageInput}
+                    className="glass-input text-white"
                     onChange={(e) => {
                       const inputValue = e.target.value;
                       // ✅ Permitir input vacío completamente
@@ -3028,7 +3033,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
               <div className="space-y-2">
                 {/* ✅ Input Manual de Porcentaje (Reemplaza botones predefinidos) */}
                 <div className="space-y-2">
-                  <label className="text-xs font-medium text-muted-foreground">
+                  <label className="text-xs font-medium text-white/90">
                     Porcentaje de inicial (%):
                   </label>
                   <Input
@@ -3036,6 +3041,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                     ref={casheaInputRef}
                     type="number"
                     value={casheaPercentageInput}
+                    className="glass-input text-white"
                     onChange={(e) => {
                       const inputValue = e.target.value;
                       // ✅ Permitir input vacío completamente
@@ -3349,10 +3355,11 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                       return (
                         <div key={index} className="flex items-center gap-3 p-2 bg-muted/50 rounded-sm shadow-sm shadow-green-500/30">
                           <div className="flex-1">
-                            <div className="text-xs font-medium text-muted-foreground mb-1">{method?.name}</div>
+                            <div className="text-xs font-medium text-white/90 mb-1">{method?.name}</div>
                             <Input
                               type="number"
                               value={payment.amount === 0 ? "" : payment.amount.toString()}
+                              className="glass-input text-white"
                               onChange={(e) => {
                                 const value = parseFloat(e.target.value) || 0;
                                 const financingAmount = (isKreceEnabled || isCasheaEnabled) 
