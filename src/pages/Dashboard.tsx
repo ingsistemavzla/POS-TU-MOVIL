@@ -695,25 +695,25 @@ export default function Dashboard() {
       {loading && forceShow ? (
         <DashboardSummarySkeleton />
       ) : (
-        <Card className="bg-gradient-to-r from-slate-50 to-blue-50 border-2 border-slate-200">
+        <Card className="glass-panel border border-white/10">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg font-semibold text-white">
-            <Wallet className="w-5 h-5 text-green-600" />
+            <Wallet className="w-5 h-5 text-green-400" />
             Resumen Ejecutivo para Cierre - {periodData?.periodLabel}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Columna 1: Debe haber en Caja */}
-            <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+            <div className="p-4 glass-panel rounded-lg border border-green-500/30">
               <div className="flex items-center gap-2 mb-2">
-                <Wallet className="w-4 h-4 text-green-600" />
-                <span className="text-sm font-medium text-green-800">Debe haber en Caja</span>
+                <Wallet className="w-4 h-4 text-green-400" />
+                <span className="text-sm font-medium text-white">Debe haber en Caja</span>
               </div>
-                <div className="text-2xl font-bold text-green-700">
-                  {formatCurrency(currentFinancialHealth?.net_income_usd || 0)}
-                </div>
-              <p className="text-xs text-green-600 mt-1">
+              <div className="text-2xl font-bold text-green-400">
+                {formatCurrency(currentFinancialHealth?.net_income_usd || 0)}
+              </div>
+              <p className="text-xs text-white/70 mt-1">
                 Ingreso real disponible
               </p>
             </div>
@@ -721,13 +721,13 @@ export default function Dashboard() {
             {/* Columna 2: Crédito Otorgado */}
             <div className="p-4 glass-panel rounded-lg border border-orange-500/30">
               <div className="flex items-center gap-2 mb-2">
-                <Clock className="w-4 h-4 text-orange-600" />
-                <span className="text-sm font-medium text-orange-800">Crédito Otorgado {periodData?.periodLabel}</span>
+                <Clock className="w-4 h-4 text-orange-400" />
+                <span className="text-sm font-medium text-white">Crédito Otorgado {periodData?.periodLabel}</span>
               </div>
-              <div className="text-2xl font-bold text-orange-700">
+              <div className="text-2xl font-bold text-orange-400">
                 {formatCurrency(currentFinancialHealth?.receivables_usd || 0)}
               </div>
-              <p className="text-xs text-orange-600 mt-1">
+              <p className="text-xs text-white/70 mt-1">
                 {currentFinancialHealth?.receivables_breakdown && (
                   <>
                     Krece: {formatCurrency(currentFinancialHealth.receivables_breakdown.krece_usd)} • 
@@ -740,23 +740,23 @@ export default function Dashboard() {
             {/* Columna 3: Total Transaccionado */}
             <div className="p-4 glass-panel rounded-lg border border-blue-500/30">
               <div className="flex items-center gap-2 mb-2">
-                <DollarSign className="w-4 h-4 text-blue-600" />
-                <span className="text-sm font-medium text-blue-800">Total Transaccionado</span>
+                <DollarSign className="w-4 h-4 text-blue-400" />
+                <span className="text-sm font-medium text-white">Total Transaccionado</span>
               </div>
-              <div className="text-2xl font-bold text-blue-700">
+              <div className="text-2xl font-bold text-blue-400">
                 {formatCurrency(periodData?.sales || 0)}
               </div>
-              <p className="text-xs text-blue-600 mt-1">
+              <p className="text-xs text-white/70 mt-1">
                 Volumen total del período
               </p>
             </div>
           </div>
 
           {/* Resumen adicional */}
-          <div className="mt-4 pt-4 border-t border-slate-200">
+          <div className="mt-4 pt-4 border-t border-white/10">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Ratio de Caja:</span>
-              <span className="font-semibold text-green-600">
+              <span className="text-white/70">Ratio de Caja:</span>
+              <span className="font-semibold text-green-400">
                 {periodData?.sales && periodData.sales > 0
                   ? ((currentFinancialHealth?.net_income_usd || 0) / periodData.sales * 100).toFixed(1)
                   : '0'}%

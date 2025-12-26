@@ -56,6 +56,7 @@ interface SaleItem {
 
 interface SaleDetail {
   id: string;
+  invoice_number?: string;
   company_id: string;
   store_id: string;
   customer_id: string | null;
@@ -113,7 +114,7 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
       const { data: saleData, error: saleError } = await supabase
         .from('sales')
         .select(`
-          id, company_id, store_id, customer_id, cashier_id, 
+          id, invoice_number, company_id, store_id, customer_id, cashier_id, 
           total_usd, total_bs, bcv_rate_used, payment_method, status, created_at,
           subtotal_usd, tax_amount_usd,
           krece_enabled, krece_initial_amount_usd, krece_financed_amount_usd,
@@ -217,6 +218,7 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
       // Transform sale data
       const transformedSale: SaleDetail = {
         id: saleData.id,
+        invoice_number: saleData.invoice_number,
         company_id: saleData.company_id,
         store_id: saleData.store_id,
         customer_id: saleData.customer_id,
@@ -486,7 +488,7 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
             Detalles de la Venta
           </DialogTitle>
           <DialogDescription>
-            {sale ? `Venta #${sale.id.slice(0, 8)}` : 'Cargando detalles...'}
+            {sale ? (sale.invoice_number || `Venta #${sale.id.slice(0, 8)}`) : 'Cargando detalles...'}
           </DialogDescription>
         </DialogHeader>
 
@@ -527,8 +529,8 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex justify-between">
-                    <span className="font-medium">ID de Venta:</span>
-                    <span className="font-mono text-sm">{sale.id.slice(0, 8)}...</span>
+                    <span className="font-medium">Número de Factura:</span>
+                    <span className="font-mono text-sm font-bold">{sale.invoice_number || sale.id.slice(0, 8)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="font-medium">Fecha:</span>
@@ -687,19 +689,19 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
 
             {/* ✅ NUEVO: Desglose Contado (si no es financiado) */}
             {!sale.krece_enabled && !sale.cashea_enabled && (
-              <Card className="border-green-200 bg-green-50/30">
-                <CardHeader>
-                  <CardTitle className="flex items-center text-lg">
-                    <DollarSign className="w-5 h-5 mr-2" />
+              <Card className="border-green-500/30 bg-green-500/10 shadow-md shadow-green-500/20">
+                <CardHeader className="border-b border-green-500/20">
+                  <CardTitle className="flex items-center text-lg text-green-300">
+                    <DollarSign className="w-5 h-5 mr-2 text-green-400" />
                     Desglose Financiero
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="flex justify-between items-center py-2">
-                    <span className="font-medium">Pago Único:</span>
+                <CardContent className="space-y-3 pt-4">
+                  <div className="flex justify-between items-center py-3 px-2 rounded-md bg-green-500/5 border border-green-500/20">
+                    <span className="font-medium text-green-300">Pago Único:</span>
                     <div className="text-right">
-                      <div className="font-semibold">{formatCurrency(sale.total_usd)}</div>
-                      <div className="text-sm text-muted-foreground">
+                      <div className="font-bold text-xl text-green-400">{formatCurrency(sale.total_usd)}</div>
+                      <div className="text-sm text-green-300/80 mt-1">
                         (Bs. {sale.total_bs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                       </div>
                     </div>

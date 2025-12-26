@@ -97,12 +97,203 @@ export const generateSalesReportPdf = ({
 
   cursorY += 2;
 
+  // ✅ NUEVO: Calcular resumen por categorías (como las tarjetas del panel)
+  const categorySummary = {
+    phones: { units: 0, usd: 0, bs: 0 },
+    accessories: { units: 0, usd: 0, bs: 0 },
+    technical_service: { units: 0, usd: 0, bs: 0 },
+  };
+
+  // Calcular total de facturas
+  const totalInvoices = sales.length;
+  const totalAmountUSD = sales.reduce((sum, sale) => sum + (sale.total_usd || 0), 0);
+  const totalAmountBS = sales.reduce((sum, sale) => sum + (sale.total_bs || 0), 0);
+
+  sales.forEach((sale) => {
+    if (!sale.items || sale.items.length === 0) return;
+    
+    sale.items.forEach((item) => {
+      const category = (item as any).category || (item as any).product?.category || 'sin_categoria';
+      const quantity = item.quantity ?? 0;
+      const itemTotal = item.total_price_usd || 0;
+      const itemTotalBS = (sale.total_bs || 0) * (itemTotal / (sale.total_usd || 1)); // Proporcional
+      
+      if (category === 'phones') {
+        categorySummary.phones.units += quantity;
+        categorySummary.phones.usd += itemTotal;
+        categorySummary.phones.bs += itemTotalBS;
+      } else if (category === 'accessories') {
+        categorySummary.accessories.units += quantity;
+        categorySummary.accessories.usd += itemTotal;
+        categorySummary.accessories.bs += itemTotalBS;
+      } else if (category === 'technical_service') {
+        categorySummary.technical_service.units += quantity;
+        categorySummary.technical_service.usd += itemTotal;
+        categorySummary.technical_service.bs += itemTotalBS;
+      }
+    });
+  });
+
+  // Mostrar resumen general al inicio
+  if (cursorY > doc.internal.pageSize.getHeight() - 80) {
+    doc.addPage();
+    cursorY = margin;
+  }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(0, 120, 120);
+  doc.text('RESUMEN EJECUTIVO', margin, cursorY);
+  cursorY += 8;
+
+  // Total de facturas
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
+  doc.text(`Total Facturas: ${totalInvoices}`, margin, cursorY);
+  cursorY += 6;
+
+  // Resumen por categorías
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('Resumen por Categorías:', margin, cursorY);
+  cursorY += 5;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(
+    `Teléfonos: ${categorySummary.phones.units} Unidades - ${formatCurrency(categorySummary.phones.usd)} • Bs. ${categorySummary.phones.bs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    margin + 5,
+    cursorY
+  );
+  cursorY += 5;
+
+  doc.text(
+    `Accesorios: ${categorySummary.accessories.units} Unidades - ${formatCurrency(categorySummary.accessories.usd)} • Bs. ${categorySummary.accessories.bs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    margin + 5,
+    cursorY
+  );
+  cursorY += 5;
+
+  doc.text(
+    `Servicio: ${categorySummary.technical_service.units} Unidades - ${formatCurrency(categorySummary.technical_service.usd)} • Bs. ${categorySummary.technical_service.bs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    margin + 5,
+    cursorY
+  );
+  cursorY += 8;
+
+  // Total general
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text(`Total General: ${formatCurrency(totalAmountUSD)} • Bs. ${totalAmountBS.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin, cursorY);
+  cursorY += 10;
+
+  // ✅ NUEVO: Función para formatear método de pago
+  const formatPaymentMethod = (method: string | null | undefined): string => {
+    if (!method) return 'N/A';
+    const methodMap: Record<string, string> = {
+      'cash_usd': 'Efectivo USD',
+      'cash_bs': 'Efectivo BS',
+      'card': 'Punto de Venta',
+      'transfer': 'Transferencia',
+      'pago_movil': 'Pago Móvil',
+      'biopago': 'Biopago',
+      'zelle': 'Zelle',
+      'binance': 'Binance',
+      'krece': 'KRECE',
+      'cashea': 'CASHEA',
+    };
+    return methodMap[method.toLowerCase()] || method;
+  };
+
+  // ✅ NUEVO: Función para obtener tipo de venta (TIPO)
+  const getSaleType = (sale: Sale): string => {
+    if (sale.krece_enabled) {
+      const financingType = (sale as any).notes?.includes('financing_type:cashea') ? 'cashea' : 
+                           (sale as any).notes?.includes('financing_type:krece') ? 'krece' : 
+                           'krece';
+      return financingType === 'cashea' ? 'CASHEA' : 'KRECE';
+    }
+    return 'DE CONTADO';
+  };
+
+  // ✅ NUEVO: Tabla de facturas con todas las columnas
+  if (cursorY > doc.internal.pageSize.getHeight() - 60) {
+    doc.addPage();
+    cursorY = margin;
+  }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(0, 0, 0);
+  doc.text('Facturas', margin, cursorY);
+  cursorY += 6;
+
   // Ordenar ventas cronológicamente (más reciente primero = descendente)
   const sortedSales = [...sales].sort((a, b) => {
     const dateA = new Date(a.created_at || 0).getTime();
     const dateB = new Date(b.created_at || 0).getTime();
     return dateB - dateA; // Descendente
   });
+
+  // Preparar datos para la tabla de facturas
+  const invoicesTableData = sortedSales.map((sale) => {
+    const saleDate = new Date(sale.created_at);
+    const dateStr = formatDate(saleDate, false);
+    const timeStr = saleDate.toLocaleTimeString('es-VE', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
+    
+    return [
+      sale.invoice_number || sale.id.substring(0, 8),
+      `${dateStr}, ${timeStr}`,
+      sale.customer_name || sale.client_name || 'Sin cliente',
+      sale.store_name || 'N/A',
+      formatCurrency(sale.total_usd || 0),
+      `Bs ${(sale.total_bs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}`,
+      formatPaymentMethod(sale.payment_method),
+      getSaleType(sale),
+      String((sale.items || []).length),
+    ];
+  });
+
+  autoTable(doc, {
+    startY: cursorY,
+    head: [['Factura', 'Fecha', 'Cliente', 'Tienda', 'Total USD', 'Total BS', 'MÉTODO', 'TIPO', 'Productos']],
+    body: invoicesTableData,
+    styles: {
+      fontSize: 7,
+      cellPadding: 2,
+    },
+    headStyles: {
+      fillColor: [0, 120, 120],
+      textColor: 255,
+      fontStyle: 'bold',
+      halign: 'center',
+      fontSize: 8,
+    },
+    alternateRowStyles: {
+      fillColor: [250, 252, 254],
+    },
+    columnStyles: {
+      0: { cellWidth: 35, fontStyle: 'bold' }, // Factura
+      1: { cellWidth: 35, fontStyle: 'normal' }, // Fecha
+      2: { cellWidth: 40, fontStyle: 'normal' }, // Cliente
+      3: { cellWidth: 30, fontStyle: 'normal' }, // Tienda
+      4: { cellWidth: 25, halign: 'right', fontStyle: 'bold' }, // Total USD
+      5: { cellWidth: 25, halign: 'right', fontStyle: 'normal' }, // Total BS
+      6: { cellWidth: 30, halign: 'center', fontStyle: 'normal' }, // MÉTODO
+      7: { cellWidth: 25, halign: 'center', fontStyle: 'bold' }, // TIPO
+      8: { cellWidth: 20, halign: 'center', fontStyle: 'normal' }, // Productos
+    },
+    margin: { left: margin, right: margin },
+  });
+
+  cursorY = (doc as any).lastAutoTable?.finalY || cursorY + 20;
+  cursorY += 8;
 
   // Formato intercalado: cada venta seguida inmediatamente de sus detalles
   sortedSales.forEach((sale, index) => {
@@ -163,7 +354,7 @@ export const generateSalesReportPdf = ({
       doc.setFontSize(9);
       doc.setTextColor(0, 0, 0);
       doc.text(
-        `Productos de ${sale.invoice_number || sale.id}`,
+        `Productos de ${sale.invoice_number || sale.id.substring(0, 8)}`,
         margin,
         cursorY,
       );

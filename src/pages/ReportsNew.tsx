@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { useReportsData } from "@/hooks/useReportsData";
 import { usePaymentMethodsData } from "@/hooks/usePaymentMethodsData";
+import { useExecutiveReports } from "@/hooks/useExecutiveReports";
 import { supabase } from "@/integrations/supabase/client";
 import { Sale } from "@/hooks/useSalesData";
 import { 
@@ -231,7 +232,36 @@ export default function ReportsNew() {
             categoryId: filters.categoryId || 'Todas las categorías'
           });
 
-          // Obtener ventas filtradas directamente desde Supabase
+          // ✅ NUEVO: Usar RPC get_executive_summary_v2 para obtener datos agregados
+          const { data: executiveData, error: executiveError } = await (supabase as any).rpc('get_executive_summary_v2', {
+            p_company_id: null, // La RPC lo deduce del usuario autenticado
+            p_store_id: filters.storeId !== 'all' ? filters.storeId : null,
+            p_date_from: dateFrom.toISOString(),
+            p_date_to: dateTo.toISOString(),
+            p_category: filters.categoryId && filters.categoryId !== 'all' ? filters.categoryId : null
+          });
+
+          if (executiveError) {
+            console.error('❌ Error obteniendo datos ejecutivos:', executiveError);
+            toast({
+              title: "Error",
+              description: `Error al obtener datos del reporte: ${executiveError.message}`,
+              variant: "destructive",
+            });
+            return;
+          }
+
+          if (!executiveData || executiveData.error) {
+            console.error('❌ Error en respuesta de RPC:', executiveData);
+            toast({
+              title: "Error",
+              description: executiveData?.message || 'No se pudieron obtener los datos del reporte',
+              variant: "destructive",
+            });
+            return;
+          }
+
+          // Obtener ventas filtradas directamente desde Supabase (para detalles del PDF)
           // Nota: Las relaciones en Supabase pueden ser arrays u objetos según la configuración
           let salesQuery = (supabase as any)
             .from('sales')
@@ -239,6 +269,7 @@ export default function ReportsNew() {
               id,
               invoice_number,
               customer_id,
+              customer_name,
               store_id,
               cashier_id,
               subtotal_usd,
@@ -252,8 +283,6 @@ export default function ReportsNew() {
               krece_financed_amount_usd,
               created_at,
               stores:store_id(id, name),
-              users:cashier_id(id, name),
-              customers:customer_id(id, name),
               sale_items (
                 id,
                 product_id,
@@ -584,7 +613,8 @@ export default function ReportsNew() {
 
           toast({
             title: "Reporte generado",
-            description: "El reporte de ventas se ha descargado exitosamente."
+            description: "El reporte de ventas se ha descargado exitosamente.",
+            variant: "success"
           });
           break;
         }
@@ -604,7 +634,8 @@ export default function ReportsNew() {
 
           toast({
             title: "Reporte generado",
-            description: "El reporte de rentabilidad se ha descargado exitosamente."
+            description: "El reporte de rentabilidad se ha descargado exitosamente.",
+            variant: "success"
           });
           break;
         }
@@ -624,7 +655,8 @@ export default function ReportsNew() {
 
           toast({
             title: "Reporte generado",
-            description: "El reporte de inventario se ha descargado exitosamente."
+            description: "El reporte de inventario se ha descargado exitosamente.",
+            variant: "success"
           });
           break;
         }
@@ -742,8 +774,8 @@ export default function ReportsNew() {
           </div>
         </Card>
 
-        {/* Profitability Report */}
-        <Card className="p-6 hover:shadow-lg transition-shadow">
+        {/* Profitability Report - Deshabilitado */}
+        <Card className="p-6 hover:shadow-lg transition-shadow opacity-60">
           <div className="flex items-start justify-between mb-4">
             <div className="flex items-center space-x-4">
               <div className="p-3 bg-green-100 rounded-lg">
@@ -771,36 +803,31 @@ export default function ReportsNew() {
               </p>
             </div>
 
+            <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+              <p className="text-sm text-yellow-300 font-medium">
+                Disponible en fases de actualización y mantenimiento
+              </p>
+            </div>
+
             <div className="flex space-x-2">
               <Button 
                 className="flex-1" 
-                onClick={() => handleOpenReportModal('profitability')}
-                disabled={!profitabilityData || generatingPDF}
+                disabled
+                variant="outline"
               >
-                {generatingPDF ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Generando...
-                  </>
-                ) : (
-                  <>
-                    <FileText className="mr-2 h-4 w-4" />
-                    Generar Reporte
-                  </>
-                )}
+                <FileText className="mr-2 h-4 w-4" />
+                Generar Reporte
               </Button>
               
-              {profitabilityData && (
-                <Button variant="outline" size="icon">
-                  <Eye className="h-4 w-4" />
-                </Button>
-              )}
+              <Button variant="outline" size="icon" disabled>
+                <Eye className="h-4 w-4" />
+              </Button>
             </div>
           </div>
         </Card>
 
-        {/* Inventory Report */}
-        <Card className="p-6 hover:shadow-lg transition-shadow">
+        {/* Inventory Report - Deshabilitado */}
+        <Card className="p-6 hover:shadow-lg transition-shadow opacity-60">
           <div className="flex items-start justify-between mb-4">
             <div className="flex items-center space-x-4">
               <div className="p-3 bg-purple-100 rounded-lg">
@@ -828,30 +855,25 @@ export default function ReportsNew() {
               </p>
             </div>
 
+            <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+              <p className="text-sm text-yellow-300 font-medium">
+                Disponible en fases de actualización y mantenimiento
+              </p>
+            </div>
+
             <div className="flex space-x-2">
               <Button 
                 className="flex-1" 
-                onClick={() => handleOpenReportModal('inventory')}
-                disabled={!inventoryData || generatingPDF}
+                disabled
+                variant="outline"
               >
-                {generatingPDF ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Generando...
-                  </>
-                ) : (
-                  <>
-                    <FileText className="mr-2 h-4 w-4" />
-                    Generar Reporte
-                  </>
-                )}
+                <FileText className="mr-2 h-4 w-4" />
+                Generar Reporte
               </Button>
               
-              {inventoryData && (
-                <Button variant="outline" size="icon">
-                  <Eye className="h-4 w-4" />
-                </Button>
-              )}
+              <Button variant="outline" size="icon" disabled>
+                <Eye className="h-4 w-4" />
+              </Button>
             </div>
           </div>
         </Card>

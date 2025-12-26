@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -8,26 +7,23 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSystemSettings } from '@/hooks/useSystemSettings';
 import {
   Settings,
-  Save,
   RefreshCw,
-  DollarSign,
-  Building2,
-  User,
   Shield,
   Bell,
   Palette,
   Database,
-  Wifi,
-  CreditCard,
   Receipt,
   Calculator,
   Info,
+  AlertCircle,
+  Lock,
+  Building2,
 } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface SystemSettings {
   id: string;
@@ -46,11 +42,9 @@ interface SystemSettings {
 }
 
 export default function SettingsPage() {
-  const { toast } = useToast();
   const { userProfile } = useAuth();
-  const { settings, loading, error, updateSettings } = useSystemSettings();
+  const { settings, loading } = useSystemSettings();
   
-  const [saving, setSaving] = useState(false);
   const [localSettings, setLocalSettings] = useState<SystemSettings | null>(null);
 
   useEffect(() => {
@@ -58,45 +52,6 @@ export default function SettingsPage() {
       setLocalSettings(settings);
     }
   }, [settings]);
-
-    const handleSave = async () => {
-    if (!localSettings) return;
-
-    setSaving(true);
-    try {
-      const success = await updateSettings(localSettings);
-      
-      if (success) {
-        toast({
-          variant: "success",
-          title: "Configuración guardada",
-          description: `Los cambios se han guardado correctamente. El IVA ahora es ${localSettings.tax_rate}% y se aplicará inmediatamente en el POS.`,
-        });
-      } else {
-        throw new Error('Failed to update settings');
-      }
-    } catch (error) {
-      console.error('Error saving settings:', error);
-      toast({
-        title: "Error",
-        description: "No se pudieron guardar las configuraciones",
-        variant: "destructive",
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleReset = () => {
-    if (settings) {
-      setLocalSettings(settings);
-      toast({
-        variant: "success",
-        title: "Configuración restaurada",
-        description: "Se han restaurado los valores originales",
-      });
-    }
-  };
 
   if (loading) {
     return (
@@ -110,28 +65,32 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center">
-            <Settings className="w-8 h-8 mr-3" />
-            Configuración del Sistema
-          </h1>
-          <p className="text-muted-foreground mt-2">
-            Gestiona las configuraciones generales de tu empresa
-          </p>
+    <div className="min-h-screen bg-background">
+      <div className="container mx-auto p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold flex items-center text-white">
+              <Settings className="w-8 h-8 mr-3" />
+              Configuración del Sistema
+            </h1>
+            <p className="text-muted-foreground mt-2">
+              Visualiza las configuraciones generales de tu empresa
+            </p>
+          </div>
         </div>
-        <div className="flex space-x-2">
-          <Button variant="outline" onClick={handleReset}>
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Restaurar
-          </Button>
-          <Button onClick={handleSave} disabled={saving}>
-            <Save className="w-4 h-4 mr-2" />
-            {saving ? 'Guardando...' : 'Guardar Cambios'}
-          </Button>
-        </div>
-      </div>
+
+      {/* Alerta informativa sobre contacto con soporte */}
+      <Alert className="border-blue-500/50 bg-blue-500/10">
+        <AlertCircle className="h-5 w-5 text-blue-400" />
+        <AlertTitle className="flex items-center gap-2">
+          <Lock className="h-4 w-4" />
+          Configuración de Solo Lectura
+        </AlertTitle>
+        <AlertDescription className="mt-2">
+          Esta sección muestra la configuración actual del sistema de forma informativa. 
+          Para modificar cualquier ajuste global, contacte a soporte técnico, con el fin de resguardar y proteger la integridad de los datos. Los primeros 30 días de prueba en servidor.
+        </AlertDescription>
+      </Alert>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Configuración Fiscal */}
@@ -159,17 +118,9 @@ export default function SettingsPage() {
                   max="100"
                   step="0.01"
                   value={localSettings?.tax_rate ?? 0}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    const numValue = value === '' ? 0 : parseFloat(value);
-                    if (!isNaN(numValue)) {
-                      setLocalSettings(localSettings ? {
-                        ...localSettings,
-                        tax_rate: numValue
-                      } : null);
-                    }
-                  }}
-                  className="w-32"
+                  disabled
+                  readOnly
+                  className="w-32 opacity-60 cursor-not-allowed"
                 />
                 <Badge variant="outline">%</Badge>
               </div>
@@ -184,12 +135,9 @@ export default function SettingsPage() {
                <Label htmlFor="currency">Moneda Principal</Label>
                <Select
                  value={localSettings?.currency || 'USD'}
-                 onValueChange={(value) => setLocalSettings(localSettings ? {
-                   ...localSettings,
-                   currency: value
-                 } : null)}
+                 disabled
                >
-                 <SelectTrigger>
+                 <SelectTrigger className="opacity-60 cursor-not-allowed">
                    <SelectValue placeholder="Seleccionar moneda" />
                  </SelectTrigger>
                  <SelectContent>
@@ -219,13 +167,11 @@ export default function SettingsPage() {
               <Textarea
                 id="receipt_footer"
                 value={localSettings?.receipt_footer || ''}
-                onChange={(e) => setLocalSettings(localSettings ? {
-                  ...localSettings,
-                  receipt_footer: e.target.value
-                } : null)}
+                disabled
+                readOnly
                 placeholder="Mensaje que aparece al final de las facturas"
                 rows={4}
-                className="resize-none"
+                className="resize-none opacity-60 cursor-not-allowed"
               />
             </div>
 
@@ -234,11 +180,10 @@ export default function SettingsPage() {
               <Input
                 id="barcode_prefix"
                 value={localSettings?.barcode_prefix || ''}
-                onChange={(e) => setLocalSettings(localSettings ? {
-                  ...localSettings,
-                  barcode_prefix: e.target.value
-                } : null)}
+                disabled
+                readOnly
                 placeholder="Prefijo para códigos de barras generados"
+                className="opacity-60 cursor-not-allowed"
               />
             </div>
 
@@ -249,11 +194,10 @@ export default function SettingsPage() {
                 type="number"
                 min="0"
                 value={localSettings?.low_stock_threshold || 0}
-                onChange={(e) => setLocalSettings(localSettings ? {
-                  ...localSettings,
-                  low_stock_threshold: parseInt(e.target.value) || 0
-                } : null)}
+                disabled
+                readOnly
                 placeholder="Cantidad mínima para alertas de stock"
+                className="opacity-60 cursor-not-allowed"
               />
             </div>
           </CardContent>
@@ -275,12 +219,9 @@ export default function SettingsPage() {
                <Label htmlFor="language">Idioma</Label>
                <Select
                  value={localSettings?.language || 'es'}
-                 onValueChange={(value) => setLocalSettings(localSettings ? {
-                   ...localSettings,
-                   language: value
-                 } : null)}
+                 disabled
                >
-                 <SelectTrigger>
+                 <SelectTrigger className="opacity-60 cursor-not-allowed">
                    <SelectValue placeholder="Seleccionar idioma" />
                  </SelectTrigger>
                  <SelectContent>
@@ -294,12 +235,9 @@ export default function SettingsPage() {
                <Label htmlFor="timezone">Zona Horaria</Label>
                <Select
                  value={localSettings?.timezone || 'America/Caracas'}
-                 onValueChange={(value) => setLocalSettings(localSettings ? {
-                   ...localSettings,
-                   timezone: value
-                 } : null)}
+                 disabled
                >
-                 <SelectTrigger>
+                 <SelectTrigger className="opacity-60 cursor-not-allowed">
                    <SelectValue placeholder="Seleccionar zona horaria" />
                  </SelectTrigger>
                  <SelectContent>
@@ -337,10 +275,8 @@ export default function SettingsPage() {
               </div>
               <Switch
                 checked={localSettings?.auto_backup || false}
-                onCheckedChange={(checked) => setLocalSettings(localSettings ? {
-                  ...localSettings,
-                  auto_backup: checked
-                } : null)}
+                disabled
+                className="opacity-60"
               />
             </div>
 
@@ -358,10 +294,8 @@ export default function SettingsPage() {
               </div>
               <Switch
                 checked={localSettings?.notifications_enabled || false}
-                onCheckedChange={(checked) => setLocalSettings(localSettings ? {
-                  ...localSettings,
-                  notifications_enabled: checked
-                } : null)}
+                disabled
+                className="opacity-60"
               />
             </div>
           </CardContent>
@@ -395,6 +329,7 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

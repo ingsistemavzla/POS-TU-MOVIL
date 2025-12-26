@@ -589,29 +589,32 @@ export const EstadisticasPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-muted/20">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center space-y-6">
-          {/* Logo animado con zoom in y bounce */}
-          <div className="flex justify-center">
-            <div className="relative">
-              {/* Círculo de fondo con pulso */}
-              <div className="absolute inset-0 rounded-full bg-primary/20 animate-ping"></div>
-              <div className="absolute inset-0 rounded-full bg-primary/10 animate-pulse"></div>
-              {/* Logo principal con animación de zoom y bounce */}
-              <div className="relative w-20 h-20 rounded-sm bg-primary/10 flex items-center justify-center shadow-lg shadow-green-500/60 border-none backdrop-blur-sm">
-                <ShoppingCart 
-                  className="w-12 h-12 text-primary animate-zoom-bounce" 
-                />
+          {/* Contenedor glass-panel para la pantalla de carga */}
+          <div className="glass-panel border border-green-500/30 rounded-lg p-8 shadow-lg shadow-green-500/20">
+            {/* Logo animado con zoom in y bounce */}
+            <div className="flex justify-center mb-6">
+              <div className="relative">
+                {/* Círculo de fondo con pulso verde */}
+                <div className="absolute inset-0 rounded-full bg-green-500/20 animate-ping"></div>
+                <div className="absolute inset-0 rounded-full bg-green-500/10 animate-pulse"></div>
+                {/* Logo principal con animación de zoom y bounce */}
+                <div className="relative w-20 h-20 rounded-lg glass-panel border border-green-500/30 flex items-center justify-center shadow-lg shadow-green-500/50">
+                  <ShoppingCart 
+                    className="w-12 h-12 text-green-400 animate-zoom-bounce" 
+                  />
+                </div>
               </div>
             </div>
-          </div>
-          {/* Texto de carga */}
-          <div className="space-y-2">
-            <p className="text-lg font-semibold text-white animate-pulse">Cargando estadísticas...</p>
-            <div className="flex justify-center gap-1">
-              <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-              <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-              <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+            {/* Texto de carga */}
+            <div className="space-y-3">
+              <p className="text-lg font-semibold text-white animate-pulse">Cargando estadísticas...</p>
+              <div className="flex justify-center gap-2">
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce shadow-md shadow-green-500/50" style={{ animationDelay: '0ms' }}></div>
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce shadow-md shadow-green-500/50" style={{ animationDelay: '150ms' }}></div>
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce shadow-md shadow-green-500/50" style={{ animationDelay: '300ms' }}></div>
+              </div>
             </div>
           </div>
         </div>

@@ -46,7 +46,7 @@ export const StoresPage: React.FC = () => {
       // OPTIMIZADO: Select Minimal para lista de tiendas
       const { data, error } = await supabase
         .from('stores')
-        .select('id, name, business_name, tax_id, fiscal_address, phone_fiscal, email_fiscal, created_at')
+        .select('id, name, business_name, tax_id, fiscal_address, phone_fiscal, email_fiscal, active, created_at')
         .eq('company_id', userProfile.company_id)
         .order('created_at', { ascending: false });
 
@@ -153,7 +153,7 @@ export const StoresPage: React.FC = () => {
           </p>
         </div>
         {userProfile?.role === 'admin' && (
-          <Button onClick={handleCreateStore}>
+          <Button onClick={handleCreateStore} className="hidden">
             <Plus className="mr-2 h-4 w-4" />
             Nueva Tienda
           </Button>

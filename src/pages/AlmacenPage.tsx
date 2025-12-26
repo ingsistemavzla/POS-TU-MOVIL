@@ -740,13 +740,13 @@ export const AlmacenPage: React.FC = () => {
                                       </div>
                                     </div>
 
-                                    {/* Stock por Tienda */}
+                                    {/* Stock por Tienda - Grid 2x2 */}
                                     <div className="md:col-span-2">
                                       <h4 className="font-semibold mb-4 flex items-center gap-2 text-white">
                                         <Store className="w-4 h-4 text-emerald-300 brightness-125" />
                                         Stock por Tienda
                                       </h4>
-                                      <div className="space-y-2">
+                                      <div className="grid grid-cols-2 gap-2">
                                         {inventories
                                           // 🛡️ SEGURIDAD: RLS ya filtró el inventario por store_id
                                           // No necesitamos filtrar manualmente en el frontend

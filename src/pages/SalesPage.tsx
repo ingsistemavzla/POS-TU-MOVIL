@@ -401,6 +401,7 @@ export default function SalesPage() {
           id,
           invoice_number,
           customer_id,
+          customer_name,
           store_id,
           cashier_id,
           subtotal_usd,
@@ -413,9 +414,7 @@ export default function SalesPage() {
           krece_initial_percentage,
           notes,
           created_at,
-          updated_at,
-          customers(id, name),
-          stores(id, name)
+          updated_at
         `)
         // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
         .order('created_at', { ascending: false });
@@ -606,7 +605,7 @@ export default function SalesPage() {
 
           return {
             ...sale,
-            customer_name: customer?.name || 'Sin cliente',
+            customer_name: sale.customer_name || customer?.name || 'Sin cliente',
             store_name: store?.name || 'Sin sucursal',
             cashier_name: cashier?.name || cashier?.email || 'Sin cajero',
             items,
