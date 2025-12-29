@@ -204,3 +204,6 @@ Registra automáticamente los cambios en inventory_movements con tipo ADJUST par
 Incluye información detallada: aumento/disminución, cantidad, sucursal (nombre), producto, y usuario que realizó el cambio.';
 
 
+
+
+

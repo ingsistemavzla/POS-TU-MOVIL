@@ -589,7 +589,9 @@ export const EstadisticasPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" style={{
+        background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%)'
+      }}>
         <div className="text-center space-y-6">
           {/* Contenedor glass-panel para la pantalla de carga */}
           <div className="glass-panel border border-green-500/30 rounded-lg p-8 shadow-lg shadow-green-500/20">
@@ -665,84 +667,104 @@ export const EstadisticasPage: React.FC = () => {
 
       {/* Resumen del Inventario */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="shadow-md shadow-accent-primary/40 border border-accent-primary/30">
+        <Card className="shadow-md shadow-purple-500/40 border border-purple-500/30" style={{
+          background: 'rgba(9, 9, 9, 0.9)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)'
+        }}>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-white/90">
+            <CardTitle className="text-sm font-medium flex items-center gap-2 text-purple-400">
+              <DollarSign className="w-4 h-4 text-purple-400" />
               Valor Total del Inventario
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">
+            <div className="text-2xl font-bold" style={{
+              color: '#a855f7'
+            }}>
               USD {inventorySummary.totalValue.toLocaleString('es-VE', { 
                 minimumFractionDigits: 2, 
                 maximumFractionDigits: 2 
               })}
             </div>
             <p className="text-sm text-white/90 mt-2">
-              {inventorySummary.uniqueProducts} productos únicos en {inventorySummary.totalStores} tiendas
+              {inventorySummary.uniqueProducts} productos registrados en total
+            </p>
+            <p className="text-sm text-white/70 mt-1">
+              {inventorySummary.totalUnits.toLocaleString()} unidades en total en todo el inventario
+            </p>
+            <p className="text-xs text-white/60 mt-1">
+              en {inventorySummary.totalStores} tiendas
             </p>
           </CardContent>
         </Card>
 
-        <Card className="shadow-md shadow-status-danger/40 border border-status-danger/30">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-status-danger" />
-              Productos Sin Stock
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-status-danger">
-              {inventorySummary.outOfStock}
-            </div>
-            <p className="text-sm text-white/90 mt-2">
-              {inventorySummary.outOfStockPercentage}% de productos únicos
-            </p>
-            <Badge variant="destructive" className="mt-2">
-              Requiere atención inmediata
-            </Badge>
-          </CardContent>
-        </Card>
+        {/* Cards de Categorías - Formato compacto */}
+        {categoryStats.map((cat) => {
+          const getCategoryIcon = () => {
+            if (cat.category === 'phones') return <Smartphone className="w-4 h-4 text-blue-400" />;
+            if (cat.category === 'accessories') return <Headphones className="w-4 h-4 text-green-400" />;
+            return <Wrench className="w-4 h-4 text-orange-400" />;
+          };
 
-        <Card className="shadow-md shadow-accent-primary/40 border border-accent-primary/30">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-yellow-500" />
-              Stock Bajo
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-yellow-600">
-              {inventorySummary.lowStock + inventorySummary.criticalStock}
-            </div>
-            <p className="text-sm text-white/90 mt-2">
-              {inventorySummary.criticalStock} críticos • {inventorySummary.lowStock} bajo mínimo
-            </p>
-            <Badge variant="outline" className="mt-2 border-none shadow-xl shadow-yellow-500/20 text-yellow-600">
-              Reabastecimiento recomendado
-            </Badge>
-          </CardContent>
-        </Card>
+          const getCategoryColor = () => {
+            if (cat.category === 'phones') return {
+              border: 'border-blue-500/40',
+              shadow: 'shadow-blue-500/40',
+              bg: 'rgba(8, 15, 35, 0.6)',
+              text: 'text-blue-400'
+            };
+            if (cat.category === 'accessories') return {
+              border: 'border-green-500/40',
+              shadow: 'shadow-green-500/40',
+              bg: 'rgba(5, 21, 12, 0.6)',
+              text: 'text-green-400'
+            };
+            return {
+              border: 'border-orange-500/40',
+              shadow: 'shadow-orange-500/40',
+              bg: 'rgba(38, 13, 5, 0.6)',
+              text: 'text-orange-400'
+            };
+          };
 
-        <Card className="shadow-md shadow-accent-primary/40 border border-accent-primary/30">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Package className="w-4 h-4" />
-              Unidades en Stock
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">
-              {inventorySummary.totalUnits.toLocaleString()}
-            </div>
-            <p className="text-sm text-white/90 mt-2">
-              unidades en total
-            </p>
-            <p className="text-sm text-white/90">
-              {inventorySummary.uniqueProducts} productos únicos
-            </p>
-          </CardContent>
-        </Card>
+          const colors = getCategoryColor();
+
+          return (
+            <Card key={cat.category} className={`shadow-md ${colors.shadow} border ${colors.border}`} style={{
+              background: colors.bg,
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)'
+            }}>
+              <CardHeader className="pb-3">
+                <CardTitle className={`text-sm font-medium flex items-center gap-2 ${colors.text}`}>
+                  {getCategoryIcon()}
+                  {cat.label}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className={`text-xl font-bold ${colors.text}`}>
+                  USD {cat.totalValue.toLocaleString('es-VE', { 
+                    minimumFractionDigits: 2, 
+                    maximumFractionDigits: 2 
+                  })}
+                </div>
+                <p className="text-sm text-white/90 mt-2">
+                  {cat.uniqueProducts} productos agregados
+                </p>
+                <p className="text-sm text-white/70 mt-1">
+                  Total unidades: {cat.totalUnits.toLocaleString()}
+                </p>
+                <p className="text-sm text-white/60 mt-1">
+                  % del total: {cat.percentage}%
+                </p>
+                <Badge variant="outline" className="mt-2 text-xs border-white/20">
+                  Stock normal
+                </Badge>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       {/* Resumen por Sucursal */}
@@ -825,71 +847,112 @@ export const EstadisticasPage: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Valor por Categorías */}
+      {/* Estado del Inventario */}
       <Card className="shadow-lg shadow-green-500/50 border border-green-500/40">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <DollarSign className="w-5 h-5" />
-            Valor por Categorías
+            <Package className="w-5 h-5" />
+            Estado del Inventario
           </CardTitle>
           <p className="text-sm text-white/90">
-            Solo categorías con productos
+            Análisis de stock y productos
           </p>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {categoryStats.map((cat) => {
-              const getStatusColor = () => {
-                if (cat.percentage > 50) return 'text-green-600';
-                if (cat.percentage > 20) return 'text-blue-600';
-                return 'text-orange-600';
-              };
-
-              const getStatusBadge = () => {
-                if (cat.percentage > 50) return 'default';
-                if (cat.percentage > 20) return 'secondary';
-                return 'outline';
-              };
-
-              return (
-                <div
-                  key={cat.category}
-                  className="p-4 border-none shadow-md shadow-green-500/50 rounded-sm hover:shadow-lg hover:shadow-green-500/60 transition-shadow"
-                >
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        {cat.category === 'phones' && <Smartphone className="w-5 h-5 text-blue-500" />}
-                        {cat.category === 'accessories' && <Headphones className="w-5 h-5 text-green-600" />}
-                        {cat.category === 'technical_service' && <Wrench className="w-5 h-5 text-orange-500" />}
-                        <h3 className="text-lg font-semibold">{cat.label}</h3>
-                      </div>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm text-white/90">
-                        <div>
-                          <span className="font-semibold">USD {cat.totalValue.toLocaleString('es-VE', { 
-                            minimumFractionDigits: 2, 
-                            maximumFractionDigits: 2 
-                          })}</span>
-                        </div>
-                        <div>
-                          {cat.uniqueProducts} productos únicos • {cat.totalUnits.toLocaleString()} unidades
-                        </div>
-                        <div>
-                          <span className={getStatusColor()}>
-                            % del total: {cat.percentage}%
-                          </span>
-                        </div>
-                      </div>
+            {/* Productos Sin Stock */}
+            <div className="p-4 border-none shadow-md shadow-red-500/50 rounded-sm hover:shadow-lg hover:shadow-red-500/60 transition-shadow">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <AlertTriangle className="w-5 h-5 text-status-danger" />
+                    <h3 className="text-lg font-semibold">Productos Sin Stock</h3>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm text-white/90">
+                    <div>
+                      <span className="font-semibold text-status-danger text-xl">
+                        {inventorySummary.outOfStock}
+                      </span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={getStatusBadge()}>
-                        Stock normal
-                      </Badge>
+                    <div>
+                      {inventorySummary.outOfStockPercentage}% de productos únicos
+                    </div>
+                    <div>
+                      <span className="text-status-danger">
+                        Requiere atención inmediata
+                      </span>
                     </div>
                   </div>
                 </div>
-              );
-            })}
+                <div className="flex items-center gap-2">
+                  <Badge variant="destructive">
+                    Requiere atención inmediata
+                  </Badge>
+                </div>
+              </div>
+            </div>
+
+            {/* Stock Bajo */}
+            <div className="p-4 border-none shadow-md shadow-yellow-500/50 rounded-sm hover:shadow-lg hover:shadow-yellow-500/60 transition-shadow">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <TrendingUp className="w-5 h-5 text-yellow-500" />
+                    <h3 className="text-lg font-semibold">Stock Bajo</h3>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm text-white/90">
+                    <div>
+                      <span className="font-semibold text-yellow-600 text-xl">
+                        {inventorySummary.lowStock + inventorySummary.criticalStock}
+                      </span>
+                    </div>
+                    <div>
+                      {inventorySummary.criticalStock} críticos • {inventorySummary.lowStock} bajo mínimo
+                    </div>
+                    <div>
+                      <span className="text-yellow-600">
+                        Reabastecimiento recomendado
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="border-none shadow-xl shadow-yellow-500/20 text-yellow-600">
+                    Reabastecimiento recomendado
+                  </Badge>
+                </div>
+              </div>
+            </div>
+
+            {/* Unidades en Stock */}
+            <div className="p-4 border-none shadow-md shadow-green-500/50 rounded-sm hover:shadow-lg hover:shadow-green-500/60 transition-shadow">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <Package className="w-5 h-5" />
+                    <h3 className="text-lg font-semibold">Unidades en Stock</h3>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm text-white/90">
+                    <div>
+                      <span className="font-semibold text-xl">
+                        {inventorySummary.totalUnits.toLocaleString()}
+                      </span>
+                    </div>
+                    <div>
+                      unidades en total
+                    </div>
+                    <div>
+                      {inventorySummary.uniqueProducts} productos únicos
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline">
+                    Stock disponible
+                  </Badge>
+                </div>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>

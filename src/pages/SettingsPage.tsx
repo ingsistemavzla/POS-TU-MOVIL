@@ -65,7 +65,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen">
       <div className="container mx-auto p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -80,13 +80,13 @@ export default function SettingsPage() {
         </div>
 
       {/* Alerta informativa sobre contacto con soporte */}
-      <Alert className="border-blue-500/50 bg-blue-500/10">
-        <AlertCircle className="h-5 w-5 text-blue-400" />
-        <AlertTitle className="flex items-center gap-2">
+      <Alert className="border-green-500/60 bg-green-500/20 shadow-lg shadow-green-500/20">
+        <AlertCircle className="h-5 w-5 text-green-400" />
+        <AlertTitle className="flex items-center gap-2 text-green-300">
           <Lock className="h-4 w-4" />
           Configuración de Solo Lectura
         </AlertTitle>
-        <AlertDescription className="mt-2">
+        <AlertDescription className="mt-2 text-green-200">
           Esta sección muestra la configuración actual del sistema de forma informativa. 
           Para modificar cualquier ajuste global, contacte a soporte técnico, con el fin de resguardar y proteger la integridad de los datos. Los primeros 30 días de prueba en servidor.
         </AlertDescription>
@@ -94,20 +94,24 @@ export default function SettingsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Configuración Fiscal */}
-        <Card>
+        <Card className="glass-panel border border-white/10" style={{
+          background: 'rgba(9, 9, 9, 0.9)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)'
+        }}>
           <CardHeader>
-            <CardTitle className="flex items-center">
-              <Receipt className="w-5 h-5 mr-2" />
+            <CardTitle className="flex items-center text-white">
+              <Receipt className="w-5 h-5 mr-2 text-blue-400" />
               Configuración Fiscal
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-white/70">
               Configura los impuestos y aspectos fiscales
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="tax_rate" className="flex items-center">
-                <Calculator className="w-4 h-4 mr-2" />
+              <Label htmlFor="tax_rate" className="flex items-center text-white/90">
+                <Calculator className="w-4 h-4 mr-2 text-blue-300" />
                 Porcentaje de IVA (%)
               </Label>
               <div className="flex items-center space-x-2">
@@ -124,7 +128,7 @@ export default function SettingsPage() {
                 />
                 <Badge variant="outline">%</Badge>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-white/60">
                 Porcentaje de IVA aplicado a las ventas
               </p>
             </div>
@@ -132,7 +136,7 @@ export default function SettingsPage() {
             <Separator />
 
                          <div className="space-y-2">
-               <Label htmlFor="currency">Moneda Principal</Label>
+               <Label htmlFor="currency" className="text-white/90">Moneda Principal</Label>
                <Select
                  value={localSettings?.currency || 'USD'}
                  disabled
@@ -151,19 +155,23 @@ export default function SettingsPage() {
         </Card>
 
         {/* Configuración de Empresa */}
-        <Card>
+        <Card className="glass-panel border border-white/10" style={{
+          background: 'rgba(9, 9, 9, 0.9)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)'
+        }}>
           <CardHeader>
-            <CardTitle className="flex items-center">
-              <Building2 className="w-5 h-5 mr-2" />
+            <CardTitle className="flex items-center text-white">
+              <Building2 className="w-5 h-5 mr-2 text-blue-400" />
               Configuración de Empresa
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-white/70">
               Configura la información de tu empresa
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="receipt_footer">Pie de Factura</Label>
+              <Label htmlFor="receipt_footer" className="text-white/90">Pie de Factura</Label>
               <Textarea
                 id="receipt_footer"
                 value={localSettings?.receipt_footer || ''}
@@ -176,7 +184,7 @@ export default function SettingsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="barcode_prefix">Prefijo de Códigos de Barras</Label>
+              <Label htmlFor="barcode_prefix" className="text-white/90">Prefijo de Códigos de Barras</Label>
               <Input
                 id="barcode_prefix"
                 value={localSettings?.barcode_prefix || ''}
@@ -188,7 +196,7 @@ export default function SettingsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="low_stock_threshold">Umbral de Stock Bajo</Label>
+              <Label htmlFor="low_stock_threshold" className="text-white/90">Umbral de Stock Bajo</Label>
               <Input
                 id="low_stock_threshold"
                 type="number"
@@ -204,19 +212,23 @@ export default function SettingsPage() {
         </Card>
 
         {/* Configuración Regional */}
-        <Card>
+        <Card className="glass-panel border border-white/10" style={{
+          background: 'rgba(9, 9, 9, 0.9)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)'
+        }}>
           <CardHeader>
-            <CardTitle className="flex items-center">
-              <Palette className="w-5 h-5 mr-2" />
+            <CardTitle className="flex items-center text-white">
+              <Palette className="w-5 h-5 mr-2 text-blue-400" />
               Configuración Regional
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-white/70">
               Configura el idioma y zona horaria
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
                          <div className="space-y-2">
-               <Label htmlFor="language">Idioma</Label>
+               <Label htmlFor="language" className="text-white/90">Idioma</Label>
                <Select
                  value={localSettings?.language || 'es'}
                  disabled
@@ -232,7 +244,7 @@ export default function SettingsPage() {
              </div>
 
                          <div className="space-y-2">
-               <Label htmlFor="timezone">Zona Horaria</Label>
+               <Label htmlFor="timezone" className="text-white/90">Zona Horaria</Label>
                <Select
                  value={localSettings?.timezone || 'America/Caracas'}
                  disabled
@@ -252,24 +264,28 @@ export default function SettingsPage() {
         </Card>
 
         {/* Configuración del Sistema */}
-        <Card>
+        <Card className="glass-panel border border-white/10" style={{
+          background: 'rgba(9, 9, 9, 0.9)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)'
+        }}>
           <CardHeader>
-            <CardTitle className="flex items-center">
-              <Shield className="w-5 h-5 mr-2" />
+            <CardTitle className="flex items-center text-white">
+              <Shield className="w-5 h-5 mr-2 text-blue-400" />
               Configuración del Sistema
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-white/70">
               Configuraciones avanzadas del sistema
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label className="flex items-center">
-                  <Database className="w-4 h-4 mr-2" />
+                <Label className="flex items-center text-white/90">
+                  <Database className="w-4 h-4 mr-2 text-blue-300" />
                   Respaldo Automático
                 </Label>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-white/60">
                   Realizar respaldos automáticos de la base de datos
                 </p>
               </div>
@@ -284,11 +300,11 @@ export default function SettingsPage() {
 
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label className="flex items-center">
-                  <Bell className="w-4 h-4 mr-2" />
+                <Label className="flex items-center text-white/90">
+                  <Bell className="w-4 h-4 mr-2 text-blue-300" />
                   Notificaciones
                 </Label>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-white/60">
                   Habilitar notificaciones del sistema
                 </p>
               </div>
@@ -303,28 +319,32 @@ export default function SettingsPage() {
       </div>
 
       {/* Información del Sistema */}
-      <Card>
+      <Card className="glass-panel border border-white/10" style={{
+        background: 'rgba(9, 9, 9, 0.9)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)'
+      }}>
         <CardHeader>
-          <CardTitle className="flex items-center">
-            <Info className="w-5 h-5 mr-2" />
+          <CardTitle className="flex items-center text-white">
+            <Info className="w-5 h-5 mr-2 text-blue-400" />
             Información del Sistema
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
             <div>
-              <span className="font-medium">Empresa ID:</span>
-              <p className="text-muted-foreground">{userProfile?.company_id}</p>
+              <span className="font-medium text-white/90">Empresa ID:</span>
+              <p className="text-white/70">{userProfile?.company_id}</p>
             </div>
             <div>
-              <span className="font-medium">Usuario:</span>
-              <p className="text-muted-foreground">{userProfile?.email}</p>
+              <span className="font-medium text-white/90">Usuario:</span>
+              <p className="text-white/70">{userProfile?.email}</p>
             </div>
             <div>
-              <span className="font-medium">Última Actualización:</span>
-                             <p className="text-muted-foreground">
-                 {localSettings?.updated_at ? new Date(localSettings.updated_at).toLocaleString('es-VE') : 'N/A'}
-               </p>
+              <span className="font-medium text-white/90">Última Actualización:</span>
+              <p className="text-white/70">
+                {localSettings?.updated_at ? new Date(localSettings.updated_at).toLocaleString('es-VE') : 'N/A'}
+              </p>
             </div>
           </div>
         </CardContent>

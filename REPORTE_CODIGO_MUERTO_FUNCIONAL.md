@@ -166,3 +166,6 @@ Después de eliminar, verificar:
 **Próximo paso:** Esperar decisión del usuario sobre sistema de cierre de caja.
 
 
+
+
+

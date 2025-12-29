@@ -471,8 +471,7 @@ export function useReportsData(period: PeriodType = 'today', customRange?: DateR
           id,
           total_usd,
           created_at,
-          user_id,
-          users!inner(name, role)
+          cashier_id
         `)
         // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
         .gte('created_at', startDate.toISOString())
@@ -483,10 +482,11 @@ export function useReportsData(period: PeriodType = 'today', customRange?: DateR
 
       // Agrupar por cajero
       const cashierGroups = salesData.reduce((groups: any, sale: any) => {
-        const cashierName = sale.users?.name || 'Desconocido';
-        if (!groups[cashierName]) {
-          groups[cashierName] = {
-            id: sale.user_id || 'unknown',
+        const cashierId = sale.cashier_id || 'unknown';
+        const cashierName = `Cajero ${cashierId.substring(0, 8)}`;
+        if (!groups[cashierId]) {
+          groups[cashierId] = {
+            id: cashierId,
             name: cashierName,
             salesProcessed: 0,
             totalSales: 0,
@@ -495,8 +495,8 @@ export function useReportsData(period: PeriodType = 'today', customRange?: DateR
             performance: 0
           };
         }
-        groups[cashierName].salesProcessed++;
-        groups[cashierName].totalSales += sale.total_usd || 0;
+        groups[cashierId].salesProcessed++;
+        groups[cashierId].totalSales += sale.total_usd || 0;
         return groups;
       }, {});
 

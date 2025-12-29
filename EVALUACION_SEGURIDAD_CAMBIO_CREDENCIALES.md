@@ -251,3 +251,6 @@ WHERE email = 'NEW_EMAIL';  -- ⚠️ Cambiar por el nuevo email
 **FIN DE LA EVALUACIÓN**
 
 
+
+
+

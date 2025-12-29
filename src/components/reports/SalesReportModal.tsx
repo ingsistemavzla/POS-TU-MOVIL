@@ -18,11 +18,13 @@ import {
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '@/utils/currency';
 import { PDFGenerator } from '@/utils/pdfGenerator';
+import { ExecutiveReportCharts } from './ExecutiveReportCharts';
+import { useExecutiveReports } from '@/hooks/useExecutiveReports';
 
 interface SalesReportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  data: {
+  data?: {
     period: string;
     totalUsd: number;
     totalBs: number;
@@ -31,10 +33,25 @@ interface SalesReportModalProps {
     uniqueCustomers: number;
     growth: number;
   }[];
+  executiveData?: any; // Datos de la nueva RPC
+  dateFrom?: Date;
+  dateTo?: Date;
+  storeId?: string | null;
+  category?: string | null;
 }
 
-export function SalesReportModal({ isOpen, onClose, data }: SalesReportModalProps) {
+export function SalesReportModal({ isOpen, onClose, data, executiveData, dateFrom, dateTo, storeId, category }: SalesReportModalProps) {
   const [activeTab, setActiveTab] = useState('summary');
+  
+  // Obtener datos ejecutivos si no se proporcionan
+  const { data: executiveReportData, loading: loadingExecutive, refresh } = useExecutiveReports({
+    storeId: storeId || undefined,
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
+    category: category || undefined
+  });
+  
+  const finalExecutiveData = executiveData || executiveReportData;
 
   const handleExport = (format: 'pdf' | 'excel') => {
     if (format === 'pdf') {
@@ -148,26 +165,10 @@ export function SalesReportModal({ isOpen, onClose, data }: SalesReportModalProp
           </TabsContent>
 
           <TabsContent value="charts" className="space-y-6">
-            <Card className="p-6">
-              <h3 className="text-lg font-semibold mb-4">Visualizaciones</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="text-center p-6 border-2 border-dashed border-muted-foreground/20 rounded-lg">
-                  <BarChart3 className="w-12 h-12 text-primary mx-auto mb-4 opacity-50" />
-                  <p className="text-sm text-muted-foreground">Gráfico de Barras</p>
-                  <p className="text-xs text-muted-foreground">Ventas por período</p>
-                </div>
-                <div className="text-center p-6 border-2 border-dashed border-muted-foreground/20 rounded-lg">
-                  <LineChart className="w-12 h-12 text-success mx-auto mb-4 opacity-50" />
-                  <p className="text-sm text-muted-foreground">Gráfico de Líneas</p>
-                  <p className="text-xs text-muted-foreground">Tendencia de ventas</p>
-                </div>
-                <div className="text-center p-6 border-2 border-dashed border-muted-foreground/20 rounded-lg">
-                  <PieChart className="w-12 h-12 text-accent mx-auto mb-4 opacity-50" />
-                  <p className="text-sm text-muted-foreground">Gráfico Circular</p>
-                  <p className="text-xs text-muted-foreground">Distribución por día</p>
-                </div>
-              </div>
-            </Card>
+            <ExecutiveReportCharts 
+              data={finalExecutiveData} 
+              loading={loadingExecutive}
+            />
           </TabsContent>
 
           <TabsContent value="details" className="space-y-6">

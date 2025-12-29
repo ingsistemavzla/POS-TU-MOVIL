@@ -179,3 +179,6 @@ Después de eliminar archivos, verificar:
 **Próximo paso:** Esperar aprobación del usuario para proceder con eliminaciones.
 
 
+
+
+

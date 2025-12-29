@@ -205,3 +205,6 @@ const totalUnits = data?.total_items || 0;  // ✅ Usar directamente del RPC
 **FIN DEL REPORTE**
 
 
+
+
+

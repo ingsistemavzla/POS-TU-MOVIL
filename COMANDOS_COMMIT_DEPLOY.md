@@ -142,3 +142,6 @@ git reset HEAD DIAGNOSTICO_USUARIO*.sql
 **Listo para ejecutar** ✅
 
 
+
+
+

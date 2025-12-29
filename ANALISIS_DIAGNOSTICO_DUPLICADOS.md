@@ -204,3 +204,6 @@ ON public.users(email, company_id);
 - Agregar constraint único en `(email, company_id)` para prevenir duplicados
 
 
+
+
+

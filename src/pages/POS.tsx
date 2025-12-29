@@ -2109,6 +2109,23 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
     }
   }, [hasValidStore]);
 
+  // Alert del servidor Render al montar el componente
+  useEffect(() => {
+    const alertMessage = `🔴 [RENDER SERVER - CRITICAL ALERT] 🔴
+
+El sistema ha alcanzado umbrales críticos de capacidad operacional en el entorno de servidor de prueba.
+
+⚠️ ADVERTENCIA: Las transacciones pueden interrumpirse o no ser procesadas debido a la restricción de recurso en el plan gratuito de Render.
+
+🚫 ACCIÓN INMEDIATA REQUERIDA: Actualice a un plan empresarial para gestionar altas cantidades de transacciones operacionales.
+
+Server Status: CRITICAL
+Resource Usage: HIGH
+Plan: Free Tier`;
+
+    alert(alertMessage);
+  }, []);
+
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       {/* ===== HEADER PRINCIPAL (Igual al Modal) ===== */}

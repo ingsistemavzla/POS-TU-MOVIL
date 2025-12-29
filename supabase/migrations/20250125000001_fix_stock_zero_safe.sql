@@ -342,3 +342,6 @@ COMMENT ON FUNCTION process_sale IS 'Procesa una venta con validación blindada 
 
 
 
+
+
+

@@ -76,3 +76,6 @@ GRANT EXECUTE ON FUNCTION delete_user_by_email TO service_role;
 COMMENT ON FUNCTION delete_user_by_email IS 'Elimina un usuario buscándolo por email. Solo permite eliminar usuarios de la misma empresa del admin que ejecuta la función.';
 
 
+
+
+

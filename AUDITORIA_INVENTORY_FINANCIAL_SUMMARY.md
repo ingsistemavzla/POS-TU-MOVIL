@@ -378,3 +378,6 @@ COALESCE(SUM(retail_value), 0) - COALESCE(SUM(cost_value), 0) AS profit_potentia
 **FIN DEL REPORTE**
 
 
+
+
+

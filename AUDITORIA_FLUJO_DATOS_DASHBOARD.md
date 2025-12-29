@@ -193,3 +193,6 @@ const inventoryQuery = supabase.from('inventories')
 **FIN DEL REPORTE**
 
 
+
+
+

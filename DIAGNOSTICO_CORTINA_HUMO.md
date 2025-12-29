@@ -303,3 +303,6 @@ const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event,
 **FIN DEL DIAGNÓSTICO**
 
 
+
+
+

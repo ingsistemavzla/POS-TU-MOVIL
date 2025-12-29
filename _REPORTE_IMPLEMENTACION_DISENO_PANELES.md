@@ -662,3 +662,6 @@ Este diseño glassmorphism aplicado de forma coherente:
 4. Iterar sobre páginas individuales
 5. Validar y ajustar según feedback
 
+
+
+

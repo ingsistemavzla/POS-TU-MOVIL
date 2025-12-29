@@ -325,3 +325,6 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 **Próximo paso:** Aplicar fixes propuestos
 
 
+
+
+

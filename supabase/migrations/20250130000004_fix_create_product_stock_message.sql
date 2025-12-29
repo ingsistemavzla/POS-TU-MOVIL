@@ -61,3 +61,6 @@ COMMENT ON FUNCTION get_store_name_for_audit(UUID, UUID) IS
 Asegura que los mensajes de creación de productos incluyan información clara de la sucursal.';
 
 
+
+
+

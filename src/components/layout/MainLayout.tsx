@@ -242,7 +242,13 @@ export default function MainLayout() {
           sidebarOpen ? "w-64" : "w-14 xs:w-16"
         )}
       >
-        <div className="flex h-full flex-col bg-dark-bg">
+        <div className="flex h-full flex-col" style={{ 
+          background: 'linear-gradient(135deg, rgba(0, 4, 2, 0.98) 0%, rgba(1, 6, 3, 0.98) 50%, rgba(0, 2, 2, 0.98) 100%)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          borderRight: '1px solid rgba(16, 185, 129, 0.25)',
+          boxShadow: 'inset -2px 0 10px rgba(0, 0, 0, 0.6), 0 4px 20px rgba(0, 0, 0, 0.9)'
+        }}>
           {/* User Name & Toggle - Mobile First */}
           <div className="flex h-14 xs:h-16 items-center justify-between px-2 xs:px-4">
             {sidebarOpen ? (
@@ -352,7 +358,12 @@ export default function MainLayout() {
         )}
       >
         {/* Top Bar - Mobile First */}
-        <header className="h-14 xs:h-16 glass-navbar-internal border-b border-emerald-500/20">
+        <header className="h-14 xs:h-16 border-b border-green-500/30" style={{
+          background: 'rgba(3, 9, 6, 0.95)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.6)'
+        }}>
           <div className="flex h-full items-center justify-between px-3 xs:px-6">
             <div className="min-w-0 flex-1 flex items-center space-x-2">
               <Link to="/dashboard" className="flex items-center space-x-2">

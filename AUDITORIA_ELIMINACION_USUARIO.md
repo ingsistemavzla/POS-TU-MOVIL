@@ -272,3 +272,6 @@ La función `delete_user_atomic_admin` requiere un **UUID del perfil**, pero el 
 - `DIAGNOSTICO_ELIMINACION_USUARIO.sql` - Script de diagnóstico
 
 
+
+
+

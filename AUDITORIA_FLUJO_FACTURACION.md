@@ -300,3 +300,6 @@ AND invoice_number LIKE v_year || v_month || '-%';
 **Mantener la estructura de:** Estado del carrito (`cart`, `setCart`), preparación de parámetros, y manejo de errores/éxito.
 
 
+
+
+

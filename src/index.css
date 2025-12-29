@@ -38,9 +38,9 @@
     
     /* Gradientes */
     /* Login usa --gradient-diagonal (sin cambios) */
-    /* App interna usa --gradient-app-bg (gris oscuro verdoso, 10% más oscuro, toque verde sutil) */
-    --gradient-app-bg: linear-gradient(135deg, #3d4a3d 0%, #495749 100%);
-    --gradient-btn-primary: linear-gradient(135deg, #00FF7F 0%, #00FF00 50%, #00CC66 100%);
+    /* App interna usa --gradient-app-bg (mismo gradiente oscuro que página 404) */
+    --gradient-app-bg: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+    --gradient-btn-primary: linear-gradient(135deg, #10b981 0%, #059669 100%);
 
     /* --- MODO CLARO: "Minty Platinum" --- */
     /* Fondo principal: No blanco, sino un platino menta muy suave */
@@ -96,9 +96,9 @@
     --glow-accent: 0 0 15px hsl(var(--accent) / 0.4);
     --glow-success: 0 0 15px hsl(var(--success) / 0.4);
 
-    /* Glassmorphism */
-    --glass-bg: hsl(220 40% 15% / 0.5);
-    --glass-border: hsl(220 40% 25% / 0.2);
+    /* Glassmorphism (misma paleta que página 404) */
+    --glass-bg: rgba(17, 24, 39, 0.8);
+    --glass-border: rgba(16, 185, 129, 0.3);
 
     /* Animations */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -192,67 +192,70 @@
     background: var(--gradient-app-bg);
   }
 
-  /* Glass card effect (Login) */
+  /* Glass card effect (semi-oscuro y semi-transparente para seriedad) */
   .glass-card {
-    background-color: var(--glass-card);
+    background-color: rgba(15, 15, 15, 0.6);
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
-    border: 1px solid rgba(0, 255, 127, 0.2);
+    border: 1px solid rgba(16, 185, 129, 0.3);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   }
 
-  /* Glass panel - Tarjeta estándar para Dashboard (14% menos oscuro, 15% más transparente) */
+  /* Glass panel - Tarjeta estándar para Dashboard (semi-oscuro y semi-transparente para seriedad) */
   .glass-panel {
     background-color: rgba(9, 9, 9, 0.75);
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
-    border: 1px solid rgba(0, 255, 127, 0.2);
+    border: 1px solid rgba(16, 185, 129, 0.3);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   }
 
   /* Glass panel con hover interactivo */
   .glass-panel:hover {
-    border-color: rgba(0, 255, 127, 0.4);
+    border-color: rgba(16, 185, 129, 0.4);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
   }
 
-  /* Glass panel dense - Para tablas y listas de datos densos (14% menos oscuro, 15% más transparente) */
+  /* Glass panel dense - Para tablas y listas de datos densos (semi-oscuro y semi-transparente) */
   .glass-panel-dense {
     background-color: rgba(6, 6, 6, 0.75);
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
-    border: 1px solid rgba(0, 255, 127, 0.2);
+    border: 1px solid rgba(16, 185, 129, 0.3);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   }
 
   /* Glass panel dense con hover */
   .glass-panel-dense:hover {
-    border-color: rgba(0, 255, 127, 0.4);
+    border-color: rgba(16, 185, 129, 0.4);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
   }
 
   /* Glass input - Inputs dentro de paneles glass */
   .glass-input {
-    background-color: rgba(15, 23, 42, 0.5);
+    background-color: rgba(17, 24, 39, 0.6);
     color: #ffffff;
     border-color: rgba(16, 185, 129, 0.3);
   }
 
   .glass-input:focus {
-    background-color: rgba(15, 23, 42, 0.7);
-    border-color: var(--color-neon-primary);
-    outline-color: var(--color-neon-primary);
-    --tw-ring-color: var(--color-neon-primary);
+    background-color: rgba(17, 24, 39, 0.8);
+    border-color: rgba(16, 185, 129, 0.5);
+    outline-color: rgba(16, 185, 129, 0.5);
+    --tw-ring-color: rgba(16, 185, 129, 0.3);
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
   }
 
   .glass-input::placeholder {
     color: rgba(255, 255, 255, 0.5);
   }
 
-  /* Forzar color blanco en inputs dentro de glass-card */
+  /* Forzar color blanco en inputs dentro de glass-card (misma paleta que página 404) */
   .glass-card input[type="text"],
   .glass-card input[type="email"],
   .glass-card input[type="password"] {
     color: #ffffff !important;
-    background-color: rgba(15, 23, 42, 0.5) !important; /* bg-slate-950/50 oscuro */
+    background-color: rgba(17, 24, 39, 0.6) !important;
   }
 
   /* Mantener background oscuro cuando está en focus */
@@ -262,8 +265,10 @@
   .glass-card input[type="email"]:focus-visible,
   .glass-card input[type="password"]:focus,
   .glass-card input[type="password"]:focus-visible {
-    background-color: rgba(15, 23, 42, 0.7) !important; /* Más oscuro en focus */
+    background-color: rgba(17, 24, 39, 0.8) !important;
     color: #ffffff !important;
+    border-color: rgba(16, 185, 129, 0.5) !important;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2) !important;
   }
 
   .glass-card input::placeholder {
@@ -284,12 +289,13 @@
     color: rgba(255, 255, 255, 0.5);
   }
 
-  /* Fondo verde oscuro para destacar información (14% menos oscuro, 15% más transparente) */
+  /* Fondo verde oscuro para destacar información (semi-oscuro y semi-transparente) */
   .glass-green-dark {
-    background-color: rgba(9, 23, 14, 0.72); /* 14% menos oscuro, 15% más transparente */
-    border: 1px solid rgba(0, 255, 127, 0.3);
+    background-color: rgba(9, 23, 14, 0.72);
+    border: 1px solid rgba(16, 185, 129, 0.3);
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   }
 
   /* Verde oscuro para elementos activos con texto blanco (20% más oscuro que #00FF7F) */
@@ -301,12 +307,13 @@
     background-color: #00B359; /* Hover aún más oscuro */
   }
 
-  /* Fondo muted oscuro para elementos de lista (14% menos oscuro, 15% más transparente) */
+  /* Fondo muted oscuro para elementos de lista (semi-oscuro y semi-transparente) */
   .glass-muted-dark {
-    background-color: rgba(17, 34, 23, 0.64); /* 14% menos oscuro, 15% más transparente */
-    border: 1px solid rgba(0, 255, 127, 0.2);
+    background-color: rgba(17, 34, 23, 0.64);
+    border: 1px solid rgba(16, 185, 129, 0.3);
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   }
 
   /* Estilos de Tabla para Glass Design */

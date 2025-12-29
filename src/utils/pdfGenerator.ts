@@ -5,6 +5,17 @@ import { formatCurrency } from '@/utils/currency';
 import { supabase } from '@/integrations/supabase/client';
 import { getCategoryLabel } from '@/constants/categories';
 
+// Función para formatear moneda en formato español: $ 1.234,56
+function formatCurrencySpanish(amount: number): string {
+  // Formatear número con separadores de miles (punto) y decimales (coma)
+  const formatted = new Intl.NumberFormat('es-VE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(amount);
+  // Agregar símbolo $ al inicio con espacio
+  return `$ ${formatted}`;
+}
+
 // ========= VERSIÓN PROFESIONAL CON LOGO MEJORADO =========
 // 
 // MEJORAS IMPLEMENTADAS:
@@ -451,19 +462,19 @@ export async function generateSalesReportPDF(
   doc.setFontSize(9);
   doc.setTextColor(60, 60, 60);
   const maxWidth = doc.internal.pageSize.getWidth() - 50;
-  const summaryText = `Este reporte resume las operaciones del día. Se registraron ${data.totalOrders} transacciones por un total de ${formatCurrency(data.totalSales)}.`;
+  const summaryText = `Este reporte resume las operaciones del día. Se registraron ${data.totalOrders} transacciones por un total de ${formatCurrencySpanish(data.totalSales)}.`;
   const wrappedText = doc.splitTextToSize(summaryText, maxWidth);
   doc.text(wrappedText, 25, currentY);
   
   currentY += wrappedText.length * 8 + 2; // Mejor espaciado después del resumen
   
-  // 6. KPIs principales con formato real
+  // 6. KPIs principales con formato real (formato español: $ 1.234,56)
   const kpiData = [
-    ['Total Facturado', formatCurrency(data.totalSales)],
+    ['Total Facturado', formatCurrencySpanish(data.totalSales)],
     ['Total Órdenes', String(data.totalOrders)],
-    ['Ticket Promedio', formatCurrency(data.averageOrderValue)],
-    ['Krece Financiamiento', formatCurrency(data.totalKreceFinancing)],
-    ['Ingresos Netos', formatCurrency(paymentMethodsData?.totalUSD || 0)]
+    ['Ticket Promedio', formatCurrencySpanish(data.averageOrderValue)],
+    ['Krece Financiamiento', formatCurrencySpanish(data.totalKreceFinancing)],
+    ['Ingresos Netos', formatCurrencySpanish(paymentMethodsData?.totalUSD || 0)]
   ];
   
   autoTable(doc, {
@@ -479,7 +490,7 @@ export async function generateSalesReportPDF(
       lineColor: [200, 200, 200]
     },
     headStyles: { 
-      fillColor: [0, 120, 120],
+      fillColor: [0, 120, 120], // Color corporativo #007878
       textColor: 255,
       fontStyle: 'bold',
       halign: 'center',
@@ -660,7 +671,7 @@ export async function generateSalesReportPDF(
       doc.setTextColor(0, 0, 0);
       doc.setFontSize(7);
       doc.setFont('helvetica', 'bold');
-      doc.text(formatCurrency(store.totalSales || 0), barX + barWidth / 2, barY - 2, { align: 'center' });
+      doc.text(formatCurrencySpanish(store.totalSales || 0), barX + barWidth / 2, barY - 2, { align: 'center' });
       
       // Nombre de la tienda
       doc.setFontSize(6);
@@ -749,8 +760,8 @@ export async function generateSalesReportPDF(
             productName.length > 30 ? productName.substring(0, 27) + '...' : productName,
             getCategoryLabel(category),
             String(quantity),
-            formatCurrency(price),
-            formatCurrency(subtotal)
+            formatCurrencySpanish(price),
+            formatCurrencySpanish(subtotal)
           ];
         });
         
@@ -879,7 +890,7 @@ export async function generateSalesReportPDF(
           getCategoryLabel(category),
           String(data.invoices), // Cantidad de facturas
           String(data.units), // Cantidad total de unidades vendidas
-          formatCurrency(data.total)
+          formatCurrencySpanish(data.total)
         ])
         .sort((a, b) => parseInt(b[1] as string) - parseInt(a[1] as string)); // Ordenar por cantidad de facturas descendente
       
@@ -1205,7 +1216,7 @@ export async function generateSalesReportPDF(
     // Crear tabla con datos procesados (igual que en dashboard)
     const tableData = methodsToShow.map(method => [
       getMethodLabel(method.method),
-      formatCurrency(method.totalUSD),
+      formatCurrencySpanish(method.totalUSD),
       String(method.count),
       hasRealData ? `${method.percentage.toFixed(1)}%` : `${((method.totalUSD / totalUSD) * 100).toFixed(1)}%`
     ]);
@@ -1248,7 +1259,7 @@ export async function generateSalesReportPDF(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.setTextColor(0, 120, 120);
-    doc.text(`Total USD: ${formatCurrency(totalUSD)}`, 25, currentY);
+    doc.text(`Total USD: ${formatCurrencySpanish(totalUSD)}`, 25, currentY);
     
     currentY += 8;
     doc.setFont('helvetica', 'normal');
@@ -1273,9 +1284,9 @@ export async function generateSalesReportPDF(
     // Crear tabla de desglose por tienda
     const storeBreakdownData = data.storeBreakdown.map(store => [
       store.storeName,
-      formatCurrency(store.totalSales || 0),
+      formatCurrencySpanish(store.totalSales || 0),
       String(store.totalOrders || 0),
-      formatCurrency(store.averageOrderValue || 0)
+      formatCurrencySpanish(store.averageOrderValue || 0)
     ]);
     
     autoTable(doc, {
@@ -1349,10 +1360,10 @@ export async function generateSalesReportPDF(
       
       // Resumen de la sucursal
       const storeKpiData = [
-        ['Total Facturado', formatCurrency(store.totalSales || 0)],
+        ['Total Facturado', formatCurrencySpanish(store.totalSales || 0)],
         ['Total Órdenes', String(store.totalOrders || 0)],
-        ['Ticket Promedio', formatCurrency(store.averageOrderValue || 0)],
-        ['Krece Financiamiento', formatCurrency(store.kreceFinancing || 0)]
+        ['Ticket Promedio', formatCurrencySpanish(store.averageOrderValue || 0)],
+        ['Krece Financiamiento', formatCurrencySpanish(store.kreceFinancing || 0)]
       ];
       
       autoTable(doc, {
@@ -1439,7 +1450,7 @@ export async function generateSalesReportPDF(
             sale.invoice_number || sale.invoice_code || 'N/A',
             customerName,
             paymentMethod,
-            formatCurrency(sale.total_usd || sale.totalUSD || 0)
+            formatCurrencySpanish(sale.total_usd || sale.totalUSD || 0)
           ];
         });
 
@@ -1542,8 +1553,8 @@ export async function generateSalesReportPDF(
                 productName.length > 30 ? productName.substring(0, 27) + '...' : productName,
                 getCategoryLabel(category),
                 String(quantity),
-                formatCurrency(price),
-                formatCurrency(subtotal)
+                formatCurrencySpanish(price),
+                formatCurrencySpanish(subtotal)
               ];
             });
             
@@ -1649,8 +1660,8 @@ export async function generateSalesReportPDF(
             const productsTableData = storeProductsData.map(product => [
               product.product_name,
               String(product.total_qty),
-              formatCurrency(product.price_usd),
-              formatCurrency(product.total_amount)
+              formatCurrencySpanish(product.price_usd),
+              formatCurrencySpanish(product.total_amount)
             ]);
             
             const totalQty = storeProductsData.reduce((sum, product) => sum + product.total_qty, 0);
@@ -1659,7 +1670,7 @@ export async function generateSalesReportPDF(
             autoTable(doc, {
               head: [['Producto', 'Cantidad', 'Precio Unit.', 'Total']],
               body: productsTableData,
-              foot: [['TOTAL', String(totalQty), '', formatCurrency(totalAmount)]],
+              foot: [['TOTAL', String(totalQty), '', formatCurrencySpanish(totalAmount)]],
               startY: currentY,
               margin: { left: 25, right: 25 },
               styles: { 
@@ -1743,7 +1754,7 @@ export async function generateSalesReportPDF(
         if (storePayments.length > 0) {
           const storePaymentTableData = storePayments.map((method: any) => [
             getMethodLabel(method.method),
-            formatCurrency(method.totalUSD || 0),
+            formatCurrencySpanish(method.totalUSD || 0),
             String(method.count || 0),
             `${(method.percentage || 0).toFixed(1)}%`
           ]);
@@ -1818,9 +1829,9 @@ export async function generateSalesReportPDF(
     // Crear tabla de desglose por tienda
     const storeBreakdownData = data.storeBreakdown.map(store => [
       store.storeName,
-      formatCurrency(store.totalSales || 0),
+      formatCurrencySpanish(store.totalSales || 0),
       String(store.totalOrders || 0),
-      formatCurrency(store.averageOrderValue || 0)
+      formatCurrencySpanish(store.averageOrderValue || 0)
     ]);
     
     autoTable(doc, {
@@ -1928,7 +1939,7 @@ export async function generateSalesReportPDF(
           getCategoryLabel(category),
           String(data.invoices), // Cantidad de facturas
           String(data.units), // Cantidad total de unidades vendidas
-          formatCurrency(data.total)
+          formatCurrencySpanish(data.total)
         ])
         .sort((a, b) => parseInt(b[1] as string) - parseInt(a[1] as string)); // Ordenar por cantidad de facturas descendente
       
@@ -2511,9 +2522,9 @@ export async function generateProfitabilityReportPDF(data: ProfitabilityReportDa
   currentY += 12;
   
   const profitData = [
-    ['Ingresos Totales', formatCurrency(data.totalRevenue)],
-    ['Costos Totales', formatCurrency(data.totalCost)],
-    ['Utilidad Bruta', formatCurrency(data.grossProfit)],
+    ['Ingresos Totales', formatCurrencySpanish(data.totalRevenue)],
+    ['Costos Totales', formatCurrencySpanish(data.totalCost)],
+    ['Utilidad Bruta', formatCurrencySpanish(data.grossProfit)],
     ['Margen de Utilidad', `${data.profitMargin.toFixed(2)}%`]
   ];
   
@@ -2552,7 +2563,7 @@ export async function generateInventoryReportPDF(data: InventoryReportData, meta
   
   const inventoryData = [
     ['Total de Productos', String(data.totalProducts)],
-    ['Valor del Stock', formatCurrency(data.totalStockValue)],
+    ['Valor del Stock', formatCurrencySpanish(data.totalStockValue)],
     ['Productos Bajo Stock', String(data.lowStockProducts)],
     ['Productos Sin Stock', String(data.outOfStockProducts)]
   ];

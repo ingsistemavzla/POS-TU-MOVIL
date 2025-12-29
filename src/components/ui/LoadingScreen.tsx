@@ -21,7 +21,7 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
         className
       )}
       style={{
-        background: 'linear-gradient(135deg, #000A00 0%, #006600 100%)'
+        background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%)'
       }}
     >
       <div className="relative flex flex-col items-center justify-center">
