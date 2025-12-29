@@ -167,7 +167,7 @@ export default function MainLayout() {
     const loadStore = async () => {
       if (!userProfile) return;
       if (userProfile.role === 'admin' || userProfile.role === 'master_admin') {
-        setStoreName(userProfile.role === 'master_admin' ? 'MASTER AUDIT' : 'Todas las tiendas');
+        setStoreName(userProfile.role === 'master_admin' ? 'MASTER AUDIT' : 'Panel Administrador');
         return;
       }
       
