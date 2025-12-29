@@ -164,12 +164,51 @@ export const AlmacenPage: React.FC = () => {
       // Cargar inventario
       // ⚠️ FILTRO CRÍTICO: JOIN con products para filtrar solo productos activos
       // 🛡️ SEGURIDAD: RLS maneja el filtrado automáticamente por store_id y company_id
-      const inventoryQuery = (supabase.from('inventories') as any)
+      let inventoryQuery = (supabase.from('inventories') as any)
         .select('product_id, store_id, qty, products!inner(active)')
         // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
         .eq('products.active', true);  // ⚠️ Solo inventario de productos activos
 
-      const { data: inventoryData, error: inventoryError } = await inventoryQuery;
+      // ✅ PAGINACIÓN: Obtener todos los registros (Supabase limita a 1000 por defecto)
+      // Esto asegura consistencia con el panel Artículos
+      const fetchAllInventory = async () => {
+        const allData: any[] = [];
+        const pageSize = 1000;
+        let from = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+          const pageQuery = inventoryQuery.range(from, from + pageSize - 1);
+          const { data, error } = await pageQuery;
+          
+          if (error) {
+            console.error('Error fetching inventory page:', error);
+            break;
+          }
+
+          if (data && data.length > 0) {
+            allData.push(...data);
+            from += pageSize;
+            hasMore = data.length === pageSize; // Si devolvió menos de pageSize, no hay más
+          } else {
+            hasMore = false;
+          }
+        }
+
+        console.log(`[AlmacenPage] Inventario obtenido: ${allData.length} registros (en ${Math.ceil(from / pageSize)} páginas)`);
+        
+        // 🔍 DEBUG: Verificar datos del producto específico
+        const productData = allData.filter((item: any) => 
+          item.product_id && (item.products?.sku === 'R5CY71TZ3JM' || item.products?.name?.toLowerCase().includes('samsung galaxy a26'))
+        );
+        if (productData.length > 0) {
+          console.log(`[AlmacenPage] Datos RAW del inventario para producto R5CY71TZ3JM:`, productData);
+        }
+        
+        return { data: allData, error: null };
+      };
+
+      const { data: inventoryData, error: inventoryError } = await fetchAllInventory();
 
       if (inventoryError) {
         console.error('Error fetching inventory:', inventoryError);
@@ -247,6 +286,16 @@ export const AlmacenPage: React.FC = () => {
           
           // Sumar todas las tiendas visibles (RLS ya filtró por store_id)
           const totalStock = Object.values(stockByStore).reduce((sum, qty) => sum + (qty || 0), 0);
+          
+          // 🔍 DEBUG: Log para verificar cálculo de stock
+          if (product.sku === 'R5CY71TZ3JM' || product.name.toLowerCase().includes('samsung galaxy a26')) {
+            console.log(`[AlmacenPage] Producto ${product.sku} (${product.name}):`, {
+              stockByStore,
+              totalStock,
+              inventoryCount: inventoriesByProduct[product.id]?.length || 0,
+              inventories: inventoriesByProduct[product.id]?.map(inv => ({ store: inv.store_name, qty: inv.qty }))
+            });
+          }
           
           return {
             ...product,

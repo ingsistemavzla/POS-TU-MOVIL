@@ -282,17 +282,24 @@ export const ArticulosPage: React.FC = () => {
         });
       }
 
-      // 🔥 RESTAURACIÓN: Calcular total_stock según el filtro activo
+      // ✅ CORRECCIÓN: Calcular total_stock SIEMPRE sumando todas las tiendas (consistencia con Almacén)
+      // El filtro de tienda solo afecta qué productos se muestran, pero el total_stock siempre es la suma global
       const productsWithStock = (productsData || []).map((product: any) => {
         const stockByStore = stockByProductStore.get(product.id) || {};
         
-        // 🛡️ EXCEPCIÓN QUIRÚRGICA: Para Servicio Técnico, siempre mostrar total de todas las sucursales
-        // Esto asegura consistencia entre paneles y refleja correctamente el stock total
-        const totalStock = product.category === 'technical_service'
-          ? Object.values(stockByStore).reduce((sum, qty) => sum + (qty || 0), 0) // Siempre suma todas las sucursales
-          : activeStoreId
-            ? (stockByStore[activeStoreId] || 0) // Para otras categorías, respetar filtro
-            : Object.values(stockByStore).reduce((sum, qty) => sum + (qty || 0), 0); // Sin filtro, suma todas
+        // ✅ SIEMPRE sumar todas las tiendas para mantener consistencia con panel Almacén
+        // El filtro de tienda (activeStoreId) solo afecta la visualización de detalles, no el total
+        const totalStock = Object.values(stockByStore).reduce((sum, qty) => sum + (qty || 0), 0);
+        
+        // 🔍 DEBUG: Log para verificar cálculo de stock
+        if (product.sku === 'R5CY71TZ3JM' || product.name.toLowerCase().includes('samsung galaxy a26')) {
+          console.log(`[ArticulosPage] Producto ${product.sku} (${product.name}):`, {
+            stockByStore,
+            totalStock,
+            inventoryCount: inventoriesByProduct[product.id]?.length || 0,
+            inventories: inventoriesByProduct[product.id]?.map(inv => ({ store: inv.store_name, qty: inv.qty }))
+          });
+        }
         
         return {
           ...product,

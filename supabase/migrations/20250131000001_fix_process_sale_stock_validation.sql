@@ -1,9 +1,11 @@
 -- ============================================================================
 -- Migration: Corregir validación de stock por sucursal en process_sale
 -- Fecha: 2025-01-31
--- Descripción: Corrige el problema donde productos sin inventario en una 
---              sucursal causan errores con "Desconocido (SKU: N/A)".
---              Mejora la validación de stock y los mensajes de error.
+-- Descripción: Corrige el problema de Race Condition en lecturas concurrentes
+--              de inventario que causaba stock negativo (Split-Brain).
+--              Implementa bloqueo pesimista (SELECT FOR UPDATE) para serializar
+--              transacciones concurrentes y eliminar race conditions.
+--              Única fuente de verdad: La tabla inventories almacena todo el stock.
 -- ============================================================================
 
 -- Crear función corregida
@@ -55,24 +57,19 @@ DECLARE
     v_product_name_db TEXT;
     v_product_sku_db TEXT;
     v_sale_price_usd NUMERIC;
-    v_new_stock NUMERIC;
     v_total_bs_final NUMERIC;
     v_krece_initial_bs_final NUMERIC;
     v_krece_financed_bs_final NUMERIC;
     v_cashea_initial_bs_final NUMERIC;
     v_cashea_financed_bs_final NUMERIC;
-    v_rows_updated INTEGER;
-    v_total_items INTEGER;
-    v_failed_product_name TEXT;
-    v_failed_product_sku TEXT;
-    v_failed_current_stock NUMERIC;
-    v_failed_qty NUMERIC;
-    v_failed_product_id UUID;
     -- Variables para mensajes de auditoría
     v_product_name_mov TEXT;
     v_product_sku_mov TEXT;
     v_store_name_mov TEXT;
 BEGIN
+    -- 🔒 SEGURIDAD ANTI-COLGAMIENTO: Timeout de bloqueo para evitar transacciones zombie
+    SET LOCAL lock_timeout = '4000ms';
+
     -- ✅ ELIMINACIÓN DE IVA: Anular cualquier parámetro de tax_rate que envíe el frontend
     p_tax_rate := 0;
 
@@ -197,31 +194,37 @@ BEGIN
     ) RETURNING id INTO new_sale_id;
 
     -- ========================================================================
-    -- 6. PROCESAR ITEMS Y ACTUALIZAR STOCK (✅ CORREGIDO: Validación mejorada)
+    -- 6. PROCESAR ITEMS Y ACTUALIZAR STOCK (🔒 BLOQUEO PESIMISTA - ANTI RACE CONDITION)
     -- ========================================================================
+    -- ✅ ESTRATEGIA: Bloqueo pesimista con SELECT FOR UPDATE
+    -- ✅ ORDEN DETERMINISTA: Ordenar por product_id ASC para evitar deadlocks
+    -- ✅ TRANSACCIÓN ATÓMICA: Todo dentro de la misma transacción implícita
+    -- ✅ ÚNICA FUENTE DE VERDAD: La tabla inventories es la única que almacena stock
     
-    -- 6.1. PRIMER PASO: Insertar todos los sale_items y validar stock previo
-    FOR item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
+    FOR item IN 
+        SELECT elem.value 
+        FROM jsonb_array_elements(p_items) AS elem
+        ORDER BY (elem.value->>'product_id') ASC  -- 🔒 CRÍTICO: Orden determinista para evitar Deadlocks
+    LOOP
         v_product_id := (item->>'product_id')::UUID;
         v_qty := COALESCE((item->>'qty')::NUMERIC, 0);
         
-        -- ✅ CORRECCIÓN CRÍTICA: Validar product_id antes de procesar
+        -- ✅ VALIDACIÓN PREVIA: Validar product_id y qty antes de procesar
         IF v_product_id IS NULL THEN
             RAISE EXCEPTION 'Item inválido detectado: product_id es NULL o inválido. Verifica que todos los items del carrito tienen un product_id válido.';
         END IF;
         
-        -- ✅ CORRECCIÓN: No convertir 0 a 1, lanzar error
         IF v_qty <= 0 THEN
             RAISE EXCEPTION 'Item inválido detectado: La cantidad debe ser mayor a 0 para el producto %', v_product_id;
         END IF;
 
-        -- Obtener datos actualizados del producto
+        -- ✅ PASO A: OBTENER DATOS DEL PRODUCTO (sin bloqueo, solo lectura)
         SELECT name, sku, sale_price_usd 
         INTO v_product_name_db, v_product_sku_db, v_sale_price_usd
         FROM products 
         WHERE id = v_product_id AND company_id = p_company_id;
 
-        -- ✅ CORRECCIÓN: Si no encuentra el producto, lanzar error claro
+        -- ✅ VALIDACIÓN: Si no encuentra el producto, lanzar error claro
         IF NOT FOUND THEN
             RAISE EXCEPTION 'Producto no encontrado (ID: %). Verifica que el producto existe y pertenece a la compañía.', v_product_id;
         END IF;
@@ -230,264 +233,81 @@ BEGIN
         v_product_sku := COALESCE(v_product_sku_db, item->>'product_sku', 'N/A');
         v_price := COALESCE(v_sale_price_usd, (item->>'price_usd')::NUMERIC, 0);
 
-        -- ✅ CORRECCIÓN: Validación mejorada de stock (incluye creación si no existe)
-        SELECT qty INTO v_current_stock
-        FROM inventories 
-        WHERE company_id = p_company_id 
-          AND store_id = p_store_id 
-          AND product_id = v_product_id;
+        -- ✅ PASO B: BLOQUEO PESIMISTA DE FILA (🔒 EL CANDADO - Serialización de ventas concurrentes)
+        -- Si no existe inventario, crear uno con stock 0 primero (sin bloqueo)
+        INSERT INTO inventories (company_id, store_id, product_id, qty, min_qty)
+        VALUES (p_company_id, p_store_id, v_product_id, 0, 0)
+        ON CONFLICT (company_id, store_id, product_id) DO NOTHING;
 
-        -- Si no existe registro de inventario para esta sucursal, crear uno con stock 0
+        -- 🔒 BLOQUEO DE FILA: SELECT FOR UPDATE (Serializa transacciones concurrentes)
+        SELECT i.qty INTO v_current_stock
+        FROM inventories i
+        WHERE i.product_id = v_product_id
+          AND i.company_id = p_company_id
+          AND i.store_id = p_store_id
+        FOR UPDATE OF i;  -- 🔒 BLOQUEO ATÓMICO: Esta fila queda bloqueada hasta COMMIT/ROLLBACK
+
+        -- ✅ VALIDACIÓN POST-BLOQUEO: Verificar que existe inventario
         IF v_current_stock IS NULL THEN
-            INSERT INTO inventories (company_id, store_id, product_id, qty, min_qty)
-            VALUES (p_company_id, p_store_id, v_product_id, 0, 0)
-            ON CONFLICT (company_id, store_id, product_id) DO NOTHING;
-            v_current_stock := 0;
+            RAISE EXCEPTION 'Error crítico: No se pudo obtener el stock del producto % (SKU: %) después de crear el registro de inventario.', 
+                v_product_name, v_product_sku;
         END IF;
 
-        -- Validar stock suficiente
+        -- ✅ PASO C: VALIDACIÓN ATÓMICA DE STOCK (Dentro del bloqueo)
         IF v_current_stock < v_qty THEN
             RAISE EXCEPTION 'Stock insuficiente para el producto % (SKU: %) en la sucursal seleccionada. Stock disponible: %, solicitado: %.', 
                 v_product_name, v_product_sku, v_current_stock, v_qty;
         END IF;
 
-        -- Insertar item de venta
+        -- ✅ PASO D: ACTUALIZACIÓN ATÓMICA DE INVENTARIO (Fila ya está bloqueada)
+        UPDATE inventories
+        SET 
+            qty = qty - v_qty,
+            updated_at = NOW()
+        WHERE product_id = v_product_id
+          AND company_id = p_company_id
+          AND store_id = p_store_id;
+
+        -- ✅ PASO E: REGISTRO DE ITEM DE VENTA (Dentro de la misma transacción)
         INSERT INTO sale_items (
             sale_id, product_id, product_name, product_sku, qty, price_usd, subtotal_usd
         ) VALUES (
             new_sale_id, v_product_id, v_product_name, v_product_sku,
             v_qty, v_price, (v_qty * v_price)
         );
+        
+        -- ✅ PASO F: REGISTRO DE MOVIMIENTO DE INVENTARIO (AUDITORÍA - NO CRÍTICO)
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.tables 
+                      WHERE table_schema = 'public' 
+                      AND table_name = 'inventory_movements') THEN
+                -- Obtener nombre de la sucursal
+                SELECT name INTO v_store_name_mov
+                FROM public.stores
+                WHERE id = p_store_id AND company_id = p_company_id
+                LIMIT 1;
+                
+                -- Construir mensaje mejorado con información completa
+                INSERT INTO public.inventory_movements (
+                    product_id, type, qty, store_from_id, store_to_id, reason,
+                    user_id, company_id, sale_id, created_at
+                ) VALUES (
+                    v_product_id, 'OUT', -v_qty, p_store_id, NULL,
+                    'Venta - Factura: ' || COALESCE(v_invoice_number, new_sale_id::text) || 
+                    ' - Cliente: ' || COALESCE(p_customer_name, 'Cliente General') ||
+                    ' - Sucursal: ' || COALESCE(v_store_name_mov, 'Desconocida') ||
+                    ' - Producto: ' || COALESCE(v_product_name, 'N/A') ||
+                    CASE WHEN v_product_sku IS NOT NULL THEN ' (' || v_product_sku || ')' ELSE '' END,
+                    p_cashier_id, p_company_id, new_sale_id, NOW()
+                );
+            END IF;
+        EXCEPTION
+            WHEN OTHERS THEN
+                -- Log error pero continuar (NO CRÍTICO - la venta ya se procesó correctamente)
+                RAISE WARNING 'Error al registrar movimiento de inventario para producto % (SKU: %): %', 
+                    v_product_name, v_product_sku, SQLERRM;
+        END;
     END LOOP;
-
-    -- 6.2. SEGUNDO PASO: ✅ BATCH UPDATE de inventario (OPTIMIZACIÓN CRÍTICA)
-    -- Esto reemplaza N UPDATEs individuales con 1 UPDATE masivo
-    WITH stock_updates AS (
-        -- ✅ CORRECCIÓN CRÍTICA: Agrupar items duplicados por producto y sumar cantidades
-        -- Esto garantiza una sola validación y un solo UPDATE por producto, mejorando integridad
-        SELECT 
-            (p_item->>'product_id')::UUID as product_id,
-            SUM(COALESCE((p_item->>'qty')::NUMERIC, 0)) as qty_to_subtract
-        FROM jsonb_array_elements(p_items) as p_item
-        WHERE (p_item->>'qty')::NUMERIC > 0
-          AND (p_item->>'product_id')::UUID IS NOT NULL
-          AND (p_item->>'product_id')::TEXT != 'null'  -- ✅ Excluir strings "null"
-          AND (p_item->>'product_id')::TEXT != ''      -- ✅ Excluir strings vacíos
-        GROUP BY (p_item->>'product_id')::UUID  -- ✅ Agrupar por producto para sumar cantidades
-    ),
-    -- ✅ CORRECCIÓN: Asegurar que todos los productos tengan inventario
-    ensure_inventory AS (
-        INSERT INTO inventories (company_id, store_id, product_id, qty, min_qty)
-        SELECT p_company_id, p_store_id, su.product_id, 0, 0
-        FROM stock_updates su
-        WHERE NOT EXISTS (
-            SELECT 1 FROM inventories i
-            WHERE i.company_id = p_company_id
-              AND i.store_id = p_store_id
-              AND i.product_id = su.product_id
-        )
-        ON CONFLICT (company_id, store_id, product_id) DO NOTHING
-        RETURNING product_id
-    ),
-    validated_stock AS (
-        -- Validar que todos los productos tienen stock suficiente (validación atómica)
-        SELECT 
-            su.product_id,
-            su.qty_to_subtract,
-            i.qty as current_stock,
-            COALESCE(p.name, 'Producto Desconocido') as product_name,
-            COALESCE(p.sku, 'N/A') as product_sku
-        FROM stock_updates su
-        INNER JOIN inventories i ON 
-            i.product_id = su.product_id 
-            AND i.company_id = p_company_id 
-            AND i.store_id = p_store_id
-        LEFT JOIN products p ON p.id = su.product_id AND p.company_id = p_company_id
-        WHERE i.qty >= su.qty_to_subtract  -- ✅ Validación atómica: solo productos con stock suficiente
-    ),
-    batch_update AS (
-        -- Ejecutar el UPDATE masivo
-        UPDATE inventories i
-        SET 
-            qty = i.qty - vs.qty_to_subtract,
-            updated_at = NOW()
-        FROM validated_stock vs
-        WHERE i.product_id = vs.product_id
-          AND i.company_id = p_company_id
-          AND i.store_id = p_store_id
-        RETURNING i.product_id, i.qty
-    )
-    SELECT COUNT(*) INTO v_rows_updated FROM batch_update;
-
-    -- 6.3. TERCER PASO: Verificar integridad (todos los productos se actualizaron)
-    -- ✅ CORRECCIÓN: Contar productos únicos (no items totales) para coincidir con GROUP BY
-    SELECT COUNT(DISTINCT (p_item->>'product_id')::UUID) INTO v_total_items
-    FROM jsonb_array_elements(p_items) as p_item
-    WHERE (p_item->>'qty')::NUMERIC > 0
-      AND (p_item->>'product_id')::UUID IS NOT NULL
-      AND (p_item->>'product_id')::TEXT != 'null'
-      AND (p_item->>'product_id')::TEXT != '';
-
-    IF v_rows_updated != v_total_items THEN
-        -- ✅ CORRECCIÓN MEJORADA: Identificar producto fallido usando EXCLUSIÓN (NOT EXISTS)
-        -- Estrategia: Cualquier item en stock_updates que NO esté en validated_stock es el culpable
-        WITH stock_updates_for_diagnosis AS (
-            -- Reconstruir stock_updates para diagnóstico (mismo criterio que el batch update)
-            -- ✅ CORRECCIÓN: Agrupar items duplicados por producto para mantener consistencia
-            SELECT 
-                (p_item->>'product_id')::UUID as product_id,
-                SUM(COALESCE((p_item->>'qty')::NUMERIC, 0)) as qty_to_subtract
-            FROM jsonb_array_elements(p_items) as p_item
-            WHERE (p_item->>'qty')::NUMERIC > 0
-              AND (p_item->>'product_id')::UUID IS NOT NULL
-              AND (p_item->>'product_id')::TEXT != 'null'
-              AND (p_item->>'product_id')::TEXT != ''
-            GROUP BY (p_item->>'product_id')::UUID  -- ✅ Agrupar por producto para sumar cantidades
-        ),
-        items_with_names AS (
-            -- Extraer nombres de productos desde p_items para mensaje de error
-            SELECT 
-                (p_item->>'product_id')::UUID as product_id,
-                p_item->>'product_name' as product_name_from_item,
-                p_item->>'product_sku' as product_sku_from_item
-            FROM jsonb_array_elements(p_items) as p_item
-            WHERE (p_item->>'product_id')::UUID IS NOT NULL
-        ),
-        validated_stock_for_diagnosis AS (
-            -- Reconstruir validated_stock para comparación (mismo criterio que el batch update)
-            SELECT 
-                su.product_id,
-                su.qty_to_subtract,
-                i.qty as current_stock,
-                COALESCE(p.name, 'Producto Desconocido') as product_name,
-                COALESCE(p.sku, 'N/A') as product_sku
-            FROM stock_updates_for_diagnosis su
-            INNER JOIN inventories i ON 
-                i.product_id = su.product_id 
-                AND i.company_id = p_company_id 
-                AND i.store_id = p_store_id
-            LEFT JOIN products p ON p.id = su.product_id AND p.company_id = p_company_id
-            WHERE i.qty >= su.qty_to_subtract  -- ✅ Solo productos que pasaron validación
-        ),
-        failed_products AS (
-            -- ✅ ESTRATEGIA DE EXCLUSIÓN: Items en stock_updates que NO están en validated_stock
-            SELECT 
-                su.product_id,
-                su.qty_to_subtract,
-                COALESCE(i.qty, 0) as current_stock,
-                COALESCE(p.name, iwn.product_name_from_item, 'Producto Desconocido') as product_name,
-                COALESCE(p.sku, iwn.product_sku_from_item, 'N/A') as product_sku
-            FROM stock_updates_for_diagnosis su
-            -- LEFT JOINs primero (antes del WHERE) para obtener datos para el mensaje de error
-            LEFT JOIN inventories i ON 
-                i.product_id = su.product_id 
-                AND i.company_id = p_company_id 
-                AND i.store_id = p_store_id
-            LEFT JOIN products p ON p.id = su.product_id AND p.company_id = p_company_id
-            LEFT JOIN items_with_names iwn ON iwn.product_id = su.product_id
-            -- ✅ EXCLUSIÓN: Solo productos que NO pasaron validated_stock (WHERE después de JOINs)
-            WHERE NOT EXISTS (
-                SELECT 1 
-                FROM validated_stock_for_diagnosis vs 
-                WHERE vs.product_id = su.product_id
-            )
-            LIMIT 1  -- Solo necesitamos el primer producto fallido para el mensaje
-        )
-        SELECT 
-            product_name,
-            product_sku,
-            current_stock,
-            qty_to_subtract,
-            product_id
-        INTO 
-            v_failed_product_name,
-            v_failed_product_sku,
-            v_failed_current_stock,
-            v_failed_qty,
-            v_failed_product_id
-        FROM failed_products;
-
-        -- ✅ Mensaje de error descriptivo con información completa
-        IF v_failed_product_id IS NULL THEN
-            -- Fallback: Si por alguna razón no se identificó el producto, usar mensaje genérico
-            RAISE EXCEPTION 'Error al procesar la venta: No se pudo identificar el producto con stock insuficiente. Verifica que todos los productos tienen stock disponible en la sucursal seleccionada.';
-        ELSE
-            RAISE EXCEPTION 'Stock insuficiente para el producto % (SKU: %) en la sucursal seleccionada. Stock disponible: %, solicitado: %. Verifica que el producto tiene stock en la sucursal correcta.', 
-                COALESCE(v_failed_product_name, 'Producto Desconocido'), 
-                COALESCE(v_failed_product_sku, 'N/A'), 
-                COALESCE(v_failed_current_stock, 0), 
-                COALESCE(v_failed_qty, 0);
-        END IF;
-    END IF;
-
-    -- 6.4. CUARTO PASO: Verificación final de integridad (ningún stock negativo)
-    SELECT COUNT(*) INTO v_rows_updated
-    FROM inventories
-    WHERE company_id = p_company_id
-      AND store_id = p_store_id
-      AND product_id IN (
-          SELECT (p_item->>'product_id')::UUID
-          FROM jsonb_array_elements(p_items) as p_item
-          WHERE (p_item->>'product_id')::UUID IS NOT NULL
-      )
-      AND qty < 0;
-
-    IF v_rows_updated > 0 THEN
-        RAISE EXCEPTION 'Error crítico de integridad: Uno o más productos quedaron con stock negativo después del Batch UPDATE.';
-    END IF;
-
-    -- 6.5. QUINTO PASO: Registrar movimientos de inventario (MEJORADO - CON INFO DE SUCURSAL)
-    BEGIN
-        IF EXISTS (SELECT 1 FROM information_schema.tables 
-                  WHERE table_schema = 'public' 
-                  AND table_name = 'inventory_movements') THEN
-            FOR item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
-                v_product_id := (item->>'product_id')::UUID;
-                v_qty := COALESCE((item->>'qty')::NUMERIC, 0);
-                
-                IF v_qty <= 0 THEN
-                    CONTINUE;  -- Saltar items con cantidad 0
-                END IF;
-                
-                BEGIN
-                    -- Obtener nombre y SKU del producto
-                    SELECT name, sku INTO v_product_name_mov, v_product_sku_mov
-                    FROM public.products
-                    WHERE id = v_product_id AND company_id = p_company_id
-                    LIMIT 1;
-                    
-                    -- Obtener nombre de la sucursal
-                    SELECT name INTO v_store_name_mov
-                    FROM public.stores
-                    WHERE id = p_store_id AND company_id = p_company_id
-                    LIMIT 1;
-                    
-                    -- Construir mensaje mejorado con información completa
-                    INSERT INTO public.inventory_movements (
-                        product_id, type, qty, store_from_id, store_to_id, reason,
-                        user_id, company_id, sale_id, created_at
-                    ) VALUES (
-                        v_product_id, 'OUT', -v_qty, p_store_id, NULL,
-                        'Venta - Factura: ' || COALESCE(v_invoice_number, new_sale_id::text) || 
-                        ' - Cliente: ' || COALESCE(p_customer_name, 'Cliente General') ||
-                        ' - Sucursal: ' || COALESCE(v_store_name_mov, 'Desconocida') ||
-                        ' - Producto: ' || COALESCE(v_product_name_mov, 'N/A') ||
-                        CASE WHEN v_product_sku_mov IS NOT NULL THEN ' (' || v_product_sku_mov || ')' ELSE '' END,
-                        p_cashier_id, p_company_id, new_sale_id, NOW()
-                    );
-                EXCEPTION
-                    WHEN OTHERS THEN
-                        -- Log error pero continuar (NO CRÍTICO - la venta ya se procesó)
-                        RAISE WARNING 'Error al registrar movimiento de inventario para producto %: %', 
-                            v_product_id, SQLERRM;
-                END;
-            END LOOP;
-        END IF;
-    EXCEPTION
-        WHEN OTHERS THEN
-            -- Log error general pero continuar (NO CRÍTICO)
-            RAISE WARNING 'Error general al registrar movimientos de inventario: %', SQLERRM;
-    END;
 
     -- 7. REGISTRAR PAGOS
     IF p_is_mixed_payment AND p_mixed_payments IS NOT NULL AND jsonb_array_length(p_mixed_payments) > 0 THEN
@@ -556,25 +376,28 @@ GRANT EXECUTE ON FUNCTION process_sale(
 ) TO authenticated;
 
 COMMENT ON FUNCTION process_sale IS 
-'Función optimizada para procesar ventas con Batch UPDATE de inventario.
-Corregida para manejar correctamente productos sin inventario en sucursales específicas.
-Agrupa items duplicados por producto (GROUP BY + SUM) para garantizar validación única y UPDATE atómico.
-Mejora mensajes de error usando estrategia de exclusión (NOT EXISTS) para identificar productos fallidos.
-Validación de stock por sucursal con detección precisa de productos con stock insuficiente.
-Protección contra race conditions mediante bloqueo automático de PostgreSQL y validación atómica en WHERE.';
+'Función blindada para procesar ventas con BLOQUEO PESIMISTA (Pessimistic Locking).
+Implementa SELECT FOR UPDATE para serializar transacciones concurrentes y eliminar race conditions.
+Orden determinista de items (product_id ASC) previene deadlocks.
+Validación atómica de stock dentro del bloqueo garantiza integridad de datos.
+Única fuente de verdad: La tabla inventories es la única que almacena stock (sistema normalizado).
+Timeout de bloqueo (4000ms) previene transacciones zombie que bloqueen la tienda.
+Todas las operaciones (UPDATE inventario, INSERT sale_items, INSERT movimientos) ocurren dentro de la misma transacción atómica.
+Elimina completamente el problema de Split-Brain causado por race conditions en lecturas concurrentes de inventories.';
 
 -- ============================================================================
 -- VERIFICACIÓN FINAL
 -- ============================================================================
 DO $$
 BEGIN
-    RAISE NOTICE '✅ Migración de corrección de validación de stock completada';
-    RAISE NOTICE '   - Agrupación de items duplicados por producto (GROUP BY + SUM) para validación única';
-    RAISE NOTICE '   - Validación mejorada de productos sin inventario en sucursal';
-    RAISE NOTICE '   - Mensajes de error más descriptivos usando estrategia de exclusión (NOT EXISTS)';
-    RAISE NOTICE '   - Detección precisa de productos fallidos comparando stock_updates vs validated_stock';
-    RAISE NOTICE '   - Validación de qty > 0 antes de procesar';
-    RAISE NOTICE '   - Creación automática de inventario si no existe';
-    RAISE NOTICE '   - Protección contra race conditions mediante bloqueo automático de PostgreSQL';
+    RAISE NOTICE '✅ Migración de corrección crítica de race condition completada';
+    RAISE NOTICE '   - 🔒 TIMEOUT DE BLOQUEO: lock_timeout = 4000ms para prevenir transacciones zombie';
+    RAISE NOTICE '   - 🔒 BLOQUEO PESIMISTA: SELECT FOR UPDATE implementado para serializar transacciones';
+    RAISE NOTICE '   - 🔒 ORDEN DETERMINISTA: Items ordenados por product_id ASC para prevenir deadlocks';
+    RAISE NOTICE '   - ✅ VALIDACIÓN ATÓMICA: Stock validado dentro del bloqueo (elimina race conditions)';
+    RAISE NOTICE '   - ✅ ACTUALIZACIÓN ATÓMICA: UPDATE de inventario dentro del bloqueo garantiza integridad';
+    RAISE NOTICE '   - ✅ ÚNICA FUENTE DE VERDAD: Solo inventories almacena stock (sistema normalizado)';
+    RAISE NOTICE '   - ✅ TRANSACCIÓN ÚNICA: Todas las operaciones (UPDATE, INSERT sale_items, INSERT movimientos) en misma transacción';
+    RAISE NOTICE '   - ✅ ELIMINACIÓN DE SPLIT-BRAIN: Elimina race conditions en lecturas concurrentes de inventories';
+    RAISE NOTICE '   - ✅ CREACIÓN AUTOMÁTICA: Inventario creado automáticamente si no existe antes del bloqueo';
 END $$;
-
