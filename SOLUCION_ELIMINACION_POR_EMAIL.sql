@@ -79,3 +79,6 @@ COMMENT ON FUNCTION delete_user_by_email IS 'Elimina un usuario buscándolo por 
 
 
 
+
+
+

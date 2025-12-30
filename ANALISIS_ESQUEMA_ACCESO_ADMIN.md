@@ -208,3 +208,6 @@ role IN ('master_admin', 'admin')  -- ← Solo estos roles ven todas las tiendas
 
 
 
+
+
+

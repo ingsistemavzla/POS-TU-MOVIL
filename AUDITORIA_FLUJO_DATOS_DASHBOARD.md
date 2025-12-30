@@ -196,3 +196,6 @@ const inventoryQuery = supabase.from('inventories')
 
 
 
+
+
+

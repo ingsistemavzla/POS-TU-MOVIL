@@ -39,3 +39,6 @@ SELECT get_inventory_financial_summary('TU_COMPANY_ID_AQUI'::uuid) AS full_resul
 
 
 
+
+
+

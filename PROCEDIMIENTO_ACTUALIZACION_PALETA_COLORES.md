@@ -160,3 +160,6 @@ Todos los dashboards internos ahora tienen:
 - Los efectos de neón mejoran la experiencia visual sin afectar la legibilidad
 - El blur de 20px proporciona un efecto glassmorphism más pronunciado y moderno
 
+
+
+
