@@ -143,6 +143,52 @@ export function useSalesData(): UseSalesDataReturn {
       console.log('🔄 [RPC] Fetching sales data with get_sales_history_v2:', filters, 'page:', page, 'pageSize:', pageSize);
 
       const offset = (page - 1) * pageSize;
+      
+      // ✅ CRÍTICO: Obtener metadatos (totales reales) desde TODAS las ventas filtradas
+      // Esto debe ejecutarse SIEMPRE antes de obtener las ventas paginadas
+      let metadata: any = null;
+      let metadataError: any = null;
+      
+      try {
+        const result = await (supabase as any).rpc('get_sales_metadata_v2', {
+          p_company_id: null, // La RPC lo deduce del usuario autenticado
+          p_store_id: filters.storeId || null,
+          p_date_from: filters.dateFrom || null,
+          p_date_to: filters.dateTo || null
+        });
+        metadata = result.data;
+        metadataError = result.error;
+      } catch (err) {
+        metadataError = err;
+        console.warn('⚠️ [RPC] La función get_sales_metadata_v2 no existe aún. Ejecuta el script SQL sql/12_crear_rpc_metadatos_ventas.sql en Supabase.');
+      }
+
+      // Si la RPC no existe (404) o hay error, usar fallback temporal
+      // PERO mostrar advertencia clara en consola
+      if (metadataError) {
+        const is404 = metadataError?.code === 'P0001' || 
+                     metadataError?.message?.includes('does not exist') ||
+                     metadataError?.message?.includes('function') ||
+                     String(metadataError).includes('404');
+        
+        if (is404) {
+          console.warn('⚠️ [RPC] La función get_sales_metadata_v2 no existe en la base de datos.');
+          console.warn('⚠️ [RPC] Ejecuta el script SQL: sql/12_crear_rpc_metadatos_ventas.sql en Supabase Dashboard → SQL Editor');
+          console.warn('⚠️ [RPC] Usando cálculo temporal desde página actual (datos pueden ser incorrectos)');
+          // No lanzar error, usar fallback temporal
+          metadata = null;
+        } else {
+          console.error('❌ [RPC] Error obteniendo metadatos:', metadataError);
+          // Para otros errores, usar fallback también (mejor que romper la app)
+          metadata = null;
+        }
+      }
+
+      if (metadata && metadata.error) {
+        console.warn('⚠️ [RPC] Metadatos retornaron error:', metadata.error);
+        metadata = null; // Usar fallback
+      }
+
       // ✅ CORRECCIÓN: Removido p_category porque la función get_sales_history_v2 NO lo acepta
       // El filtro de categoría se aplicará en el frontend después de obtener los datos
       const { data: rpcData, error: rpcError } = await (supabase as any).rpc('get_sales_history_v2', {
@@ -209,56 +255,107 @@ export function useSalesData(): UseSalesDataReturn {
         return;
       }
 
-      // ✅ CORRECCIÓN: Calcular totales desde los datos retornados
-      const serverTotalAmountUsd = rawSales.reduce((sum, sale) => {
-        if (!sale || typeof sale !== 'object') {
-          console.warn('⚠️ [RPC] Venta inválida encontrada:', sale);
-          return sum;
+      // ✅ Usar metadatos del servidor si están disponibles, sino usar fallback temporal
+      let totalCount: number;
+      let serverTotalAmountUsd: number;
+      let averageAmount: number;
+      let categoryStats: CategoryStats;
+
+      if (metadata && !metadata.error) {
+        // ✅ Usar metadatos del servidor (totales reales desde TODAS las ventas filtradas)
+        totalCount = Number(metadata.total_count) || 0;
+        serverTotalAmountUsd = Number(metadata.total_amount_usd) || 0;
+        averageAmount = Number(metadata.average_amount_usd) || 0;
+        
+        // Usar categoryStats del servidor (calculado desde TODAS las ventas filtradas)
+        if (metadata.category_stats) {
+          categoryStats = {
+            phones: {
+              units: Number(metadata.category_stats.phones?.units) || 0,
+              amount_usd: Number(metadata.category_stats.phones?.amount_usd) || 0,
+              amount_bs: Number(metadata.category_stats.phones?.amount_bs) || 0,
+            },
+            accessories: {
+              units: Number(metadata.category_stats.accessories?.units) || 0,
+              amount_usd: Number(metadata.category_stats.accessories?.amount_usd) || 0,
+              amount_bs: Number(metadata.category_stats.accessories?.amount_bs) || 0,
+            },
+            technical_service: {
+              units: Number(metadata.category_stats.technical_service?.units) || 0,
+              amount_usd: Number(metadata.category_stats.technical_service?.amount_usd) || 0,
+              amount_bs: Number(metadata.category_stats.technical_service?.amount_bs) || 0,
+            },
+          };
+        } else {
+          categoryStats = {
+            phones: { units: 0, amount_usd: 0, amount_bs: 0 },
+            accessories: { units: 0, amount_usd: 0, amount_bs: 0 },
+            technical_service: { units: 0, amount_usd: 0, amount_bs: 0 },
+          };
         }
-        return sum + (Number(sale.total_usd) || 0);
-      }, 0);
-      const totalCount = rawSales.length; // Aproximación: solo contamos las ventas de esta página
+        
+        console.log('✅ [RPC] Metadatos del servidor (TOTALES REALES):', { 
+          totalCount, 
+          serverTotalAmountUsd, 
+          averageAmount,
+          categoryStats 
+        });
+      } else {
+        // ⚠️ FALLBACK TEMPORAL: Calcular desde página actual (datos pueden ser incorrectos)
+        // Esto solo se usa si la RPC get_sales_metadata_v2 no existe aún
+        console.error('❌ [FALLBACK] ⚠️ IMPORTANTE: La RPC get_sales_metadata_v2 NO existe en la base de datos.');
+        console.error('❌ [FALLBACK] ⚠️ Los totales mostrados son INCORRECTOS (solo página actual).');
+        console.error('❌ [FALLBACK] ⚠️ ACCIÓN REQUERIDA: Ejecuta el script SQL en Supabase:');
+        console.error('❌ [FALLBACK] ⚠️ Archivo: sql/12_crear_rpc_metadatos_ventas.sql');
+        console.error('❌ [FALLBACK] ⚠️ Ubicación: Supabase Dashboard → SQL Editor');
+        console.warn('⚠️ [FALLBACK] Calculando totales desde página actual (INCORRECTO - solo muestra 15 de 15)');
+        
+        serverTotalAmountUsd = rawSales.reduce((sum, sale) => {
+          if (!sale || typeof sale !== 'object') {
+            return sum;
+          }
+          return sum + (Number(sale.total_usd) || 0);
+        }, 0);
+        totalCount = rawSales.length; // ❌ Solo página actual (INCORRECTO - debe ser total real)
+        averageAmount = totalCount > 0 ? serverTotalAmountUsd / totalCount : 0;
+        
+        // ⚠️ ADVERTENCIA: Estos datos son INCORRECTOS porque solo cuentan la página actual
+        console.error('❌ [FALLBACK] totalCount calculado:', totalCount, '(INCORRECTO - debe ser el total real del rango)');
+
+        // Calcular estadísticas de categoría desde la página actual (fallback)
+        categoryStats = {
+          phones: { units: 0, amount_usd: 0, amount_bs: 0 },
+          accessories: { units: 0, amount_usd: 0, amount_bs: 0 },
+          technical_service: { units: 0, amount_usd: 0, amount_bs: 0 },
+        };
+
+        rawSales.forEach((sale: any) => {
+          if (!sale || typeof sale !== 'object') return;
+          if (sale.items && Array.isArray(sale.items)) {
+            sale.items.forEach((item: any) => {
+              if (!item || typeof item !== 'object') return;
+              const category = item.category || 'accessories';
+              if (category === 'phones') {
+                categoryStats.phones.units += Number(item.qty) || 0;
+                categoryStats.phones.amount_usd += Number(item.subtotal) || 0;
+              } else if (category === 'accessories') {
+                categoryStats.accessories.units += Number(item.qty) || 0;
+                categoryStats.accessories.amount_usd += Number(item.subtotal) || 0;
+              } else if (category === 'technical_service') {
+                categoryStats.technical_service.units += Number(item.qty) || 0;
+                categoryStats.technical_service.amount_usd += Number(item.subtotal) || 0;
+              }
+            });
+          }
+        });
+
+        // Calcular BS desde USD (fallback)
+        categoryStats.phones.amount_bs = categoryStats.phones.amount_usd * 41.73;
+        categoryStats.accessories.amount_bs = categoryStats.accessories.amount_usd * 41.73;
+        categoryStats.technical_service.amount_bs = categoryStats.technical_service.amount_usd * 41.73;
+      }
+
       const totalPages = Math.ceil(totalCount / pageSize);
-      const averageAmount = totalCount > 0 ? serverTotalAmountUsd / totalCount : 0;
-
-      // ✅ CORRECCIÓN: Calcular estadísticas de categoría desde los datos retornados
-      const categoryStats: CategoryStats = {
-        phones: { units: 0, amount_usd: 0, amount_bs: 0 },
-        accessories: { units: 0, amount_usd: 0, amount_bs: 0 },
-        technical_service: { units: 0, amount_usd: 0, amount_bs: 0 },
-      };
-
-      // Calcular estadísticas de categoría desde los items de las ventas
-      rawSales.forEach((sale: any) => {
-        if (!sale || typeof sale !== 'object') {
-          console.warn('⚠️ [RPC] Venta inválida en cálculo de categorías:', sale);
-          return;
-        }
-        if (sale.items && Array.isArray(sale.items)) {
-          sale.items.forEach((item: any) => {
-            if (!item || typeof item !== 'object') {
-              console.warn('⚠️ [RPC] Item inválido encontrado:', item);
-              return;
-            }
-            const category = item.category || 'accessories'; // Default si no hay categoría
-            if (category === 'phones') {
-              categoryStats.phones.units += Number(item.qty) || 0;
-              categoryStats.phones.amount_usd += Number(item.subtotal) || 0;
-            } else if (category === 'accessories') {
-              categoryStats.accessories.units += Number(item.qty) || 0;
-              categoryStats.accessories.amount_usd += Number(item.subtotal) || 0;
-            } else if (category === 'technical_service') {
-              categoryStats.technical_service.units += Number(item.qty) || 0;
-              categoryStats.technical_service.amount_usd += Number(item.subtotal) || 0;
-            }
-          });
-        }
-      });
-
-      // Calcular BS desde USD (aproximación)
-      categoryStats.phones.amount_bs = categoryStats.phones.amount_usd * 41.73;
-      categoryStats.accessories.amount_bs = categoryStats.accessories.amount_usd * 41.73;
-      categoryStats.technical_service.amount_bs = categoryStats.technical_service.amount_usd * 41.73;
 
       console.log(
         `📊 [RPC] Ventas obtenidas (página): ${rawSales.length}, totalCount: ${totalCount}, totalAmountUsd: ${serverTotalAmountUsd}, categoryStats:`,
@@ -346,9 +443,43 @@ export function useSalesData(): UseSalesDataReturn {
           // Verificar si algún item de la venta pertenece a la categoría filtrada
           return sale.items?.some(item => item.category === filters.category);
         });
-        // Recalcular totalCount después del filtro
-        // Nota: Esto es una aproximación, el totalCount real debería venir del servidor
-        // pero como la RPC no soporta filtro por categoría, lo hacemos aquí
+        
+        // ✅ CORRECCIÓN: Recalcular categoryStats solo desde ventas filtradas por categoría
+        categoryStats = {
+          phones: { units: 0, amount_usd: 0, amount_bs: 0 },
+          accessories: { units: 0, amount_usd: 0, amount_bs: 0 },
+          technical_service: { units: 0, amount_usd: 0, amount_bs: 0 },
+        };
+
+        sortedSales.forEach(sale => {
+          if (sale.items && Array.isArray(sale.items)) {
+            sale.items.forEach(item => {
+              const category = item.category || 'accessories';
+              if (category === 'phones') {
+                categoryStats.phones.units += item.qty || 0;
+                categoryStats.phones.amount_usd += item.subtotal || 0;
+              } else if (category === 'accessories') {
+                categoryStats.accessories.units += item.qty || 0;
+                categoryStats.accessories.amount_usd += item.subtotal || 0;
+              } else if (category === 'technical_service') {
+                categoryStats.technical_service.units += item.qty || 0;
+                categoryStats.technical_service.amount_usd += item.subtotal || 0;
+              }
+            });
+          }
+        });
+
+        // Calcular BS desde USD
+        categoryStats.phones.amount_bs = categoryStats.phones.amount_usd * 41.73;
+        categoryStats.accessories.amount_bs = categoryStats.accessories.amount_usd * 41.73;
+        categoryStats.technical_service.amount_bs = categoryStats.technical_service.amount_usd * 41.73;
+
+        // Recalcular totalCount y totalAmount desde ventas filtradas
+        totalCount = sortedSales.length;
+        serverTotalAmountUsd = sortedSales.reduce((sum, sale) => sum + (sale.total_usd || 0), 0);
+        averageAmount = totalCount > 0 ? serverTotalAmountUsd / totalCount : 0;
+        
+        console.log('✅ [FILTRO] Estadísticas recalculadas después de filtrar por categoría:', categoryStats);
       }
 
       const response: SalesResponse = {

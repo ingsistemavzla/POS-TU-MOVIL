@@ -112,11 +112,15 @@ export const generateSalesReportPdf = ({
   sales.forEach((sale) => {
     if (!sale.items || sale.items.length === 0) return;
     
+    // ✅ CORRECCIÓN: Usar bcv_rate_used de la venta (igual que la RPC)
+    const bcvRate = sale.bcv_rate_used || 41.73;
+    
     sale.items.forEach((item) => {
       const category = (item as any).category || (item as any).product?.category || 'sin_categoria';
       const quantity = (item as any).qty || item.quantity || 0; // ✅ Usar qty si existe
       const itemTotal = (item as any).subtotal || item.total_price_usd || 0; // ✅ Usar subtotal si existe
-      const itemTotalBS = (sale.total_bs || 0) * (itemTotal / (sale.total_usd || 1)); // Proporcional
+      // ✅ CORRECCIÓN: Calcular BS igual que la RPC: subtotal_usd * bcv_rate_used
+      const itemTotalBS = itemTotal * bcvRate;
       
       if (category === 'phones') {
         categorySummary.phones.units += quantity;

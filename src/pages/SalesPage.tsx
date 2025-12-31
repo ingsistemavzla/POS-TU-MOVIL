@@ -1469,9 +1469,18 @@ export default function SalesPage() {
                   <CardTitle>Historial de Ventas</CardTitle>
                   <CardDescription>
                     {data ? `Mostrando ${data.sales.length} de ${data.totalCount} ventas` : 'Cargando ventas...'}
-                    {((selectedStoreId && selectedStoreId !== 'all') || selectedCategoryFilter !== 'all' || dateRangePreset !== 'custom' || dateRangeStart || dateRangeEnd) && (
-                      <span className="ml-2 text-yellow-400 text-xs">
-                        ⚠️ Filtros activos - Pueden ocultar ventas nuevas
+                    {/* ✅ Mensaje informativo en verde cuando hay filtros aplicados */}
+                    {(() => {
+                      // Verificar si hay filtros realmente activos que afecten la consulta
+                      const hasStoreFilter = (filters.storeId && filters.storeId !== 'all') || (selectedStoreId && selectedStoreId !== 'all');
+                      const hasCategoryFilter = filters.category && filters.category !== 'all';
+                      const hasDateFilter = filters.dateFrom || filters.dateTo;
+                      
+                      // Solo mostrar mensaje si HAY filtros realmente aplicados
+                      return hasStoreFilter || hasCategoryFilter || hasDateFilter;
+                    })() && (
+                      <span className="ml-2 text-green-400 text-xs font-medium">
+                        Filtros Aplicados - Solo muestra ventas solicitadas
                       </span>
                     )}
                   </CardDescription>
@@ -1637,7 +1646,14 @@ export default function SalesPage() {
               </div>
 
               {/* Botón para limpiar filtros rápidos */}
-              {((selectedStoreId && selectedStoreId !== 'all') || selectedCategoryFilter !== 'all' || dateRangePreset !== 'custom' || dateRangeStart || dateRangeEnd) && (
+              {(() => {
+                // ✅ CORRECCIÓN: Verificar filtros REALMENTE aplicados
+                const hasStoreFilter = (filters.storeId && filters.storeId !== 'all') || (selectedStoreId && selectedStoreId !== 'all');
+                const hasCategoryFilter = filters.category && filters.category !== 'all';
+                const hasDateFilter = filters.dateFrom || filters.dateTo;
+                
+                return hasStoreFilter || hasCategoryFilter || hasDateFilter;
+              })() && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -1647,6 +1663,8 @@ export default function SalesPage() {
                     setDateRangePreset('custom');
                     setDateRangeStart(null);
                     setDateRangeEnd(null);
+                    // Limpiar también los filtros en useSalesData
+                    clearFilters();
                     // Forzar recarga inmediata
                     setTimeout(() => refreshData(), 100);
                   }}
