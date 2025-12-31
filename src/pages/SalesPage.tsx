@@ -128,7 +128,12 @@ export default function SalesPage() {
   }>>>({});
   const [loadingItems, setLoadingItems] = useState<Record<string, boolean>>({});
   const loadingItemsRef = useRef<Record<string, boolean>>({});
-  const loadedSaleIdsRef = useRef<Set<string>>(new Set());
+  // ✅ OPTIMIZACIÓN: Cache mejorado con TTL (Time To Live)
+  const loadedSaleItemsCache = useRef<Map<string, {
+    items: Array<any>;
+    timestamp: number;
+  }>>(new Map());
+  const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
   const [showPdfDialog, setShowPdfDialog] = useState(false);
   const [lockPdfStore, setLockPdfStore] = useState(false);
   const [pdfStoreId, setPdfStoreId] = useState<string>('all');
@@ -544,36 +549,161 @@ export default function SalesPage() {
         }
       }
 
-      // PASO 5: Cargar items con categorías para todas las ventas (con filtro de categoría si aplica)
-      const salesWithItems = await Promise.all(
-        salesData.map(async (sale: any) => {
-          let itemsQuery = supabase
+      // ✅ OPTIMIZACIÓN: Batch Loading - Cargar items de TODAS las ventas en una sola consulta
+      // En lugar de N consultas (una por venta), hacemos 1 o pocas consultas batch
+      const saleIds = salesData.map((sale: any) => sale.id);
+      console.log(`📦 [BATCH] Cargando items de ${saleIds.length} ventas...`);
+
+      // ✅ BATCH LOADING: Obtener todos los items de todas las ventas de una vez
+      // Supabase limita .in() a 1000 valores, así que dividimos en chunks si es necesario
+      let allItemsData: any[] = [];
+      let allImeiMap = new Map<string, string | null>();
+
+      // Dividir saleIds en chunks de 1000 (límite de Supabase)
+      const saleIdChunks: string[][] = [];
+      for (let i = 0; i < saleIds.length; i += 1000) {
+        saleIdChunks.push(saleIds.slice(i, i + 1000));
+      }
+
+      console.log(`📦 [BATCH] Dividido en ${saleIdChunks.length} chunk(s) de máximo 1000 ventas cada uno`);
+
+      // Ejecutar todas las consultas batch en paralelo (con IMEI)
+      const batchResultsWithImei = await Promise.all(
+        saleIdChunks.map(async (chunk) => {
+          let query = supabase
             .from('sale_items')
             .select(`
               id,
+              sale_id,
               product_id,
               product_name,
               product_sku,
               qty,
               price_usd,
               subtotal_usd,
+              imei,
               products(category)
             `)
-            .eq('sale_id', sale.id);
+            .in('sale_id', chunk);
 
           // Si hay filtro de categoría, filtrar items por categoría también
           if (categoryProductIds && categoryProductIds.length > 0) {
-            itemsQuery = itemsQuery.in('product_id', categoryProductIds);
+            query = query.in('product_id', categoryProductIds);
           }
 
-          const { data: itemsData, error: itemsError } = await itemsQuery;
+          return await query;
+        })
+      );
 
-          if (itemsError) {
-            console.error('Error obteniendo items para venta:', sale.id, itemsError);
-            return null; // Retornar null para filtrar después
+      // Verificar si alguna consulta falló
+      const batchErrorWithImei = batchResultsWithImei.find(result => result.error)?.error;
+      const allItemsWithImei = batchResultsWithImei
+        .filter(result => result.data)
+        .flatMap(result => result.data || []);
+
+      if (batchErrorWithImei) {
+        // Si falla, intentar sin IMEI
+        console.warn('⚠️ Error obteniendo items con IMEI en batch, intentando sin IMEI:', batchErrorWithImei);
+        
+        // Intentar sin IMEI (también en chunks)
+        const batchResultsWithoutImei = await Promise.all(
+          saleIdChunks.map(async (chunk) => {
+            let query = supabase
+              .from('sale_items')
+              .select(`
+                id,
+                sale_id,
+                product_id,
+                product_name,
+                product_sku,
+                qty,
+                price_usd,
+                subtotal_usd,
+                products(category)
+              `)
+              .in('sale_id', chunk);
+
+            if (categoryProductIds && categoryProductIds.length > 0) {
+              query = query.in('product_id', categoryProductIds);
+            }
+
+            return await query;
+          })
+        );
+
+        const batchErrorWithoutImei = batchResultsWithoutImei.find(result => result.error)?.error;
+        const allItemsWithoutImei = batchResultsWithoutImei
+          .filter(result => result.data)
+          .flatMap(result => result.data || []);
+
+        if (batchErrorWithoutImei) {
+          console.error('❌ Error en batch loading de items:', batchErrorWithoutImei);
+          toast({
+            title: "Error",
+            description: "No se pudieron cargar los items de las ventas para el reporte.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        allItemsData = allItemsWithoutImei || [];
+
+        // Intentar obtener IMEIs por separado en batch
+        const allItemIds = allItemsData.map((item: any) => item.id);
+        if (allItemIds.length > 0) {
+          try {
+            // Dividir en chunks de 1000 (límite de Supabase .in())
+            const chunks = [];
+            for (let i = 0; i < allItemIds.length; i += 1000) {
+              chunks.push(allItemIds.slice(i, i + 1000));
+            }
+
+            const imeiPromises = chunks.map(chunk =>
+              supabase
+                .from('sale_items')
+                .select('id, imei')
+                .in('id', chunk)
+            );
+
+            const imeiResults = await Promise.all(imeiPromises);
+            imeiResults.forEach(result => {
+              if (result.data) {
+                result.data.forEach((item: any) => {
+                  allImeiMap.set(item.id, item.imei || null);
+                });
+              }
+            });
+          } catch (imeiError) {
+            console.warn('⚠️ No se pudo obtener IMEIs en batch:', imeiError);
           }
+        }
+      } else {
+        // ✅ ÉXITO: IMEI incluido en la consulta batch
+        allItemsData = allItemsWithImei || [];
+        allItemsData.forEach((item: any) => {
+          allImeiMap.set(item.id, item.imei || null);
+        });
+        console.log(`✅ [BATCH] Items obtenidos con IMEI: ${allItemsData.filter((i: any) => i.imei).length} de ${allItemsData.length} items tienen IMEI`);
+      }
 
-          if (!itemsData || itemsData.length === 0) {
+      // ✅ AGRUPAR ITEMS POR SALE_ID
+      const itemsBySaleId = new Map<string, any[]>();
+      allItemsData.forEach((item: any) => {
+        const saleId = item.sale_id;
+        if (!itemsBySaleId.has(saleId)) {
+          itemsBySaleId.set(saleId, []);
+        }
+        itemsBySaleId.get(saleId)!.push(item);
+      });
+
+      console.log(`✅ [BATCH] Items agrupados por venta: ${itemsBySaleId.size} ventas con items`);
+
+      // ✅ PROCESAR CADA VENTA CON SUS ITEMS (ya agrupados)
+      const salesWithItems = salesData
+        .map((sale: any) => {
+          const itemsData = itemsBySaleId.get(sale.id) || [];
+
+          if (itemsData.length === 0) {
             return null; // Filtrar ventas sin items
           }
 
@@ -595,6 +725,7 @@ export default function SalesPage() {
               unit_price_usd: item.price || Number(item.price_usd) || 0,
               total_price_usd: item.subtotal || Number(item.subtotal_usd) || 0,
               category: item.category || product?.category || undefined,
+              imei: item.imei || allImeiMap.get(item.id) || null, // ✅ IMEI (de consulta directa o mapa)
             };
           });
 
@@ -610,8 +741,7 @@ export default function SalesPage() {
             cashier_name: cashier?.name || cashier?.email || 'Sin cajero',
             items,
           };
-        })
-      );
+        });
 
       // Filtrar ventas nulas (sin items)
       const finalFilteredSales = salesWithItems.filter((sale): sale is NonNullable<typeof salesWithItems[0]> => sale !== null);
@@ -829,10 +959,18 @@ export default function SalesPage() {
       return;
     }
 
-    // Verificar si ya están cargados usando ref
-    if (loadedSaleIdsRef.current.has(saleId)) {
-      console.log(`ℹ️ Items ya cargados para venta ${saleId}, omitiendo carga`);
+    // ✅ OPTIMIZACIÓN: Verificar cache primero (con TTL)
+    const cached = loadedSaleItemsCache.current.get(saleId);
+    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+      console.log(`✅ Items de venta ${saleId} obtenidos de cache`);
+      setExpandedSaleItems(prev => ({ ...prev, [saleId]: cached.items }));
       return;
+    }
+    
+    // Si el cache expiró, limpiarlo
+    if (cached && (Date.now() - cached.timestamp) >= CACHE_TTL) {
+      console.log(`🔄 Cache expirado para venta ${saleId}, recargando...`);
+      loadedSaleItemsCache.current.delete(saleId);
     }
 
     // Marcar como cargando
@@ -842,8 +980,12 @@ export default function SalesPage() {
     try {
       console.log('📦 Cargando items de venta:', saleId);
 
-      // ✅ CORRECCIÓN: Fetch sale items con JOIN a products para obtener SKU correcto
-      const { data: itemsData, error: itemsError } = await supabase
+      // ✅ INTENTAR OBTENER IMEI EN LA PRIMERA CONSULTA
+      let itemsData: any[] = [];
+      let imeiMap = new Map<string, string | null>();
+      
+      // Primero intentar con IMEI incluido
+      const { data: itemsWithImei, error: itemsErrorWithImei } = await supabase
         .from('sale_items')
         .select(`
           id, 
@@ -853,6 +995,7 @@ export default function SalesPage() {
           qty, 
           price_usd, 
           subtotal_usd,
+          imei,
           products (
             sku,
             barcode
@@ -860,15 +1003,65 @@ export default function SalesPage() {
         `)
         .eq('sale_id', saleId);
 
-      if (itemsError) {
-        console.error('❌ Error obteniendo items:', itemsError);
-        throw itemsError;
+      if (itemsErrorWithImei) {
+        // Si falla, intentar sin IMEI
+        console.warn('⚠️ Error obteniendo items con IMEI, intentando sin IMEI:', itemsErrorWithImei);
+        const { data: itemsWithoutImei, error: itemsErrorWithoutImei } = await supabase
+          .from('sale_items')
+          .select(`
+            id, 
+            product_id, 
+            product_name, 
+            product_sku,
+            qty, 
+            price_usd, 
+            subtotal_usd,
+            products (
+              sku,
+              barcode
+            )
+          `)
+          .eq('sale_id', saleId);
+
+        if (itemsErrorWithoutImei) {
+          console.error('❌ Error obteniendo items:', itemsErrorWithoutImei);
+          throw itemsErrorWithoutImei;
+        }
+        
+        itemsData = itemsWithoutImei || [];
+        
+        // Intentar obtener IMEIs por separado
+        const itemIds = itemsData.map((item: any) => item.id);
+        if (itemIds.length > 0) {
+          try {
+            const { data: imeiData, error: imeiError } = await supabase
+              .from('sale_items')
+              .select('id, imei')
+              .in('id', itemIds);
+            
+            if (imeiError) {
+              console.warn('⚠️ Error obteniendo IMEIs por separado:', imeiError);
+            } else if (imeiData) {
+              imeiMap = new Map(imeiData.map((item: any) => [item.id, item.imei || null]));
+              console.log(`✅ IMEIs obtenidos por separado: ${imeiData.filter((i: any) => i.imei).length} de ${imeiData.length} items`);
+            }
+          } catch (imeiError) {
+            console.warn('⚠️ Excepción al obtener IMEIs:', imeiError);
+          }
+        }
+      } else {
+        // ✅ ÉXITO: IMEI incluido en la primera consulta
+        itemsData = itemsWithImei || [];
+        imeiMap = new Map(itemsData.map((item: any) => [item.id, item.imei || null]));
+        console.log(`✅ Items obtenidos con IMEI: ${itemsData.filter((i: any) => i.imei).length} de ${itemsData.length} items tienen IMEI`);
       }
+
+      const itemsError = null; // Ya manejado arriba
 
       console.log(`📋 Items obtenidos de Supabase para venta ${saleId}:`, itemsData?.length || 0, itemsData);
 
       // ✅ CORRECCIÓN: Obtener SKU correcto de products (similar a la lógica de la RPC)
-      let itemsWithCategory = (itemsData || []).map((item: any) => {
+      let itemsWithCategory = itemsData.map((item: any) => {
         const product = Array.isArray(item.products) ? item.products[0] : item.products;
         // ✅ Lógica de SKU: usar product_sku si existe, sino sku de products, sino barcode, sino 'N/A'
         const sku = item.product_sku && item.product_sku !== '' && item.product_sku !== 'N/A'
@@ -877,14 +1070,17 @@ export default function SalesPage() {
         
         return {
           id: item.id,
+          name: item.product_name || 'Producto', // ✅ Campo name para compatibilidad con RPC
           product_name: item.product_name || 'Producto',
           product_sku: item.product_sku || '', // Mantener para compatibilidad
           sku: sku, // ✅ SKU corregido (prioridad: product_sku > products.sku > products.barcode > 'N/A')
           quantity: Number(item.qty) || 0,
+          qty: Number(item.qty) || 0, // ✅ Campo qty para compatibilidad
           unit_price_usd: Number(item.price_usd) || 0,
           total_price_usd: Number(item.subtotal_usd) || 0,
           product_id: item.product_id,
           category: undefined as string | undefined, // Se llenará después si hay product_id
+          imei: item.imei || imeiMap.get(item.id) || null, // ✅ IMEI (de consulta directa o mapa)
         };
       });
 
@@ -921,9 +1117,13 @@ export default function SalesPage() {
 
       console.log(`✅ Items finales cargados para venta ${saleId}:`, itemsWithCategory.length, itemsWithCategory);
 
-      // Marcar como cargado
-      loadedSaleIdsRef.current.add(saleId);
+      // ✅ OPTIMIZACIÓN: Guardar en cache con timestamp
+      loadedSaleItemsCache.current.set(saleId, {
+        items: itemsWithCategory,
+        timestamp: Date.now()
+      });
       
+      // Guardar en estado también
       setExpandedSaleItems(prev => ({
         ...prev,
         [saleId]: itemsWithCategory,
@@ -951,6 +1151,27 @@ export default function SalesPage() {
       console.log('🔄 useEffect: expandedSaleId es null, no se cargarán items');
     }
   }, [expandedSaleId, fetchSaleItems]);
+
+  // ✅ OPTIMIZACIÓN: Limpiar cache expirado periódicamente
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      let cleaned = 0;
+      
+      loadedSaleItemsCache.current.forEach((value, key) => {
+        if (now - value.timestamp > CACHE_TTL) {
+          loadedSaleItemsCache.current.delete(key);
+          cleaned++;
+        }
+      });
+      
+      if (cleaned > 0) {
+        console.log(`🧹 Cache limpiado: ${cleaned} entradas expiradas eliminadas`);
+      }
+    }, 60000); // Revisar cada minuto
+
+    return () => clearInterval(interval);
+  }, []);
 
   const handleDeleteSale = (saleId: string, invoiceNumber: string) => {
     if (!userProfile?.company_id) {
@@ -1146,6 +1367,22 @@ export default function SalesPage() {
     setFilters(newFilters);
   }, [selectedStoreId, selectedCategoryFilter, dateRangeStart, dateRangeEnd, setFilters]);
 
+  // ✅ NUEVO: Atajo de teclado para actualizar (Ctrl+R o F5)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+        e.preventDefault();
+        refreshData();
+      } else if (e.key === 'F5') {
+        e.preventDefault();
+        refreshData();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [refreshData]);
+
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1185,7 +1422,13 @@ export default function SalesPage() {
           </p>
         </div>
         <div className="flex flex-col space-y-2 sm:flex-row sm:space-x-2 sm:space-y-0">
-          <Button variant="outline" onClick={refreshData} disabled={loading} className="w-full sm:w-auto">
+          <Button 
+            variant="outline" 
+            onClick={refreshData} 
+            disabled={loading} 
+            className="w-full sm:w-auto border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/20"
+            title="Actualizar lista de ventas (Ctrl+R)"
+          >
             <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Actualizar
           </Button>
@@ -1226,6 +1469,11 @@ export default function SalesPage() {
                   <CardTitle>Historial de Ventas</CardTitle>
                   <CardDescription>
                     {data ? `Mostrando ${data.sales.length} de ${data.totalCount} ventas` : 'Cargando ventas...'}
+                    {((selectedStoreId && selectedStoreId !== 'all') || selectedCategoryFilter !== 'all' || dateRangePreset !== 'custom' || dateRangeStart || dateRangeEnd) && (
+                      <span className="ml-2 text-yellow-400 text-xs">
+                        ⚠️ Filtros activos - Pueden ocultar ventas nuevas
+                      </span>
+                    )}
                   </CardDescription>
                 </div>
               </div>
@@ -1399,11 +1647,14 @@ export default function SalesPage() {
                     setDateRangePreset('custom');
                     setDateRangeStart(null);
                     setDateRangeEnd(null);
+                    // Forzar recarga inmediata
+                    setTimeout(() => refreshData(), 100);
                   }}
-                  className="ml-auto"
+                  className="ml-auto border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/20"
+                  title="⚠️ Hay filtros activos que pueden ocultar ventas nuevas. Haz clic para limpiar y ver todas las ventas."
                 >
                   <X className="w-4 h-4 mr-1" />
-                  Limpiar
+                  Limpiar Filtros
                 </Button>
               )}
             </div>
@@ -1695,8 +1946,15 @@ export default function SalesPage() {
                                                 {item.sku || item.product_sku || 'N/A'}
                                               </td>
                                               <td className="py-2 px-3 font-medium">
-                                                {/* ✅ NUEVO: Usar name de la RPC */}
-                                                {item.name || item.product_name || 'Producto sin nombre'}
+                                                {/* ✅ NUEVO: Mostrar nombre del producto con IMEI si es teléfono */}
+                                                <div>
+                                                  {item.name || item.product_name || 'Producto sin nombre'}
+                                                  {item.category === 'phones' && item.imei && (
+                                                    <span className="ml-2 font-mono text-xs text-emerald-300">
+                                                      ({item.imei})
+                                                    </span>
+                                                  )}
+                                                </div>
                                               </td>
                                               <td className="py-2 px-3">
                                                 {item.category ? (

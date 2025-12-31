@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { useDebounce } from '@/hooks/useDebounce';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -77,6 +78,8 @@ export const AlmacenPage: React.FC = () => {
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  // ✅ OPTIMIZACIÓN: Debounce en búsqueda (espera 300ms después de que usuario deje de escribir)
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [storeFilter, setStoreFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('name');
@@ -559,25 +562,27 @@ export const AlmacenPage: React.FC = () => {
     }
   };
 
-  // Filtrar y ordenar productos
-  const filteredProducts = products
-    .filter(product => {
-      const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (product.barcode && product.barcode.toLowerCase().includes(searchTerm.toLowerCase()));
-      
-      const matchesCategory = categoryFilter === 'all' || product.category === categoryFilter;
-      
-      // Filtro por tienda (basado en inventario)
-      const matchesStore = storeFilter === 'all' || 
-        (storeInventories[product.id]?.some(inv => inv.store_id === storeFilter && inv.qty > 0));
-      
-      // Filtro de stock bajo
-      const matchesLowStock = !lowStockOnly || (product.total_stock || 0) < 5;
-      
-      return matchesSearch && matchesCategory && matchesStore && matchesLowStock;
-    })
-    .sort((a, b) => {
+  // ✅ OPTIMIZACIÓN: Memoización de filtros (solo recalcula cuando cambian las dependencias)
+  const filteredProducts = useMemo(() => {
+    return products
+      .filter(product => {
+        // ✅ Usar debouncedSearchTerm en lugar de searchTerm
+        const matchesSearch = product.name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+          product.sku.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+          (product.barcode && product.barcode.toLowerCase().includes(debouncedSearchTerm.toLowerCase()));
+        
+        const matchesCategory = categoryFilter === 'all' || product.category === categoryFilter;
+        
+        // Filtro por tienda (basado en inventario)
+        const matchesStore = storeFilter === 'all' || 
+          (storeInventories[product.id]?.some(inv => inv.store_id === storeFilter && inv.qty > 0));
+        
+        // Filtro de stock bajo
+        const matchesLowStock = !lowStockOnly || (product.total_stock || 0) < 5;
+        
+        return matchesSearch && matchesCategory && matchesStore && matchesLowStock;
+      })
+      .sort((a, b) => {
       let comparison = 0;
       
       switch (sortBy) {
@@ -599,6 +604,7 @@ export const AlmacenPage: React.FC = () => {
       
       return sortOrder === 'asc' ? comparison : -comparison;
     });
+  }, [products, debouncedSearchTerm, categoryFilter, storeFilter, lowStockOnly, sortBy, sortOrder, storeInventories]);
 
   // Calcular valor total
   const getTotalValue = (product: Product) => {

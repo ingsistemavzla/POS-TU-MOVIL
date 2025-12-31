@@ -1,18 +1,54 @@
 -- ============================================================================
--- ACTUALIZACIÓN: get_sales_history_v2 - Persistencia Financiera y Cashea Nativo
--- Migration: 20250127000001_update_sales_history_v3.sql
+-- CORRECCIÓN CRÍTICA: Eliminar función duplicada get_sales_history_v2
 -- ============================================================================
+-- PROBLEMA: Existen DOS versiones de get_sales_history_v2 en la base de datos:
+-- 1. Con p_category (7 parámetros) - VERSIÓN ANTIGUA (DEBE ELIMINARSE)
+-- 2. Sin p_category (6 parámetros) - VERSIÓN CORRECTA (DEBE MANTENERSE)
 -- 
--- CAMBIOS PRINCIPALES:
--- 1. Usa total_bs guardado (sin cálculo al vuelo, excepto para datos muy viejos NULL)
--- 2. Incluye todos los campos de Cashea (enabled, initial, financed, BS)
--- 3. Incluye campos BS de Krece (initial_amount_bs, financed_amount_bs)
--- 4. Corrige financing_label para usar cashea_enabled (no parsear payment_method)
--- 5. Mantiene compatibilidad con datos legacy
+-- PostgreSQL no puede decidir cuál usar, causando el error:
+-- "Could not choose the best candidate function between..."
 -- ============================================================================
 
-DROP FUNCTION IF EXISTS public.get_sales_history_v2(UUID, UUID, TIMESTAMPTZ, TIMESTAMPTZ, INTEGER, INTEGER);
+-- PASO 1: Eliminar TODAS las versiones existentes (incluyendo la con p_category)
+DROP FUNCTION IF EXISTS public.get_sales_history_v2(
+    p_company_id UUID,
+    p_store_id UUID,
+    p_date_from TIMESTAMPTZ,
+    p_date_to TIMESTAMPTZ,
+    p_category TEXT,
+    p_limit INTEGER,
+    p_offset INTEGER
+);
 
+DROP FUNCTION IF EXISTS public.get_sales_history_v2(
+    p_company_id UUID,
+    p_store_id UUID,
+    p_date_from TIMESTAMPTZ,
+    p_date_to TIMESTAMPTZ,
+    p_limit INTEGER,
+    p_offset INTEGER
+);
+
+DROP FUNCTION IF EXISTS public.get_sales_history_v2(
+    UUID,
+    UUID,
+    TIMESTAMPTZ,
+    TIMESTAMPTZ,
+    TEXT,
+    INTEGER,
+    INTEGER
+);
+
+DROP FUNCTION IF EXISTS public.get_sales_history_v2(
+    UUID,
+    UUID,
+    TIMESTAMPTZ,
+    TIMESTAMPTZ,
+    INTEGER,
+    INTEGER
+);
+
+-- PASO 2: Crear SOLO la versión correcta (sin p_category)
 CREATE OR REPLACE FUNCTION public.get_sales_history_v2(
     p_company_id UUID DEFAULT NULL,
     p_store_id UUID DEFAULT NULL,
@@ -170,7 +206,7 @@ BEGIN
         -- NOTAS
         'notes', sp.notes,
 
-        -- ITEMS (SKUs Recuperados)
+        -- ITEMS (SKUs Recuperados con categoría)
         'items', COALESCE((
             SELECT jsonb_agg(jsonb_build_object(
                 'sku', COALESCE(
@@ -184,7 +220,7 @@ BEGIN
                 'qty', si.qty,
                 'price', si.price_usd,
                 'subtotal', si.subtotal_usd,
-                'category', p.category
+                'category', p.category -- ✅ Incluir categoría para filtrado en frontend
             ))
             FROM public.sale_items si
             LEFT JOIN public.products p ON si.product_id = p.id
@@ -216,7 +252,23 @@ COMMENT ON FUNCTION public.get_sales_history_v2 IS
 - Recupera SKU de products si falta en sale_items
 - Calcula porcentajes de inicial si faltan
 - Formatea fechas en formato DD/MM/YYYY, HH24:MI
+- Retorna created_at para ordenamiento y filtros
 - Traduce métodos de pago a español
 - Respeta RLS y solo muestra ventas de la company del usuario autenticado
-- Compatible con datos legacy (calcula BS si falta)';
+- Compatible con datos legacy (calcula BS si falta)
+- NO incluye p_category (filtro de categoría se hace en frontend)';
+
+-- ============================================================================
+-- VERIFICACIÓN: Confirmar que solo existe una versión
+-- ============================================================================
+SELECT 
+    p.proname as function_name,
+    pg_get_function_arguments(p.oid) as arguments
+FROM pg_proc p
+JOIN pg_namespace n ON p.pronamespace = n.oid
+WHERE n.nspname = 'public'
+AND p.proname = 'get_sales_history_v2'
+ORDER BY p.proname;
+
+-- Debe retornar SOLO una fila con 6 parámetros (sin p_category)
 

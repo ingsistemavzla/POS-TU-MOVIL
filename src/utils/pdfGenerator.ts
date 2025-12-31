@@ -747,13 +747,21 @@ export async function generateSalesReportPDF(
       
       if (saleItems && saleItems.length > 0) {
         const itemsDetails = saleItems.map((item: any) => {
+          // ✅ Compatibilidad: items puede venir de sale.items (nuevo formato) o sale.sale_items (legacy)
           const product = Array.isArray(item.products) ? item.products[0] : item.products;
-          const category = product?.category || item.category || 'N/A';
-          const productName = item.product_name || product?.name || 'Producto sin nombre';
-          const productSku = item.product_sku || product?.sku || 'N/A';
+          const category = item.category || product?.category || 'N/A';
+          const productSku = item.sku || item.product_sku || product?.sku || 'N/A';
+          let productName = item.name || item.product_name || product?.name || 'Producto sin nombre';
           const quantity = item.qty || item.quantity || 0;
-          const price = item.price_usd || item.price || 0;
-          const subtotal = price * quantity;
+          const price = item.price || item.price_usd || item.unit_price_usd || 0;
+          const subtotal = item.subtotal || item.total_price_usd || (price * quantity);
+          const imei = item.imei || null;
+          const isPhone = category === 'phones';
+          
+          // ✅ IMEI: Agregar al nombre del producto si es teléfono y tiene IMEI
+          if (isPhone && imei) {
+            productName = `${productName} (${imei})`;
+          }
           
           return [
             productSku,

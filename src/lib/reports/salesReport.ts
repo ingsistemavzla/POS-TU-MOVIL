@@ -114,8 +114,8 @@ export const generateSalesReportPdf = ({
     
     sale.items.forEach((item) => {
       const category = (item as any).category || (item as any).product?.category || 'sin_categoria';
-      const quantity = item.quantity ?? 0;
-      const itemTotal = item.total_price_usd || 0;
+      const quantity = (item as any).qty || item.quantity || 0; // ✅ Usar qty si existe
+      const itemTotal = (item as any).subtotal || item.total_price_usd || 0; // ✅ Usar subtotal si existe
       const itemTotalBS = (sale.total_bs || 0) * (itemTotal / (sale.total_usd || 1)); // Proporcional
       
       if (category === 'phones') {
@@ -379,16 +379,27 @@ export const generateSalesReportPdf = ({
         head: [['SKU', 'Producto', 'Categoría', 'Cantidad', 'Precio Unit.', 'Subtotal']],
         body: sale.items.map((item) => {
           const category = (item as any).category || (item as any).product?.category || 'N/A';
-          const productSku = (item as any).product_sku || item.product_sku || item.product_id || 'N/A';
-          const productName = item.product_name || 'Producto sin nombre';
+          const productSku = (item as any).sku || (item as any).product_sku || item.product_sku || item.product_id || 'N/A';
+          let productName = (item as any).name || item.product_name || 'Producto sin nombre';
+          const imei = (item as any).imei || null;
+          const isPhone = category === 'phones';
+          
+          // ✅ IMEI: Agregar al nombre del producto si es teléfono y tiene IMEI
+          if (isPhone && imei) {
+            productName = `${productName} (${imei})`;
+          }
+          
+          const quantity = (item as any).qty || item.quantity || 0; // ✅ Usar qty si existe
+          const unitPrice = (item as any).price || item.unit_price_usd || 0; // ✅ Usar price si existe
+          const subtotal = (item as any).subtotal || item.total_price_usd || 0; // ✅ Usar subtotal si existe
           
           return [
             productSku,
             productName.length > 40 ? productName.substring(0, 37) + '...' : productName,
             getCategoryLabel(category),
-            String(item.quantity ?? 0),
-            formatCurrency(item.unit_price_usd || 0),
-            formatCurrency(item.total_price_usd || 0),
+            String(quantity),
+            formatCurrency(unitPrice),
+            formatCurrency(subtotal),
           ];
         }),
         styles: {
@@ -422,7 +433,7 @@ export const generateSalesReportPdf = ({
       const categoryCountMap = new Map<string, number>();
       sale.items.forEach((item) => {
         const category = (item as any).category || (item as any).product?.category || 'sin_categoria';
-        const quantity = item.quantity ?? 0;
+        const quantity = (item as any).qty || item.quantity || 0; // ✅ Usar qty si existe
         const current = categoryCountMap.get(category) || 0;
         categoryCountMap.set(category, current + quantity);
       });

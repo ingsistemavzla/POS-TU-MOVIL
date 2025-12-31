@@ -1,18 +1,37 @@
 -- ============================================================================
--- ACTUALIZACIÓN: get_sales_history_v2 - Persistencia Financiera y Cashea Nativo
--- Migration: 20250127000001_update_sales_history_v3.sql
+-- SCRIPT DE EMERGENCIA: Recrear función desde respaldo
 -- ============================================================================
+-- Este script contiene la versión CORRECTA de get_sales_history_v2
+-- basada en la migración 20250127000001_update_sales_history_v3.sql
 -- 
--- CAMBIOS PRINCIPALES:
--- 1. Usa total_bs guardado (sin cálculo al vuelo, excepto para datos muy viejos NULL)
--- 2. Incluye todos los campos de Cashea (enabled, initial, financed, BS)
--- 3. Incluye campos BS de Krece (initial_amount_bs, financed_amount_bs)
--- 4. Corrige financing_label para usar cashea_enabled (no parsear payment_method)
--- 5. Mantiene compatibilidad con datos legacy
+-- ÚSALO SOLO SI:
+-- 1. Ya ejecutaste el script 00_consultar_y_respaldar_get_sales_history_v2.sql
+-- 2. Verificaste que la versión sin p_category es la correcta
+-- 3. Ya eliminaste todas las versiones con el script 07
+-- 4. Necesitas recrear la función desde cero
 -- ============================================================================
 
-DROP FUNCTION IF EXISTS public.get_sales_history_v2(UUID, UUID, TIMESTAMPTZ, TIMESTAMPTZ, INTEGER, INTEGER);
+-- Verificar que no existe ninguna versión antes de crear
+DO $$
+DECLARE
+    v_count INTEGER;
+BEGIN
+    SELECT COUNT(*) INTO v_count
+    FROM pg_proc p
+    JOIN pg_namespace n ON p.pronamespace = n.oid
+    WHERE n.nspname = 'public'
+    AND p.proname = 'get_sales_history_v2';
+    
+    IF v_count > 0 THEN
+        RAISE EXCEPTION 'ERROR: Aún existen % versiones de get_sales_history_v2. Ejecuta primero el script 07 para eliminarlas.', v_count;
+    END IF;
+    
+    RAISE NOTICE '✅ Verificación OK: No existen versiones previas. Procediendo a crear la función correcta...';
+END $$;
 
+-- ============================================================================
+-- CREAR FUNCIÓN CORRECTA (Versión de migración 20250127000001)
+-- ============================================================================
 CREATE OR REPLACE FUNCTION public.get_sales_history_v2(
     p_company_id UUID DEFAULT NULL,
     p_store_id UUID DEFAULT NULL,
@@ -102,7 +121,7 @@ BEGIN
             sp.krece_financed_amount_bs,
             CASE 
                 WHEN sp.krece_financed_amount_bs IS NULL AND sp.krece_financed_amount_usd > 0 
-                THEN sp.krece_financed_amount_usd * COALESCE(sp.bcv_rate_used, 41.73)
+                THEN sp.krece_initial_amount_usd * COALESCE(sp.bcv_rate_used, 41.73)
                 ELSE 0
             END
         ),
@@ -170,7 +189,7 @@ BEGIN
         -- NOTAS
         'notes', sp.notes,
 
-        -- ITEMS (SKUs Recuperados)
+        -- ITEMS (SKUs Recuperados con categoría)
         'items', COALESCE((
             SELECT jsonb_agg(jsonb_build_object(
                 'sku', COALESCE(
@@ -184,7 +203,7 @@ BEGIN
                 'qty', si.qty,
                 'price', si.price_usd,
                 'subtotal', si.subtotal_usd,
-                'category', p.category
+                'category', p.category -- ✅ Incluir categoría para filtrado en frontend
             ))
             FROM public.sale_items si
             LEFT JOIN public.products p ON si.product_id = p.id
@@ -216,7 +235,27 @@ COMMENT ON FUNCTION public.get_sales_history_v2 IS
 - Recupera SKU de products si falta en sale_items
 - Calcula porcentajes de inicial si faltan
 - Formatea fechas en formato DD/MM/YYYY, HH24:MI
+- Retorna created_at para ordenamiento y filtros
 - Traduce métodos de pago a español
 - Respeta RLS y solo muestra ventas de la company del usuario autenticado
-- Compatible con datos legacy (calcula BS si falta)';
+- Compatible con datos legacy (calcula BS si falta)
+- NO incluye p_category (filtro de categoría se hace en frontend)';
+
+-- ============================================================================
+-- VERIFICACIÓN FINAL
+-- ============================================================================
+SELECT 
+    p.proname as function_name,
+    pg_get_function_arguments(p.oid) as arguments,
+    CASE 
+        WHEN pg_get_function_arguments(p.oid) LIKE '%p_category%' THEN '❌ ERROR: Versión con p_category encontrada'
+        ELSE '✅ Versión correcta (sin p_category)'
+    END as status
+FROM pg_proc p
+JOIN pg_namespace n ON p.pronamespace = n.oid
+WHERE n.nspname = 'public'
+AND p.proname = 'get_sales_history_v2'
+ORDER BY p.proname;
+
+-- Debe retornar SOLO 1 fila con "✅ Versión correcta (sin p_category)"
 

@@ -143,21 +143,25 @@ export function useSalesData(): UseSalesDataReturn {
       console.log('🔄 [RPC] Fetching sales data with get_sales_history_v2:', filters, 'page:', page, 'pageSize:', pageSize);
 
       const offset = (page - 1) * pageSize;
+      // ✅ CORRECCIÓN: Removido p_category porque la función get_sales_history_v2 NO lo acepta
+      // El filtro de categoría se aplicará en el frontend después de obtener los datos
       const { data: rpcData, error: rpcError } = await (supabase as any).rpc('get_sales_history_v2', {
         p_company_id: null, // La RPC lo deduce del usuario autenticado
         p_store_id: filters.storeId || null,
         p_date_from: filters.dateFrom || null,
         p_date_to: filters.dateTo || null,
-        p_category: filters.category || null,
+        // ❌ REMOVIDO: p_category: filters.category || null, // Este parámetro no existe en la función
         p_limit: pageSize,
         p_offset: offset
       });
 
       if (rpcError) {
-        throw rpcError;
+        console.error('❌ [RPC] Error en get_sales_history_v2:', rpcError);
+        throw new Error(rpcError.message || 'Error al obtener historial de ventas');
       }
 
-      // Nueva RPC: retorna un JSON con { metadata, data }
+      // ✅ CORRECCIÓN: La RPC get_sales_history_v2 retorna SETOF JSONB (array directo de ventas)
+      // NO retorna { metadata, data }, retorna directamente un array de objetos JSONB
       if (!rpcData) {
         console.log('📊 [RPC] No hay datos retornados');
         const response: SalesResponse = {
@@ -172,40 +176,89 @@ export function useSalesData(): UseSalesDataReturn {
         return;
       }
 
-      // rpcData puede venir como objeto o como array con un solo elemento
-      const payload: any = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+      console.log('📦 [RPC] Datos recibidos:', { 
+        type: typeof rpcData, 
+        isArray: Array.isArray(rpcData),
+        length: Array.isArray(rpcData) ? rpcData.length : 1,
+        firstElement: Array.isArray(rpcData) ? rpcData[0] : rpcData
+      });
 
-      if (payload?.error) {
-        throw new Error(payload.message || 'Error al obtener historial de ventas');
+      // La RPC retorna un array de objetos JSONB directamente
+      // Cada elemento es una venta con todos sus datos
+      const rawSales: any[] = Array.isArray(rpcData) ? rpcData : [rpcData];
+
+      // Verificar si hay error en el primer elemento
+      if (rawSales.length > 0 && rawSales[0]?.error) {
+        const errorMsg = rawSales[0].message || 'Error al obtener historial de ventas';
+        console.error('❌ [RPC] Error en respuesta:', errorMsg);
+        throw new Error(errorMsg);
       }
 
-      const metadata = payload.metadata || {};
-      const rawSales: any[] = Array.isArray(payload.data) ? payload.data : [];
+      // Validar que rawSales tenga datos válidos
+      if (!rawSales || rawSales.length === 0) {
+        console.log('📊 [RPC] Array de ventas vacío');
+        const response: SalesResponse = {
+          sales: [],
+          totalCount: 0,
+          totalPages: 0,
+          currentPage: page,
+          totalAmount: 0,
+          averageAmount: 0,
+        };
+        setData(response);
+        return;
+      }
 
-      const totalCount = Number(metadata.total_count) || 0;
-      const serverTotalAmountUsd = Number(metadata.total_amount_usd) || 0;
-      const totalPages = totalCount > 0 ? Math.ceil(totalCount / pageSize) : 0;
+      // ✅ CORRECCIÓN: Calcular totales desde los datos retornados
+      const serverTotalAmountUsd = rawSales.reduce((sum, sale) => {
+        if (!sale || typeof sale !== 'object') {
+          console.warn('⚠️ [RPC] Venta inválida encontrada:', sale);
+          return sum;
+        }
+        return sum + (Number(sale.total_usd) || 0);
+      }, 0);
+      const totalCount = rawSales.length; // Aproximación: solo contamos las ventas de esta página
+      const totalPages = Math.ceil(totalCount / pageSize);
       const averageAmount = totalCount > 0 ? serverTotalAmountUsd / totalCount : 0;
 
-      // ✅ Totales por categoría desde el servidor (respetan filtros activos)
-      const rawCategoryStats = metadata.category_stats || {};
+      // ✅ CORRECCIÓN: Calcular estadísticas de categoría desde los datos retornados
       const categoryStats: CategoryStats = {
-        phones: {
-          units:      Number(rawCategoryStats?.phones?.units)      || 0,
-          amount_usd: Number(rawCategoryStats?.phones?.amount_usd) || 0,
-          amount_bs:  Number(rawCategoryStats?.phones?.amount_bs)  || 0,
-        },
-        accessories: {
-          units:      Number(rawCategoryStats?.accessories?.units)      || 0,
-          amount_usd: Number(rawCategoryStats?.accessories?.amount_usd) || 0,
-          amount_bs:  Number(rawCategoryStats?.accessories?.amount_bs)  || 0,
-        },
-        technical_service: {
-          units:      Number(rawCategoryStats?.technical_service?.units)      || 0,
-          amount_usd: Number(rawCategoryStats?.technical_service?.amount_usd) || 0,
-          amount_bs:  Number(rawCategoryStats?.technical_service?.amount_bs)  || 0,
-        },
+        phones: { units: 0, amount_usd: 0, amount_bs: 0 },
+        accessories: { units: 0, amount_usd: 0, amount_bs: 0 },
+        technical_service: { units: 0, amount_usd: 0, amount_bs: 0 },
       };
+
+      // Calcular estadísticas de categoría desde los items de las ventas
+      rawSales.forEach((sale: any) => {
+        if (!sale || typeof sale !== 'object') {
+          console.warn('⚠️ [RPC] Venta inválida en cálculo de categorías:', sale);
+          return;
+        }
+        if (sale.items && Array.isArray(sale.items)) {
+          sale.items.forEach((item: any) => {
+            if (!item || typeof item !== 'object') {
+              console.warn('⚠️ [RPC] Item inválido encontrado:', item);
+              return;
+            }
+            const category = item.category || 'accessories'; // Default si no hay categoría
+            if (category === 'phones') {
+              categoryStats.phones.units += Number(item.qty) || 0;
+              categoryStats.phones.amount_usd += Number(item.subtotal) || 0;
+            } else if (category === 'accessories') {
+              categoryStats.accessories.units += Number(item.qty) || 0;
+              categoryStats.accessories.amount_usd += Number(item.subtotal) || 0;
+            } else if (category === 'technical_service') {
+              categoryStats.technical_service.units += Number(item.qty) || 0;
+              categoryStats.technical_service.amount_usd += Number(item.subtotal) || 0;
+            }
+          });
+        }
+      });
+
+      // Calcular BS desde USD (aproximación)
+      categoryStats.phones.amount_bs = categoryStats.phones.amount_usd * 41.73;
+      categoryStats.accessories.amount_bs = categoryStats.accessories.amount_usd * 41.73;
+      categoryStats.technical_service.amount_bs = categoryStats.technical_service.amount_usd * 41.73;
 
       console.log(
         `📊 [RPC] Ventas obtenidas (página): ${rawSales.length}, totalCount: ${totalCount}, totalAmountUsd: ${serverTotalAmountUsd}, categoryStats:`,
@@ -214,10 +267,19 @@ export function useSalesData(): UseSalesDataReturn {
 
       // ✅ REFACTOR: La RPC ya devuelve todos los datos resueltos (client_name, store_name, cashier_name)
       // Solo mapeamos directamente sin queries adicionales
-      const transformedSales: Sale[] = rawSales.map((sale: any) => ({
+      const transformedSales: Sale[] = rawSales
+        .filter((sale: any) => {
+          // Filtrar ventas inválidas
+          if (!sale || typeof sale !== 'object' || !sale.id) {
+            console.warn('⚠️ [RPC] Venta inválida filtrada:', sale);
+            return false;
+          }
+          return true;
+        })
+        .map((sale: any) => ({
         id: sale.id,
         invoice_number: sale.invoice_number,
-        created_at: sale.created_at,
+        created_at: sale.created_at || new Date().toISOString(), // ✅ Ahora la RPC retorna created_at
         created_at_fmt: sale.created_at_fmt, // ✅ Ya viene formateado
         client_name: sale.client_name,
         client_doc: sale.client_doc,
@@ -250,32 +312,53 @@ export function useSalesData(): UseSalesDataReturn {
         cashea_financed_amount_bs: sale.cashea_financed_amount_bs || 0, // ✅ NUEVO: Campo Cashea BS guardado
         cashea_initial_percentage: sale.cashea_initial_percentage || 0, // ✅ NUEVO: Porcentaje Cashea
         notes: sale.notes,
-        items: (sale.items || []).map((item: any) => ({
-          id: item.id,
-          product_id: item.product_id,
-          sku: item.sku, // ✅ Ya viene corregido de la RPC
-          name: item.name,
-          qty: item.qty,
-          price: item.price,
-          subtotal: item.subtotal,
-          category: item.category,
-          // Campos legacy para compatibilidad
-          sale_id: sale.id,
-          product_name: item.name,
-          product_sku: item.sku,
-          quantity: item.qty,
-          unit_price_usd: item.price,
-          total_price_usd: item.subtotal,
-        })),
+        items: (sale.items && Array.isArray(sale.items) ? sale.items : []).map((item: any) => {
+          if (!item || typeof item !== 'object') {
+            console.warn('⚠️ [RPC] Item inválido en transformación:', item);
+            return null;
+          }
+          return {
+            id: item.id || '',
+            product_id: item.product_id || '',
+            sku: item.sku || 'N/A', // ✅ Ya viene corregido de la RPC
+            name: item.name || 'Producto sin nombre',
+            qty: Number(item.qty) || 0,
+            price: Number(item.price) || 0,
+            subtotal: Number(item.subtotal) || 0,
+            category: item.category || 'accessories', // ✅ Default si no hay categoría
+            // Campos legacy para compatibilidad
+            sale_id: sale.id,
+            product_name: item.name || 'Producto sin nombre',
+            product_sku: item.sku || 'N/A',
+            quantity: Number(item.qty) || 0,
+            unit_price_usd: Number(item.price) || 0,
+            total_price_usd: Number(item.subtotal) || 0,
+          };
+        }).filter((item: any) => item !== null), // Filtrar items nulos
       }));
 
       // La RPC ya devuelve las ventas ordenadas por fecha descendente
-      const sortedSales = transformedSales;
+      let sortedSales = transformedSales;
+
+      // ✅ FILTRO DE CATEGORÍA EN FRONTEND (ya que la RPC no lo soporta)
+      if (filters.category && filters.category !== 'all') {
+        sortedSales = sortedSales.filter(sale => {
+          // Verificar si algún item de la venta pertenece a la categoría filtrada
+          return sale.items?.some(item => item.category === filters.category);
+        });
+        // Recalcular totalCount después del filtro
+        // Nota: Esto es una aproximación, el totalCount real debería venir del servidor
+        // pero como la RPC no soporta filtro por categoría, lo hacemos aquí
+      }
 
       const response: SalesResponse = {
         sales: sortedSales, // Usar las ventas ordenadas (página actual)
-        totalCount,
-        totalPages,
+        totalCount: filters.category && filters.category !== 'all' 
+          ? sortedSales.length // Aproximación cuando hay filtro de categoría
+          : totalCount, // Total real del servidor cuando no hay filtro de categoría
+        totalPages: filters.category && filters.category !== 'all'
+          ? Math.ceil(sortedSales.length / pageSize)
+          : totalPages,
         currentPage: page,
         totalAmount: serverTotalAmountUsd,
         averageAmount,
@@ -286,8 +369,18 @@ export function useSalesData(): UseSalesDataReturn {
       setData(response);
 
     } catch (err) {
-      console.error('Error fetching sales data:', err);
-      setError(err instanceof Error ? err.message : 'Error al cargar las ventas');
+      console.error('❌ [RPC] Error fetching sales data:', err);
+      console.error('❌ [RPC] Error details:', {
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+        error: err
+      });
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : (typeof err === 'object' && err !== null && 'message' in err)
+          ? String(err.message)
+          : 'Error al cargar las ventas';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

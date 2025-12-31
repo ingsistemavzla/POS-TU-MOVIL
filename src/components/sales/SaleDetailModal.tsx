@@ -173,24 +173,71 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
         console.error('Cashier error:', cashierError);
       }
 
-      // Fetch sale items - OPTIMIZADO: Select Minimal
-      const { data: itemsData, error: itemsError } = await supabase
+      // ✅ INTENTAR OBTENER IMEI EN LA PRIMERA CONSULTA
+      let itemsData: any[] = [];
+      let imeiMap = new Map<string, string | null>();
+      
+      // Primero intentar con IMEI incluido
+      const { data: itemsWithImei, error: itemsErrorWithImei } = await supabase
         .from('sale_items')
-        .select('id, product_id, product_name, qty, price_usd, subtotal_usd')
+        .select('id, product_id, product_name, qty, price_usd, subtotal_usd, imei')
         .eq('sale_id', id);
+
+      if (itemsErrorWithImei) {
+        // Si falla, intentar sin IMEI
+        console.warn('⚠️ Error obteniendo items con IMEI, intentando sin IMEI:', itemsErrorWithImei);
+        const { data: itemsWithoutImei, error: itemsErrorWithoutImei } = await supabase
+          .from('sale_items')
+          .select('id, product_id, product_name, qty, price_usd, subtotal_usd')
+          .eq('sale_id', id);
+
+        if (itemsErrorWithoutImei) {
+          console.error('❌ Error obteniendo items:', itemsErrorWithoutImei);
+          throw itemsErrorWithoutImei;
+        }
+        
+        itemsData = itemsWithoutImei || [];
+        
+        // Intentar obtener IMEIs por separado
+        const itemIds = itemsData.map((item: any) => item.id);
+        if (itemIds.length > 0) {
+          try {
+            const { data: imeiData, error: imeiError } = await supabase
+              .from('sale_items')
+              .select('id, imei')
+              .in('id', itemIds);
+            
+            if (imeiError) {
+              console.warn('⚠️ Error obteniendo IMEIs por separado:', imeiError);
+            } else if (imeiData) {
+              imeiMap = new Map(imeiData.map((item: any) => [item.id, item.imei || null]));
+            }
+          } catch (imeiError) {
+            console.warn('⚠️ Excepción al obtener IMEIs:', imeiError);
+          }
+        }
+      } else {
+        // ✅ ÉXITO: IMEI incluido en la primera consulta
+        itemsData = itemsWithImei || [];
+        imeiMap = new Map(itemsData.map((item: any) => [item.id, item.imei || null]));
+      }
+
+      const itemsError = null; // Ya manejado arriba
 
       if (itemsError) {
         console.error('Items error:', itemsError);
       }
 
       // Transform items data
-      const rawItems: SaleItem[] = (itemsData || []).map((item: any) => ({
+      const rawItems: SaleItem[] = itemsData.map((item: any) => ({
         id: item.id,
         product_name: item.product_name || 'Producto',
         qty: Number(item.qty) || 0,
         price_usd: Number(item.price_usd) || 0,
         subtotal_usd: Number(item.subtotal_usd) || 0,
         product_id: item.product_id,
+        imei: item.imei || imeiMap.get(item.id) || null, // ✅ IMEI (de consulta directa o mapa)
+        category: undefined as string | undefined, // Se llenará después
       }));
 
       // CONSOLIDACIÓN: Agrupar items por product_id y price_usd
@@ -213,7 +260,32 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
       });
 
       // Convertir el Map a array
-      const items: SaleItem[] = Array.from(groupedItemsMap.values());
+      let items: SaleItem[] = Array.from(groupedItemsMap.values());
+
+      // ✅ Obtener categorías de productos
+      if (items.length > 0 && userProfile?.company_id) {
+        const productIds = items
+          .map(item => item.product_id)
+          .filter(id => id) as string[];
+
+        if (productIds.length > 0) {
+          const { data: productsData } = await supabase
+            .from('products')
+            .select('id, category')
+            .in('id', productIds);
+
+          if (productsData) {
+            const categoryMap = new Map(
+              productsData.map((p: any) => [p.id, p.category])
+            );
+
+            items = items.map(item => ({
+              ...item,
+              category: categoryMap.get(item.product_id),
+            }));
+          }
+        }
+      }
 
       // Transform sale data
       const transformedSale: SaleDetail = {
@@ -334,20 +406,21 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
         await fetchStoreInfo(sale.store_id);
       }
 
-      // Prepare data for printing
+      // ✅ CORRECCIÓN: Usar invoice_number real y datos correctos
       const printData = {
-        invoice_number: sale.id.slice(0, 8), // Use sale ID as invoice number
+        invoice_number: sale.invoice_number || sale.id.slice(0, 8),
         customer: sale.customer_name || 'Cliente General',
-        customer_id: sale.customer_id_number,
+        customer_id: sale.customer_id_number || null,
         items: sale.items?.map(item => ({
           id: item.id,
           name: item.product_name,
-          sku: item.product_id.slice(0, 8),
+          sku: item.product_id.slice(0, 8), // TODO: usar product_sku real si está disponible
           price: item.price_usd,
-          quantity: item.qty
+          quantity: item.qty,
+          imei: item.imei || undefined // ✅ Incluir IMEI si existe
         })) || [],
-        subtotal_usd: sale.items?.reduce((sum, item) => sum + item.subtotal_usd, 0) || 0,
-        tax_amount_usd: (sale.items?.reduce((sum, item) => sum + item.subtotal_usd, 0) || 0) * 0.16,
+        subtotal_usd: sale.subtotal_usd || sale.items?.reduce((sum, item) => sum + item.subtotal_usd, 0) || 0,
+        tax_amount_usd: sale.tax_amount_usd || 0, // ✅ Usar tax_amount_usd real (debe ser 0 según la lógica)
         total_usd: sale.total_usd,
         total_bs: sale.total_bs,
         bcv_rate: sale.bcv_rate_used,
@@ -357,7 +430,7 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
         cashier_name: sale.cashier_name || 'Cajero N/A'
       };
 
-      printInvoice(printData, 0.16, '¡Gracias por su compra!');
+      printInvoice(printData, 0, '¡Gracias por su compra!'); // ✅ Tax rate = 0 (sin IVA)
       
       toast({
         title: "Impresión iniciada",
@@ -383,10 +456,10 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
         await fetchStoreInfo(sale.store_id);
       }
 
-      // Prepare data for PDF generation
+      // ✅ CORRECCIÓN: Usar invoice_number real
       const pdfData = {
         id: sale.id,
-        invoice_number: sale.id.slice(0, 8),
+        invoice_number: sale.invoice_number || sale.id.slice(0, 8),
         customer_name: sale.customer_name || 'Cliente General',
         customer_id_number: sale.customer_id_number,
         store_name: sale.store_name || 'Tienda N/A',
@@ -632,30 +705,30 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
 
             {/* ✅ NUEVO: Desglose Financiero */}
             {(sale.krece_enabled || sale.cashea_enabled) && (
-              <Card className={sale.cashea_enabled ? "border-indigo-200 bg-indigo-50/30" : "border-blue-200 bg-blue-50/30"}>
-                <CardHeader>
-                  <CardTitle className="flex items-center text-lg">
-                    <DollarSign className="w-5 h-5 mr-2" />
+              <Card className="border-green-500/30 bg-green-500/10 shadow-md shadow-green-500/20">
+                <CardHeader className="border-b border-green-500/20">
+                  <CardTitle className="flex items-center text-lg text-green-300">
+                    <DollarSign className="w-5 h-5 mr-2 text-green-400" />
                     {sale.cashea_enabled ? 'Financiamiento Cashea' : 'Financiamiento Krece'}
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-3 pt-4">
                   {sale.cashea_enabled ? (
                     <>
-                      <div className="flex justify-between items-center py-2 border-b">
-                        <span className="font-medium">Inicial:</span>
+                      <div className="flex justify-between items-center py-3 px-2 rounded-md bg-green-500/5 border border-green-500/20">
+                        <span className="font-medium text-green-300">Inicial:</span>
                         <div className="text-right">
-                          <div className="font-semibold">{formatCurrency(sale.cashea_initial_amount_usd || 0)}</div>
-                          <div className="text-sm text-muted-foreground">
+                          <div className="font-bold text-xl text-green-400">{formatCurrency(sale.cashea_initial_amount_usd || 0)}</div>
+                          <div className="text-sm text-green-300/80 mt-1">
                             (Bs. {(sale.cashea_initial_amount_bs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                           </div>
                         </div>
                       </div>
-                      <div className="flex justify-between items-center py-2">
-                        <span className="font-medium">Financiado:</span>
+                      <div className="flex justify-between items-center py-3 px-2 rounded-md bg-green-500/5 border border-green-500/20">
+                        <span className="font-medium text-green-300">Financiado:</span>
                         <div className="text-right">
-                          <div className="font-semibold">{formatCurrency(sale.cashea_financed_amount_usd || 0)}</div>
-                          <div className="text-sm text-muted-foreground">
+                          <div className="font-bold text-xl text-green-400">{formatCurrency(sale.cashea_financed_amount_usd || 0)}</div>
+                          <div className="text-sm text-green-300/80 mt-1">
                             (Bs. {(sale.cashea_financed_amount_bs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                           </div>
                         </div>
@@ -663,20 +736,20 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
                     </>
                   ) : sale.krece_enabled ? (
                     <>
-                      <div className="flex justify-between items-center py-2 border-b">
-                        <span className="font-medium">Inicial:</span>
+                      <div className="flex justify-between items-center py-3 px-2 rounded-md bg-green-500/5 border border-green-500/20">
+                        <span className="font-medium text-green-300">Inicial:</span>
                         <div className="text-right">
-                          <div className="font-semibold">{formatCurrency(sale.krece_initial_amount_usd || 0)}</div>
-                          <div className="text-sm text-muted-foreground">
+                          <div className="font-bold text-xl text-green-400">{formatCurrency(sale.krece_initial_amount_usd || 0)}</div>
+                          <div className="text-sm text-green-300/80 mt-1">
                             (Bs. {(sale.krece_initial_amount_bs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                           </div>
                         </div>
                       </div>
-                      <div className="flex justify-between items-center py-2">
-                        <span className="font-medium">Financiado:</span>
+                      <div className="flex justify-between items-center py-3 px-2 rounded-md bg-green-500/5 border border-green-500/20">
+                        <span className="font-medium text-green-300">Financiado:</span>
                         <div className="text-right">
-                          <div className="font-semibold">{formatCurrency(sale.krece_financed_amount_usd || 0)}</div>
-                          <div className="text-sm text-muted-foreground">
+                          <div className="font-bold text-xl text-green-400">{formatCurrency(sale.krece_financed_amount_usd || 0)}</div>
+                          <div className="text-sm text-green-300/80 mt-1">
                             (Bs. {(sale.krece_financed_amount_bs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                           </div>
                         </div>
@@ -737,7 +810,12 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
                         {sale.items.map((item) => (
                           <TableRow key={item.id}>
                             <TableCell>
-                              <div className="font-medium">{item.product_name}</div>
+                              <div className="font-medium">
+                                {item.product_name}
+                                {item.category === 'phones' && item.imei && (
+                                  <div className="text-xs text-muted-foreground">IMEI: {item.imei}</div>
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell className="text-right">{item.qty}</TableCell>
                             <TableCell className="text-right">{formatCurrency(item.price_usd)}</TableCell>
@@ -759,6 +837,15 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
 
             {/* Actions */}
             <div className="flex justify-end space-x-2 pt-4">
+              <Button 
+                variant="default" 
+                onClick={handlePrintInvoice}
+                disabled={!sale || loading}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                Imprimir Factura
+              </Button>
               <Button 
                 variant="outline" 
                 onClick={handleDownloadPDF}
