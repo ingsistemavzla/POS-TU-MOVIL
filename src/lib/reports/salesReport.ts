@@ -113,7 +113,17 @@ export const generateSalesReportPdf = ({
     if (!sale.items || sale.items.length === 0) return;
     
     // ✅ CORRECCIÓN: Usar bcv_rate_used de la venta (igual que la RPC)
-    const bcvRate = sale.bcv_rate_used || 41.73;
+    // Si no está disponible, calcular desde total_bs / total_usd, o usar 41.73 como fallback
+    let bcvRate = sale.bcv_rate_used;
+    
+    if (!bcvRate || bcvRate === 0) {
+      // Intentar calcular desde total_bs y total_usd
+      if (sale.total_bs && sale.total_usd && sale.total_usd > 0) {
+        bcvRate = sale.total_bs / sale.total_usd;
+      } else {
+        bcvRate = 41.73; // Fallback
+      }
+    }
     
     sale.items.forEach((item) => {
       const category = (item as any).category || (item as any).product?.category || 'sin_categoria';

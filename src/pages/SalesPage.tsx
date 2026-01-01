@@ -413,6 +413,7 @@ export default function SalesPage() {
           tax_amount_usd,
           total_usd,
           total_bs,
+          bcv_rate_used,
           payment_method,
           is_mixed_payment,
           krece_enabled,
