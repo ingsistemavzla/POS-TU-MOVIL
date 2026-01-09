@@ -21,7 +21,8 @@ import {
   Shield,
   RefreshCw,
   AlertTriangle,
-  Trash2
+  Trash2,
+  Globe
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -107,6 +108,12 @@ const getNavigationByRole = (role: string) => {
       href: '/reports',
       icon: TrendingUp,
       roles: ['admin', 'manager'],  // Manager puede ver reportes de su tienda
+    },
+    {
+      name: 'Gestión Web',
+      href: '/gestion-web',
+      icon: Globe,
+      roles: ['admin'],  // Solo admins pueden acceder
     },
     {
       name: 'Configuración',
