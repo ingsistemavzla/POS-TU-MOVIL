@@ -34,6 +34,7 @@ const StoreDashboardPage = lazy(() => import("./pages/StoreDashboardPage"));
 const MasterAuditDashboardPage = lazy(() => import("./pages/MasterAuditDashboardPage"));
 const CashierValidationPage = lazy(() => import("./pages/CashierValidationPage"));
 const DeletedProductsPage = lazy(() => import("./pages/DeletedProductsPage").then(m => ({ default: m.DeletedProductsPage })));
+const GestionWebPage = lazy(() => import("./pages/GestionWebPage").then(m => ({ default: m.GestionWebPage })));
 
 const queryClient = new QueryClient();
 
@@ -380,6 +381,16 @@ const AppRoutes = () => {
                 </Suspense>
               </ProtectedRoute>
             </CashierRouteGuard>
+          } 
+        />
+        <Route 
+          path="gestion-web" 
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <Suspense fallback={<LoadingFallback />}>
+                <GestionWebPage />
+              </Suspense>
+            </ProtectedRoute>
           } 
         />
         <Route 
