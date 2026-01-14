@@ -45,12 +45,15 @@ import {
   Upload,
   Loader2,
   Pencil,
-  Check
+  Check,
+  FileText
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { PRODUCT_CATEGORIES, getCategoryLabel } from '@/constants/categories';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { PriceListModal, PriceListParams } from '@/components/web/PriceListModal';
+import { downloadPriceListPDF } from '@/utils/priceListPdfGenerator';
 
 // ============================================================================
 // INTERFACES
@@ -101,6 +104,10 @@ export const GestionWebPage: React.FC = () => {
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
   const [editingPriceValue, setEditingPriceValue] = useState<string>('');
   const [savingPrice, setSavingPrice] = useState(false);
+  
+  // ✅ Estado para modal de lista de precios
+  const [showPriceListModal, setShowPriceListModal] = useState(false);
+  const [generatingPriceList, setGeneratingPriceList] = useState(false);
 
   // ============================================================================
   // CARGA DE PRODUCTOS (Solo Lectura - Usa RPC)
@@ -827,6 +834,74 @@ export const GestionWebPage: React.FC = () => {
   };
 
   // ============================================================================
+  // GENERACIÓN DE LISTA DE PRECIOS PDF
+  // ============================================================================
+
+  const handleGeneratePriceList = async (params: PriceListParams) => {
+    setGeneratingPriceList(true);
+    try {
+      // Filtrar productos según los parámetros
+      let filteredProducts = products.filter(product => {
+        // Filtro de categoría
+        if (product.category !== params.category) {
+          return false;
+        }
+
+        // Filtro de visibilidad
+        if (params.onlyVisible && !product.web_visible) {
+          return false;
+        }
+
+        // Filtro de stock
+        if (params.onlyWithStock && product.total_stock === 0) {
+          return false;
+        }
+
+        return true;
+      });
+
+      if (filteredProducts.length === 0) {
+        toast({
+          title: "Sin productos",
+          description: "No se encontraron productos que coincidan con los filtros seleccionados",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Convertir a formato esperado por el generador de PDF
+      const productsForPDF = filteredProducts.map(p => ({
+        id: p.id,
+        name: p.name,
+        sku: p.sku,
+        sale_price_usd: p.sale_price_usd,
+        total_stock: p.total_stock,
+        web_visible: p.web_visible,
+      }));
+
+      // Generar y descargar PDF
+      await downloadPriceListPDF(productsForPDF, params);
+
+      toast({
+        title: "PDF generado",
+        description: `Lista de precios generada con ${filteredProducts.length} productos`,
+        variant: "success",
+      });
+
+      setShowPriceListModal(false);
+    } catch (error: any) {
+      console.error('Error generating price list PDF:', error);
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo generar el PDF de la lista de precios",
+        variant: "destructive",
+      });
+    } finally {
+      setGeneratingPriceList(false);
+    }
+  };
+
+  // ============================================================================
   // VALIDACIÓN DE PERMISOS
   // ============================================================================
 
@@ -874,9 +949,18 @@ export const GestionWebPage: React.FC = () => {
             Sincronización de productos con catálogo web público
           </p>
         </div>
-        <Button onClick={fetchProducts} variant="outline">
-          Actualizar
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            onClick={() => setShowPriceListModal(true)} 
+            className="bg-primary-dark text-white hover:bg-primary-dark/90"
+          >
+            <FileText className="w-4 h-4 mr-2" />
+            Generar Lista de Precios
+          </Button>
+          <Button onClick={fetchProducts} variant="outline">
+            Actualizar
+          </Button>
+        </div>
       </div>
 
       {/* Filtros */}
@@ -1490,6 +1574,13 @@ export const GestionWebPage: React.FC = () => {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Modal de Lista de Precios */}
+      <PriceListModal
+        open={showPriceListModal}
+        onClose={() => setShowPriceListModal(false)}
+        onGenerate={handleGeneratePriceList}
+      />
     </div>
   );
 };
