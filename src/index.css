@@ -234,84 +234,20 @@
   /* Glass input - Inputs dentro de paneles glass */
   .glass-input {
     background-color: rgba(17, 24, 39, 0.6);
-    color: #ffffff !important;
+    color: #ffffff;
     border-color: rgba(16, 185, 129, 0.3);
   }
 
-  .glass-input:focus,
-  .glass-input:focus-visible {
-    background-color: rgba(17, 24, 39, 0.8) !important;
-    border-color: rgba(16, 185, 129, 0.5) !important;
+  .glass-input:focus {
+    background-color: rgba(17, 24, 39, 0.8);
+    border-color: rgba(16, 185, 129, 0.5);
     outline-color: rgba(16, 185, 129, 0.5);
     --tw-ring-color: rgba(16, 185, 129, 0.3);
     box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
-    color: #ffffff !important;
   }
 
   .glass-input::placeholder {
-    color: rgba(255, 255, 255, 0.5) !important;
-  }
-
-  /* Inputs dentro de glass-panel o glass-card automáticamente usan estilos glass */
-  .glass-panel input:not(.no-glass-input),
-  .glass-card input:not(.no-glass-input),
-  [class*="glass-panel"] input:not(.no-glass-input),
-  [class*="glass-card"] input:not(.no-glass-input) {
-    background-color: rgba(17, 24, 39, 0.6) !important;
-    color: #ffffff !important;
-    border-color: rgba(16, 185, 129, 0.3) !important;
-  }
-
-  .glass-panel input:not(.no-glass-input):focus,
-  .glass-panel input:not(.no-glass-input):focus-visible,
-  .glass-card input:not(.no-glass-input):focus,
-  .glass-card input:not(.no-glass-input):focus-visible,
-  [class*="glass-panel"] input:not(.no-glass-input):focus,
-  [class*="glass-panel"] input:not(.no-glass-input):focus-visible,
-  [class*="glass-card"] input:not(.no-glass-input):focus,
-  [class*="glass-card"] input:not(.no-glass-input):focus-visible {
-    background-color: rgba(17, 24, 39, 0.8) !important;
-    border-color: rgba(16, 185, 129, 0.5) !important;
-    color: #ffffff !important;
-    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2) !important;
-  }
-
-  .glass-panel input:not(.no-glass-input)::placeholder,
-  .glass-card input:not(.no-glass-input)::placeholder,
-  [class*="glass-panel"] input:not(.no-glass-input)::placeholder,
-  [class*="glass-card"] input:not(.no-glass-input)::placeholder {
-    color: rgba(255, 255, 255, 0.5) !important;
-  }
-
-  /* Textareas dentro de glass-panel o glass-card */
-  .glass-panel textarea:not(.no-glass-input),
-  .glass-card textarea:not(.no-glass-input),
-  [class*="glass-panel"] textarea:not(.no-glass-input),
-  [class*="glass-card"] textarea:not(.no-glass-input) {
-    background-color: rgba(17, 24, 39, 0.6) !important;
-    color: #ffffff !important;
-    border-color: rgba(16, 185, 129, 0.3) !important;
-  }
-
-  .glass-panel textarea:not(.no-glass-input):focus,
-  .glass-panel textarea:not(.no-glass-input):focus-visible,
-  .glass-card textarea:not(.no-glass-input):focus,
-  .glass-card textarea:not(.no-glass-input):focus-visible,
-  [class*="glass-panel"] textarea:not(.no-glass-input):focus,
-  [class*="glass-panel"] textarea:not(.no-glass-input):focus-visible,
-  [class*="glass-card"] textarea:not(.no-glass-input):focus,
-  [class*="glass-card"] textarea:not(.no-glass-input):focus-visible {
-    background-color: rgba(17, 24, 39, 0.8) !important;
-    border-color: rgba(16, 185, 129, 0.5) !important;
-    color: #ffffff !important;
-    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2) !important;
-  }
-
-  .glass-panel textarea:not(.no-glass-input)::placeholder,
-  .glass-card textarea:not(.no-glass-input)::placeholder,
-  [class*="glass-panel"] textarea:not(.no-glass-input)::placeholder,
-  [class*="glass-card"] textarea:not(.no-glass-input)::placeholder {
-    color: rgba(255, 255, 255, 0.5) !important;
+    color: rgba(255, 255, 255, 0.5);
   }
 
   /* Forzar color blanco en inputs dentro de glass-card (misma paleta que página 404) */

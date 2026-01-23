@@ -286,7 +286,8 @@ export default function POS() {
   const [priceInputs, setPriceInputs] = useState<Record<string, string>>({});
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
   const [quantityErrors, setQuantityErrors] = useState<Record<string, string>>({});
-  const [bcvRate, setBcvRate] = useState(41.73);
+  const [bcvRate, setBcvRate] = useState(41.73); // ✅ Tasa desde API (inicial)
+  const [finalBcvRate, setFinalBcvRate] = useState(41.73); // ✅ Tasa final a usar (puede ser editada)
   const [isEditingBcvRate, setIsEditingBcvRate] = useState(false);
   const [bcvRateInput, setBcvRateInput] = useState("41.73");
   const [productView, setProductView] = useState<'cards' | 'list'>('cards');
@@ -467,6 +468,7 @@ export default function POS() {
       if (rate !== null) {
         console.log('BCV rate loaded:', rate);
         setBcvRate(rate);
+        setFinalBcvRate(rate); // ✅ Sincronizar tasa final con la de API
         setBcvRateInput(rate.toString());
       } else {
         console.error('Could not fetch BCV rate from API or database');
@@ -984,7 +986,7 @@ export default function POS() {
   const taxRate = 0; // IVA eliminado - siempre 0
   const taxUSD = 0; // IVA eliminado - siempre 0
   const totalUSD = subtotalUSD; // Total = Subtotal (sin IVA)
-  const totalBs = totalUSD * bcvRate;
+  const totalBs = totalUSD * finalBcvRate; // ✅ Usar tasa final (puede ser editada)
 
   // Debug tax rate calculation
   console.log('POS Debug - Tax Rate Calculation:', {
@@ -1360,8 +1362,8 @@ export default function POS() {
       subtotal_usd: cartSubtotal,
       tax_usd: cartSubtotal * taxRate,
       total_usd: cartSubtotal + (cartSubtotal * taxRate),
-      total_bs: (cartSubtotal + (cartSubtotal * taxRate)) * bcvRate,
-      bcv_rate: bcvRate,
+      total_bs: (cartSubtotal + (cartSubtotal * taxRate)) * finalBcvRate,
+      bcv_rate: finalBcvRate, // ✅ Usar tasa final editada
       payment_method: currentPaymentMethod,
       store_name: selectedStore?.name || 'No asignada',
       // ✅ Separación completa: Krece y Cashea tienen campos propios
@@ -1660,7 +1662,7 @@ export default function POS() {
       // CÁLCULOS FINALES PARA PERSISTENCIA (SNAPSHOT) - FASE 4: SEPARACIÓN DE DATOS
       // ====================================================================================
       const totalAmount = cartSubtotal; // Sin IVA
-      const totalBs = Number((totalAmount * bcvRate).toFixed(2));
+      const totalBs = Number((totalAmount * finalBcvRate).toFixed(2)); // ✅ Usar tasa final editada
       
       // ====================================================================================
       // CONFIGURACIÓN KRECE (Solo si isKreceEnabled está activo)
@@ -1671,10 +1673,10 @@ export default function POS() {
         ? Number(((kreceInitialAmount / cartSubtotal) * 100).toFixed(2)) || 0 
         : 0;
       const kreceInitialBs = isKreceEnabled 
-        ? Number((kreceInitialAmount * bcvRate).toFixed(2)) 
+        ? Number((kreceInitialAmount * finalBcvRate).toFixed(2)) 
         : null;
       const kreceFinancedBs = isKreceEnabled 
-        ? Number(((cartSubtotal - kreceInitialAmount) * bcvRate).toFixed(2)) 
+        ? Number(((cartSubtotal - kreceInitialAmount) * finalBcvRate).toFixed(2)) 
         : null;
 
       // ====================================================================================
@@ -1686,10 +1688,10 @@ export default function POS() {
         ? Number(((casheaInitialAmount / cartSubtotal) * 100).toFixed(2)) || 0 
         : 0;
       const casheaInitialBs = isCasheaEnabled 
-        ? Number((casheaInitialAmount * bcvRate).toFixed(2)) 
+        ? Number((casheaInitialAmount * finalBcvRate).toFixed(2)) 
         : null;
       const casheaFinancedBs = isCasheaEnabled 
-        ? Number(((cartSubtotal - casheaInitialAmount) * bcvRate).toFixed(2)) 
+        ? Number(((cartSubtotal - casheaInitialAmount) * finalBcvRate).toFixed(2)) 
         : null;
 
       // ====================================================================================
@@ -1711,7 +1713,7 @@ export default function POS() {
         p_customer_id: selectedCustomer?.id || null,
         p_payment_method: finalPaymentMethod,
         p_customer_name: String(selectedCustomer?.name || 'Cliente General').trim(),
-        p_bcv_rate: Number(bcvRate) || 41.73,
+        p_bcv_rate: Number(finalBcvRate) || 41.73, // ✅ Usar tasa final editada
         p_customer_id_number: selectedCustomer?.id_number ? String(selectedCustomer.id_number).trim() : null,
         p_items: saleItems,
         p_notes: (isKreceEnabled || isCasheaEnabled) 
@@ -1960,8 +1962,8 @@ export default function POS() {
         subtotal_usd: cartSubtotal,
         tax_amount_usd: 0,
         total_usd: totalUSD,
-        total_bs: totalUSD * bcvRate,
-        bcv_rate: bcvRate,
+        total_bs: totalUSD * finalBcvRate,
+        bcv_rate: finalBcvRate, // ✅ Usar tasa final editada
         payment_method: (isKreceEnabled || isCasheaEnabled) 
           ? (isKreceEnabled ? kreceInitialPaymentMethod : casheaInitialPaymentMethod)
           : selectedPaymentMethod,
@@ -3126,7 +3128,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                             ${casheaInitialAmount.toFixed(2)}
                           </div>
                           <div className="text-[11px] text-emerald-300">
-                            Bs. {Number((casheaInitialAmount * bcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            Bs. {Number((casheaInitialAmount * finalBcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                         </div>
                       </div>
@@ -3141,7 +3143,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                             ${(subtotalUSD - casheaInitialAmount).toFixed(2)}
                           </div>
                           <div className="text-[11px] text-red-300">
-                            Bs. {Number(((subtotalUSD - casheaInitialAmount) * bcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            Bs. {Number(((subtotalUSD - casheaInitialAmount) * finalBcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                         </div>
                       </div>
@@ -3462,7 +3464,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                       <div className="flex justify-between items-center">
                         <span className="font-semibold text-xs text-muted-foreground">Total Bs (Hoy):</span>
                         <span className="text-sm font-bold text-primary">
-                          Bs. {Number(((isKreceEnabled ? kreceInitialAmount : casheaInitialAmount) * bcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          Bs. {Number(((isKreceEnabled ? kreceInitialAmount : casheaInitialAmount) * finalBcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
                     </div>
@@ -3587,7 +3589,34 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                   <DollarSign className="w-4 h-4 text-emerald-300 brightness-150" />
                   <span className="text-sm text-white font-medium">Tasa BCV</span>
                 </div>
-                <p className="font-bold text-xl text-emerald-300 brightness-110">Bs {bcvRate.toFixed(2)}</p>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    value={bcvRateInput}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setBcvRateInput(value);
+                      const numValue = parseFloat(value);
+                      if (!isNaN(numValue) && numValue > 0) {
+                        setFinalBcvRate(numValue);
+                      }
+                    }}
+                    onBlur={() => {
+                      const numValue = parseFloat(bcvRateInput);
+                      if (isNaN(numValue) || numValue <= 0) {
+                        setBcvRateInput(finalBcvRate.toFixed(2));
+                      } else {
+                        setBcvRateInput(numValue.toFixed(2));
+                        setFinalBcvRate(numValue);
+                      }
+                    }}
+                    className="w-28 h-9 text-base font-bold !bg-[rgba(17,24,39,0.8)] !border-emerald-500/50 focus:!border-emerald-400 focus:!ring-emerald-400/50 !text-emerald-300 placeholder:!text-emerald-300/50"
+                    step="0.01"
+                    min="0.01"
+                  />
+                  <span className="text-xs text-white/70">Bs</span>
+                </div>
+                <p className="text-[10px] text-white/60 mt-1">Editable antes de procesar</p>
               </Card>
             </div>
             
@@ -3630,7 +3659,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                           ${(isKreceEnabled ? kreceInitialAmount : casheaInitialAmount).toFixed(2)}
                         </div>
                         <div className="text-sm font-semibold text-primary mt-1">
-                          Bs. {Number(((isKreceEnabled ? kreceInitialAmount : casheaInitialAmount) * bcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          Bs. {Number(((isKreceEnabled ? kreceInitialAmount : casheaInitialAmount) * finalBcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                       </div>
                     </div>
@@ -3691,7 +3720,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                         ${(isKreceEnabled ? kreceInitialAmount : casheaInitialAmount).toFixed(2)}
                       </span>
                       <span className="text-xs text-muted-foreground ml-2">
-                        (Bs. {Number(((isKreceEnabled ? kreceInitialAmount : casheaInitialAmount) * bcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                        (Bs. {Number(((isKreceEnabled ? kreceInitialAmount : casheaInitialAmount) * finalBcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                       </span>
                     </div>
                   </div>
@@ -3702,7 +3731,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                         ${(subtotalUSD - (isKreceEnabled ? kreceInitialAmount : casheaInitialAmount)).toFixed(2)}
                       </span>
                       <span className="text-xs text-muted-foreground ml-2">
-                        (Bs. {Number(((subtotalUSD - (isKreceEnabled ? kreceInitialAmount : casheaInitialAmount)) * bcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                        (Bs. {Number(((subtotalUSD - (isKreceEnabled ? kreceInitialAmount : casheaInitialAmount)) * finalBcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                       </span>
                     </div>
                   </div>
@@ -3783,7 +3812,34 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                   <DollarSign className="w-4 h-4 text-emerald-300 brightness-150" />
                   <span className="text-xs text-white font-medium">Tasa BCV</span>
                 </div>
-                <p className="font-bold text-xl text-emerald-300 brightness-110">Bs {bcvRate.toFixed(2)}</p>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    value={bcvRateInput}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setBcvRateInput(value);
+                      const numValue = parseFloat(value);
+                      if (!isNaN(numValue) && numValue > 0) {
+                        setFinalBcvRate(numValue);
+                      }
+                    }}
+                    onBlur={() => {
+                      const numValue = parseFloat(bcvRateInput);
+                      if (isNaN(numValue) || numValue <= 0) {
+                        setBcvRateInput(finalBcvRate.toFixed(2));
+                      } else {
+                        setBcvRateInput(numValue.toFixed(2));
+                        setFinalBcvRate(numValue);
+                      }
+                    }}
+                    className="w-28 h-9 text-base font-bold !bg-[rgba(17,24,39,0.8)] !border-emerald-500/50 focus:!border-emerald-400 focus:!ring-emerald-400/50 !text-emerald-300 placeholder:!text-emerald-300/50"
+                    step="0.01"
+                    min="0.01"
+                  />
+                  <span className="text-xs text-white/70">Bs</span>
+                </div>
+                <p className="text-[10px] text-white/60 mt-1">Editable antes de procesar</p>
               </Card>
             </div>
 
@@ -3905,7 +3961,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                             ${((isKreceEnabled ? (subtotalUSD - kreceInitialAmount) : (subtotalUSD - casheaInitialAmount))).toFixed(2)}
                           </span>
                           <span className="text-[11px] text-white/60 ml-1">
-                            (Bs. {Number(((isKreceEnabled ? (subtotalUSD - kreceInitialAmount) : (subtotalUSD - casheaInitialAmount)) * bcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                            (Bs. {Number(((isKreceEnabled ? (subtotalUSD - kreceInitialAmount) : (subtotalUSD - casheaInitialAmount)) * finalBcvRate).toFixed(2)).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                           </span>
                         </div>
                       </div>

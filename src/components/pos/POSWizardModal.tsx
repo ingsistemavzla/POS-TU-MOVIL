@@ -110,6 +110,7 @@ interface WizardCompleteData {
   casheaInitialAmount: number;
   isMixedPayment: boolean;
   mixedPayments: { method: string; amount: number }[];
+  bcvRate: number; // ✅ Tasa BCV editada manualmente
 }
 
 // Payment methods definition
@@ -218,12 +219,22 @@ export const POSWizardModal: React.FC<POSWizardModalProps> = ({
   const [isMixedPayment, setIsMixedPayment] = useState(false);
   const [mixedPayments, setMixedPayments] = useState<{ method: string; amount: number }[]>([]);
 
+  // ✅ Tasa BCV editable (inicializada con la prop, pero puede modificarse)
+  const [editableBcvRate, setEditableBcvRate] = useState(bcvRate);
+  const [bcvRateInput, setBcvRateInput] = useState(bcvRate.toFixed(2));
+
+  // ✅ Sincronizar tasa editable cuando cambia la prop (actualización desde API)
+  useEffect(() => {
+    setEditableBcvRate(bcvRate);
+    setBcvRateInput(bcvRate.toFixed(2));
+  }, [bcvRate]);
+
   // Calculated values
   const cartSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const taxRate = 0; // IVA eliminado - siempre 0
   const taxAmount = 0; // IVA eliminado - siempre 0
   const totalUSD = cartSubtotal; // Total = Subtotal (sin IVA)
-  const totalBs = totalUSD * bcvRate;
+  const totalBs = totalUSD * editableBcvRate; // ✅ Usar tasa editable
 
   // Search products function
   const searchProducts = useCallback(async (term: string) => {
@@ -548,6 +559,7 @@ export const POSWizardModal: React.FC<POSWizardModalProps> = ({
         casheaInitialAmount,
         isMixedPayment,
         mixedPayments,
+        bcvRate: editableBcvRate, // ✅ Pasar tasa editada
       });
     }
   };
@@ -612,11 +624,44 @@ export const POSWizardModal: React.FC<POSWizardModalProps> = ({
               </DialogDescription>
             </DialogHeader>
             
-            {/* BCV Rate Badge */}
-            <Card className="p-2 px-3 glass-green-dark border-emerald-500/40 shadow-lg shadow-emerald-500/20">
-              <div className="text-xs text-white/90 font-medium">Tasa BCV</div>
-              <div className="text-lg font-bold text-emerald-300">Bs {bcvRate.toFixed(2)}</div>
-            </Card>
+            {/* BCV Rate Badge - Editable en paso 4 */}
+            {currentStep === 4 ? (
+              <Card className="p-2 px-3 glass-green-dark border-emerald-500/40 shadow-lg shadow-emerald-500/20">
+                <div className="text-xs text-white/90 font-medium mb-1">Tasa BCV</div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    value={bcvRateInput}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setBcvRateInput(value);
+                      const numValue = parseFloat(value);
+                      if (!isNaN(numValue) && numValue > 0) {
+                        setEditableBcvRate(numValue);
+                      }
+                    }}
+                    onBlur={() => {
+                      const numValue = parseFloat(bcvRateInput);
+                      if (isNaN(numValue) || numValue <= 0) {
+                        setBcvRateInput(editableBcvRate.toFixed(2));
+                      } else {
+                        setBcvRateInput(numValue.toFixed(2));
+                        setEditableBcvRate(numValue);
+                      }
+                    }}
+                    className="w-24 h-8 text-sm font-bold text-emerald-300 bg-emerald-500/10 border-emerald-500/50 focus:border-emerald-400 focus:ring-emerald-400/50"
+                    step="0.01"
+                    min="0.01"
+                  />
+                  <span className="text-xs text-white/70">Bs</span>
+                </div>
+              </Card>
+            ) : (
+              <Card className="p-2 px-3 glass-green-dark border-emerald-500/40 shadow-lg shadow-emerald-500/20">
+                <div className="text-xs text-white/90 font-medium">Tasa BCV</div>
+                <div className="text-lg font-bold text-emerald-300">Bs {editableBcvRate.toFixed(2)}</div>
+              </Card>
+            )}
           </div>
         </div>
 
@@ -1237,9 +1282,14 @@ export const POSWizardModal: React.FC<POSWizardModalProps> = ({
                     <span>Total USD:</span>
                     <span className="text-green-600">${totalUSD.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-lg font-bold">
+                  <div className="flex justify-between items-center text-lg font-bold">
                     <span>Total Bs:</span>
                     <span className="text-primary">Bs {totalBs.toFixed(2)}</span>
+                  </div>
+                  {/* ✅ Mostrar tasa BCV usada en el resumen */}
+                  <div className="flex justify-between text-xs text-muted-foreground pt-1 border-t">
+                    <span>Tasa BCV aplicada:</span>
+                    <span className="font-mono">Bs {editableBcvRate.toFixed(2)}</span>
                   </div>
                 </div>
               </Card>
