@@ -92,6 +92,9 @@ export const AlmacenPage: React.FC = () => {
   const [transferring, setTransferring] = useState<Record<string, { from: string; to: string; qty: number; processing?: boolean }>>({});
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
 
+  // 🛡️ Privacidad: solo admin y master_admin pueden ver costo/utilidad
+  const canSeeCosts = userProfile?.role === 'admin' || userProfile?.role === 'master_admin';
+
   // Cargar productos e inventario
   const fetchData = async () => {
     try {
@@ -659,7 +662,9 @@ export const AlmacenPage: React.FC = () => {
                   <th className="text-left py-4 px-4">SKU</th>
                   <th className="text-left py-4 px-4">Nombre</th>
                   <th className="text-left py-4 px-4">Categoría</th>
-                  <th className="text-right py-4 px-4">Costo</th>
+                  {canSeeCosts && (
+                    <th className="text-right py-4 px-4">Costo</th>
+                  )}
                   <th className="text-right py-4 px-4">Precio</th>
                   <th className="text-right py-4 px-4">Stock Total</th>
                   <th className="text-center py-4 px-4">Estado</th>
@@ -682,9 +687,11 @@ export const AlmacenPage: React.FC = () => {
                             {getCategoryLabel(product.category)}
                           </Badge>
                         </td>
-                        <td className="py-4 px-4 text-right text-white/75">
-                          ${product.cost_usd.toFixed(2)}
-                        </td>
+                        {canSeeCosts && (
+                          <td className="py-4 px-4 text-right text-white/75">
+                            ${product.cost_usd.toFixed(2)}
+                          </td>
+                        )}
                         <td className="py-4 px-4 text-right font-bold text-white">
                           ${product.sale_price_usd.toFixed(2)}
                         </td>
@@ -750,7 +757,7 @@ export const AlmacenPage: React.FC = () => {
                       {/* Acordeón Expandible */}
                       {isExpanded && (
                         <tr>
-                          <td colSpan={8} className="p-0">
+                          <td colSpan={canSeeCosts ? 8 : 7} className="p-0">
                             <div className="glass-muted-dark p-6 border-t border-white/10">
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     {/* Información del Producto */}

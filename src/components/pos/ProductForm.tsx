@@ -202,6 +202,17 @@ export const ProductForm: React.FC<ProductFormProps> = ({
       return;
     }
 
+    // Validación de categoría (creación y edición: no permitir guardar con categoría vacía)
+    if (!formData.category.trim()) {
+      toast({
+        title: "Error",
+        description: "La categoría del producto es requerida",
+        variant: "destructive",
+      });
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -407,7 +418,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="category" className="text-white/90">Categoría</Label>
+              <Label htmlFor="category" className="text-white/90">Categoría *</Label>
               <Select
                 value={formData.category}
                 onValueChange={(value) => handleInputChange('category', value)}
