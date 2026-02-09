@@ -22,7 +22,8 @@ import {
   RefreshCw,
   AlertTriangle,
   Trash2,
-  Globe
+  Globe,
+  History
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -114,6 +115,12 @@ const getNavigationByRole = (role: string) => {
       href: '/gestion-web',
       icon: Globe,
       roles: ['admin'],  // Solo admins pueden acceder
+    },
+    {
+      name: 'Historial',
+      href: '/historial',
+      icon: History,
+      roles: ['admin', 'master_admin'],  // Trazabilidad de inventario
     },
     {
       name: 'Configuración',

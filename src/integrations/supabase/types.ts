@@ -247,6 +247,9 @@ export type Database = {
           total_products: number
           total_stock: number
           total_value_usd: number
+          qty_phones: number
+          qty_accessories: number
+          qty_services: number
           captured_at: string
         }
         Insert: {
@@ -256,6 +259,9 @@ export type Database = {
           total_products?: number
           total_stock?: number
           total_value_usd?: number
+          qty_phones?: number
+          qty_accessories?: number
+          qty_services?: number
           captured_at?: string
         }
         Update: {
@@ -265,6 +271,9 @@ export type Database = {
           total_products?: number
           total_stock?: number
           total_value_usd?: number
+          qty_phones?: number
+          qty_accessories?: number
+          qty_services?: number
           captured_at?: string
         }
         Relationships: [
