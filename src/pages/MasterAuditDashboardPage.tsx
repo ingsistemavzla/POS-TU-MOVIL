@@ -14,6 +14,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
   Activity,
   Package,
   Store,
@@ -36,7 +44,9 @@ import {
   Minus,
   Database,
   BarChart3,
-  Zap
+  Zap,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
@@ -49,6 +59,8 @@ interface InventoryMovement {
   product_sku?: string;
   type: 'IN' | 'OUT' | 'TRANSFER' | 'ADJUST';
   qty: number;
+  old_qty?: number | null;
+  new_qty?: number | null;
   store_from_id: string | null;
   store_from_name?: string;
   store_to_id: string | null;
@@ -59,6 +71,24 @@ interface InventoryMovement {
   company_id: string;
   created_at: string;
 }
+
+type MovementCategory = 'VENTAS' | 'AUMENTOS' | 'DISMINUCIONES' | 'TRANSFERENCIAS';
+
+// Ventas=verde, Disminución=rojo, Aumento=azul, Transferencias=amarillo
+const CATEGORY_COLORS: Record<MovementCategory, string> = {
+  VENTAS: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50',
+  AUMENTOS: 'bg-blue-500/20 text-blue-300 border-blue-400/50',
+  DISMINUCIONES: 'bg-red-500/20 text-red-300 border-red-400/50',
+  TRANSFERENCIAS: 'bg-amber-500/20 text-amber-300 border-amber-400/50',
+};
+
+const getMovementCategory = (m: InventoryMovement): MovementCategory => {
+  if (m.type === 'OUT') return 'VENTAS';
+  if (m.type === 'ADJUST' && m.qty > 0) return 'AUMENTOS';
+  if (m.type === 'ADJUST' && m.qty < 0) return 'DISMINUCIONES';
+  if (m.type === 'TRANSFER' || m.type === 'IN') return 'TRANSFERENCIAS';
+  return 'VENTAS';
+};
 
 interface InventoryTransfer {
   id: string;
@@ -123,8 +153,10 @@ export const MasterAuditDashboardPage: React.FC = () => {
   const [storeFilter, setStoreFilter] = useState<string>('all');
   const [productFilter, setProductFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [dateFilter, setDateFilter] = useState<string>('all'); // Cambiado de 'today' a 'all' para ver todos los datos
+  const [categoryFilter, setCategoryFilter] = useState<MovementCategory | 'ALL'>('ALL');
+  const [dateFilter, setDateFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [expandedMovementId, setExpandedMovementId] = useState<string | null>(null);
   
   // Pagination
   const [movementsPage, setMovementsPage] = useState(1);
@@ -171,9 +203,16 @@ export const MasterAuditDashboardPage: React.FC = () => {
       if (productFilter !== 'all') {
         query = query.eq('product_id', productFilter);
       }
-      
-      if (typeFilter !== 'all') {
-        query = query.eq('type', typeFilter);
+
+      // Filtro por categoría (Ventas, Aumentos, Disminuciones, Transferencias)
+      if (categoryFilter === 'VENTAS') {
+        query = query.eq('type', 'OUT');
+      } else if (categoryFilter === 'AUMENTOS') {
+        query = query.eq('type', 'ADJUST').gt('qty', 0);
+      } else if (categoryFilter === 'DISMINUCIONES') {
+        query = query.eq('type', 'ADJUST').lt('qty', 0);
+      } else if (categoryFilter === 'TRANSFERENCIAS') {
+        query = query.in('type', ['TRANSFER', 'IN']);
       }
       
       if (dateFilter === 'today') {
@@ -206,13 +245,15 @@ export const MasterAuditDashboardPage: React.FC = () => {
         product_sku: m.products?.sku || 'N/A',
         type: m.type,
         qty: m.qty,
+        old_qty: m.old_qty ?? null,
+        new_qty: m.new_qty ?? null,
         store_from_id: m.store_from_id,
-        store_from_name: m.stores_from?.name || 'N/A',
+        store_from_name: m.stores_from?.name || null,
         store_to_id: m.store_to_id,
-        store_to_name: m.stores_to?.name || 'N/A',
+        store_to_name: m.stores_to?.name || null,
         reason: m.reason,
         user_id: m.user_id,
-        user_name: m.users?.name || 'Usuario N/A',
+        user_name: m.users?.name || 'Sistema',
         company_id: m.company_id,
         created_at: m.created_at,
       }));
@@ -682,7 +723,7 @@ export const MasterAuditDashboardPage: React.FC = () => {
       supabase.removeChannel(transfersChannel);
       supabase.removeChannel(salesChannel);
     };
-  }, [userProfile, movementsPage, transfersPage, salesPage, storeFilter, productFilter, typeFilter, dateFilter]);
+  }, [userProfile, movementsPage, transfersPage, salesPage, storeFilter, productFilter, categoryFilter, dateFilter]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -695,34 +736,34 @@ export const MasterAuditDashboardPage: React.FC = () => {
     });
   };
 
-  const getMovementIcon = (type: string) => {
-    switch (type) {
-      case 'IN':
-        return <ArrowDown className="w-4 h-4 text-green-500" />;
-      case 'OUT':
-        return <ArrowUp className="w-4 h-4 text-red-500" />;
-      case 'TRANSFER':
-        return <ArrowRightLeft className="w-4 h-4 text-blue-500" />;
-      case 'ADJUST':
-        return <Minus className="w-4 h-4 text-yellow-500" />;
-      default:
-        return <Activity className="w-4 h-4" />;
-    }
+  const getMovementIcon = (m: InventoryMovement) => {
+    const cat = getMovementCategory(m);
+    if (cat === 'VENTAS') return <Receipt className="w-4 h-4 text-emerald-400" />;
+    if (cat === 'AUMENTOS') return <ArrowDown className="w-4 h-4 text-blue-400" />;
+    if (cat === 'DISMINUCIONES') return <ArrowUp className="w-4 h-4 text-red-400" />;
+    return <ArrowRightLeft className="w-4 h-4 text-amber-400" />;
   };
 
-  const getMovementBadge = (type: string) => {
-    switch (type) {
-      case 'IN':
-        return <Badge className="bg-green-500">Entrada</Badge>;
-      case 'OUT':
-        return <Badge className="bg-red-500">Salida</Badge>;
-      case 'TRANSFER':
-        return <Badge className="bg-blue-500">Transferencia</Badge>;
-      case 'ADJUST':
-        return <Badge className="bg-yellow-500">Ajuste</Badge>;
-      default:
-        return <Badge>{type}</Badge>;
+  const getMovementBadge = (m: InventoryMovement) => {
+    const cat = getMovementCategory(m);
+    const labels: Record<MovementCategory, string> = {
+      VENTAS: 'Venta',
+      AUMENTOS: 'Aumento',
+      DISMINUCIONES: 'Disminución',
+      TRANSFERENCIAS: 'Transferencia',
+    };
+    return (
+      <Badge variant="outline" className={CATEGORY_COLORS[cat] ?? 'bg-gray-500/20 text-gray-300'}>
+        {labels[cat]}
+      </Badge>
+    );
+  };
+
+  const getStoreDisplay = (m: InventoryMovement) => {
+    if (m.type === 'TRANSFER' && m.store_from_name && m.store_to_name) {
+      return `Desde ${m.store_from_name} → Hacia ${m.store_to_name}`;
     }
+    return m.store_from_name || m.store_to_name || 'N/A';
   };
 
   const filteredMovements = useMemo(() => {
@@ -806,16 +847,16 @@ export const MasterAuditDashboardPage: React.FC = () => {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <Select value={categoryFilter} onValueChange={(v) => setCategoryFilter(v as MovementCategory | 'ALL')}>
               <SelectTrigger>
-                <SelectValue placeholder="Todos los tipos" />
+                <SelectValue placeholder="Categoría" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todos los tipos</SelectItem>
-                <SelectItem value="IN">Entrada</SelectItem>
-                <SelectItem value="OUT">Salida</SelectItem>
-                <SelectItem value="TRANSFER">Transferencia</SelectItem>
-                <SelectItem value="ADJUST">Ajuste</SelectItem>
+                <SelectItem value="ALL">Todos</SelectItem>
+                <SelectItem value="VENTAS">Ventas</SelectItem>
+                <SelectItem value="AUMENTOS">Aumentos</SelectItem>
+                <SelectItem value="DISMINUCIONES">Disminuciones</SelectItem>
+                <SelectItem value="TRANSFERENCIAS">Transferencias</SelectItem>
               </SelectContent>
             </Select>
             <Select value={dateFilter} onValueChange={setDateFilter}>
@@ -856,7 +897,7 @@ export const MasterAuditDashboardPage: React.FC = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Zap className="w-5 h-5 text-yellow-500" />
-                Movimientos de Inventario en Tiempo Real
+                Movimientos de Inventario en Tiempo Real (últimos 50, paginados)
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -871,54 +912,171 @@ export const MasterAuditDashboardPage: React.FC = () => {
                   <p className="text-muted-foreground">No hay movimientos para mostrar</p>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {filteredMovements.map((movement) => (
-                    <div
-                      key={movement.id}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[120px]">Fecha/Hora</TableHead>
+                      <TableHead>Producto</TableHead>
+                      <TableHead className="text-center">Tipo</TableHead>
+                      <TableHead className="text-right">Cambio</TableHead>
+                      <TableHead className="text-center">Detalles</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredMovements.map((movement) => {
+                      const isExpanded = expandedMovementId === movement.id;
+                      return (
+                        <React.Fragment key={movement.id}>
+                          <TableRow className={isExpanded ? 'bg-muted/30' : ''}>
+                            <TableCell className="text-sm font-mono text-muted-foreground">
+                              {format(new Date(movement.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: es })}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                {getMovementIcon(movement)}
+                                <div>
+                                  <div className="font-medium">{movement.product_name}</div>
+                                  <div className="text-xs text-muted-foreground font-mono">{movement.product_sku}</div>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">{getMovementBadge(movement)}</TableCell>
+                            <TableCell
+                              className={`text-right font-semibold ${
+                                movement.qty > 0 ? 'text-emerald-600' : 'text-red-600'
+                              }`}
+                            >
+                              {movement.qty > 0 ? '+' : ''}{movement.qty}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setExpandedMovementId(isExpanded ? null : movement.id)}
+                                className="text-xs"
+                              >
+                                {isExpanded ? (
+                                  <>
+                                    <ChevronUp className="h-3 w-3 mr-1" />
+                                    Ocultar
+                                  </>
+                                ) : (
+                                  <>
+                                    <ChevronDown className="h-3 w-3 mr-1" />
+                                    Ver detalle
+                                  </>
+                                )}
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                          {isExpanded && (
+                            <TableRow>
+                              <TableCell colSpan={5} className="bg-slate-950/80 p-5 border-l-4 border-l-amber-500">
+                                {/* Panel forense: informe analítico exhaustivo */}
+                                <div className="space-y-4">
+                                  <div className="flex items-center gap-2 pb-3 border-b border-slate-700">
+                                    <BarChart3 className="w-5 h-5 text-amber-500" />
+                                    <h4 className="font-bold text-white">Informe forense — Movimiento de inventario</h4>
+                                  </div>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 text-sm font-mono">
+                                    <div className="flex justify-between gap-4 py-1.5 border-b border-slate-800">
+                                      <span className="text-slate-400 shrink-0">Producto:</span>
+                                      <span className="text-white font-medium text-right">{movement.product_name}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4 py-1.5 border-b border-slate-800">
+                                      <span className="text-slate-400 shrink-0">SKU:</span>
+                                      <span className="text-amber-300 text-right">{movement.product_sku}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4 py-1.5 border-b border-slate-800">
+                                      <span className="text-slate-400 shrink-0">Tipo (BD):</span>
+                                      <span className="text-white text-right">{movement.type}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4 py-1.5 border-b border-slate-800">
+                                      <span className="text-slate-400 shrink-0">Categoría:</span>
+                                      <span className="text-right">{getMovementBadge(movement)}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4 py-1.5 border-b border-slate-800">
+                                      <span className="text-slate-400 shrink-0">Sucursal origen:</span>
+                                      <span className="text-white text-right">{movement.store_from_name || 'N/A'}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4 py-1.5 border-b border-slate-800">
+                                      <span className="text-slate-400 shrink-0">Sucursal destino:</span>
+                                      <span className="text-white text-right">{movement.store_to_name || 'N/A'}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4 py-1.5 border-b border-slate-800">
+                                      <span className="text-slate-400 shrink-0">Admin que realizó:</span>
+                                      <span className="text-blue-400 font-semibold text-right">{movement.user_name}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4 py-1.5 border-b border-slate-800">
+                                      <span className="text-slate-400 shrink-0">Cantidad (qty):</span>
+                                      <span className={`font-bold text-right ${movement.qty >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {movement.qty >= 0 ? '+' : ''}{movement.qty}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between gap-4 py-1.5 border-b border-slate-800">
+                                      <span className="text-slate-400 shrink-0">Conciliación:</span>
+                                      <span className="text-white text-right">
+                                        {movement.old_qty != null && movement.new_qty != null
+                                          ? `${movement.old_qty} → ${movement.new_qty}`
+                                          : '—'}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between gap-4 py-1.5 border-b border-slate-800">
+                                      <span className="text-slate-400 shrink-0">Fecha/Hora:</span>
+                                      <span className="text-white text-right">
+                                        {format(new Date(movement.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: es })}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between gap-4 py-1.5 border-b border-slate-800 col-span-full">
+                                      <span className="text-slate-400 shrink-0">Motivo completo:</span>
+                                      <span className="text-white/90 text-right max-w-md">{movement.reason || '—'}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4 py-1.5 border-b border-slate-800">
+                                      <span className="text-slate-500 shrink-0 text-xs">ID movimiento:</span>
+                                      <span className="text-slate-500 text-right text-xs truncate max-w-[200px]">{movement.id}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4 py-1.5 border-b border-slate-800">
+                                      <span className="text-slate-500 shrink-0 text-xs">ID usuario:</span>
+                                      <span className="text-slate-500 text-right text-xs truncate max-w-[200px]">{movement.user_id}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4 py-1.5 border-b border-slate-800">
+                                      <span className="text-slate-500 shrink-0 text-xs">ID producto:</span>
+                                      <span className="text-slate-500 text-right text-xs truncate max-w-[200px]">{movement.product_id}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+              {filteredMovements.length > 0 && (
+                <div className="flex justify-between items-center mt-4 pt-4 border-t">
+                  <p className="text-sm text-muted-foreground">
+                    Página {movementsPage} • {filteredMovements.length} movimientos
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={movementsPage <= 1}
+                      onClick={() => setMovementsPage((p) => Math.max(1, p - 1))}
                     >
-                      <div className="flex items-center gap-4 flex-1">
-                        {getMovementIcon(movement.type)}
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-semibold">{movement.product_name}</span>
-                            <span className="text-sm text-muted-foreground">({movement.product_sku})</span>
-                            {getMovementBadge(movement.type)}
-                          </div>
-                          <div className="text-sm text-muted-foreground space-y-1">
-                            <div className="flex items-center gap-4">
-                              <span className="flex items-center gap-1">
-                                <Store className="w-3 h-3" />
-                                {movement.store_from_name || movement.store_to_name || 'N/A'}
-                              </span>
-                              {movement.type === 'TRANSFER' && (
-                                <span className="flex items-center gap-1">
-                                  <ArrowRightLeft className="w-3 h-3" />
-                                  {movement.store_to_name}
-                                </span>
-                              )}
-                              <span className="flex items-center gap-1">
-                                <User className="w-3 h-3" />
-                                {movement.user_name || 'Sistema'}
-                              </span>
-                            </div>
-                            {movement.reason && (
-                              <p className="text-xs">{movement.reason}</p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className={`text-lg font-bold ${movement.qty > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                            {movement.qty > 0 ? '+' : ''}{movement.qty}
-                          </div>
-                          <div className="text-xs text-muted-foreground flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {format(new Date(movement.created_at), 'dd/MM/yyyy HH:mm:ss', { locale: es })}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                      ← Anterior
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={filteredMovements.length < pageSize}
+                      onClick={() => setMovementsPage((p) => p + 1)}
+                    >
+                      Siguiente →
+                    </Button>
+                  </div>
                 </div>
               )}
             </CardContent>

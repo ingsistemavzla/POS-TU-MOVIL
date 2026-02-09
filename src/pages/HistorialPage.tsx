@@ -7,7 +7,39 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { History, Search, CalendarCheck, ListOrdered } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  History,
+  Search,
+  CalendarCheck,
+  ListOrdered,
+  Store,
+  User,
+  Clock,
+  ArrowDown,
+  ArrowUp,
+  ArrowRightLeft,
+  Minus,
+  Activity,
+  ChevronDown,
+  ChevronUp,
+  Receipt,
+  Package,
+} from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -22,9 +54,18 @@ interface MovementRow {
   old_qty: number | null;
   new_qty: number | null;
   store_name: string;
+  store_from_id: string | null;
+  store_to_id: string | null;
+  store_from_name: string | null;
+  store_to_name: string | null;
   user_name: string;
   reason: string | null;
   created_at: string;
+}
+
+interface StoreOption {
+  id: string;
+  name: string;
 }
 
 interface SnapshotRow {
@@ -40,15 +81,27 @@ interface SnapshotRow {
   captured_at: string;
 }
 
-const TYPE_BADGE_CLASS: Record<string, string> = {
-  IN: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50',
-  OUT: 'bg-red-500/20 text-red-300 border-red-400/50',
-  ADJUST: 'bg-blue-500/20 text-blue-300 border-blue-400/50',
-  TRANSFER: 'bg-amber-500/20 text-amber-300 border-amber-400/50',
+// Categorías principales para filtrado y colores (Ventas, Aumentos, Disminuciones, Transferencias)
+type MovementCategory = 'VENTAS' | 'AUMENTOS' | 'DISMINUCIONES' | 'TRANSFERENCIAS';
+
+// Ventas=verde, Disminución=rojo, Aumento=azul, Transferencias=amarillo
+const CATEGORY_COLORS: Record<MovementCategory, string> = {
+  VENTAS: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50',
+  AUMENTOS: 'bg-blue-500/20 text-blue-300 border-blue-400/50',
+  DISMINUCIONES: 'bg-red-500/20 text-red-300 border-red-400/50',
+  TRANSFERENCIAS: 'bg-amber-500/20 text-amber-300 border-amber-400/50',
+};
+
+const getMovementCategory = (m: MovementRow): MovementCategory => {
+  if (m.type === 'OUT') return 'VENTAS';
+  if (m.type === 'ADJUST' && m.qty > 0) return 'AUMENTOS';
+  if (m.type === 'ADJUST' && m.qty < 0) return 'DISMINUCIONES';
+  if (m.type === 'TRANSFER' || m.type === 'IN') return 'TRANSFERENCIAS';
+  return 'VENTAS'; // fallback
 };
 
 const MOVEMENTS_LIMIT = 1000;
-type MovementTypeFilter = 'ALL' | 'IN' | 'OUT' | 'ADJUST' | 'TRANSFER';
+type MovementTypeFilter = 'ALL' | 'VENTAS' | 'AUMENTOS' | 'DISMINUCIONES' | 'TRANSFERENCIAS';
 
 export const HistorialPage: React.FC = () => {
   const { userProfile } = useAuth();
@@ -61,6 +114,9 @@ export const HistorialPage: React.FC = () => {
   const debouncedSearch = useDebounce(searchTerm, 300);
   const [selectedDateIndex, setSelectedDateIndex] = useState(0);
   const [movementTypeFilter, setMovementTypeFilter] = useState<MovementTypeFilter>('ALL');
+  const [stores, setStores] = useState<StoreOption[]>([]);
+  const [storeFilter, setStoreFilter] = useState<string>('all');
+  const [expandedMovementId, setExpandedMovementId] = useState<string | null>(null);
 
   const fetchMovements = async () => {
     if (!userProfile?.company_id) {
@@ -107,6 +163,10 @@ export const HistorialPage: React.FC = () => {
           old_qty: m.old_qty ?? null,
           new_qty: m.new_qty ?? null,
           store_name: storeName,
+          store_from_id: m.store_from_id ?? null,
+          store_to_id: m.store_to_id ?? null,
+          store_from_name: storeFromName,
+          store_to_name: storeToName,
           user_name: m.users?.name ?? 'N/A',
           reason: m.reason,
           created_at: m.created_at,
@@ -186,6 +246,20 @@ export const HistorialPage: React.FC = () => {
     fetchSnapshots();
   }, [userProfile?.company_id]);
 
+  useEffect(() => {
+    const fetchStores = async () => {
+      if (!userProfile?.company_id) return;
+      const { data } = await supabase
+        .from('stores')
+        .select('id, name')
+        .eq('company_id', userProfile.company_id)
+        .eq('active', true)
+        .order('name');
+      setStores((data as StoreOption[]) ?? []);
+    };
+    fetchStores();
+  }, [userProfile?.company_id]);
+
   // Fechas únicas con movimientos (más reciente primero) para paginación por día
   const datesList = useMemo(() => {
     const set = new Set<string>();
@@ -195,34 +269,41 @@ export const HistorialPage: React.FC = () => {
 
   const currentDateKey = datesList[selectedDateIndex] ?? null;
 
-  // Movimientos del día seleccionado, filtrados por tipo y búsqueda
+  // Movimientos del día seleccionado, filtrados por categoría, sucursal y búsqueda
   const movementsForCurrentDay = useMemo(() => {
     if (!currentDateKey) return [];
     let list = movements.filter((m) => m.created_at.slice(0, 10) === currentDateKey);
     if (movementTypeFilter !== 'ALL') {
-      list = list.filter((m) => m.type === movementTypeFilter);
+      list = list.filter((m) => getMovementCategory(m) === movementTypeFilter);
+    }
+    if (storeFilter !== 'all') {
+      list = list.filter(
+        (m) => m.store_from_id === storeFilter || m.store_to_id === storeFilter
+      );
     }
     if (debouncedSearch.trim()) {
       const term = debouncedSearch.toLowerCase();
       list = list.filter(
         (m) =>
           m.product_name.toLowerCase().includes(term) ||
-          m.product_sku.toLowerCase().includes(term)
+          m.product_sku.toLowerCase().includes(term) ||
+          (m.reason ?? '').toLowerCase().includes(term)
       );
     }
     return list;
-  }, [movements, currentDateKey, movementTypeFilter, debouncedSearch]);
+  }, [movements, currentDateKey, movementTypeFilter, storeFilter, debouncedSearch]);
 
-  // Totales del día por tipo (siempre sobre todos los movimientos del día, sin filtro de tipo)
-  const dailyTotalsByType = useMemo(() => {
-    if (!currentDateKey) return { IN: 0, OUT: 0, ADJUST: 0, TRANSFER: 0 };
+  // Totales del día por categoría (Ventas, Aumentos, Disminuciones, Transferencias)
+  const dailyTotalsByCategory = useMemo(() => {
+    if (!currentDateKey) return { VENTAS: 0, AUMENTOS: 0, DISMINUCIONES: 0, TRANSFERENCIAS: 0 };
     const dayMovements = movements.filter((m) => m.created_at.slice(0, 10) === currentDateKey);
     return dayMovements.reduce(
       (acc, m) => {
-        acc[m.type] = (acc[m.type] ?? 0) + m.qty;
+        const cat = getMovementCategory(m);
+        acc[cat] = (acc[cat] ?? 0) + m.qty;
         return acc;
       },
-      { IN: 0, OUT: 0, ADJUST: 0, TRANSFER: 0 } as Record<string, number>
+      { VENTAS: 0, AUMENTOS: 0, DISMINUCIONES: 0, TRANSFERENCIAS: 0 } as Record<MovementCategory, number>
     );
   }, [movements, currentDateKey]);
 
@@ -232,6 +313,44 @@ export const HistorialPage: React.FC = () => {
     } catch {
       return '—';
     }
+  };
+
+  const formatFechaConSegundos = (iso: string) => {
+    try {
+      return format(parseISO(iso), 'dd/MM/yyyy HH:mm:ss', { locale: es });
+    } catch {
+      return '—';
+    }
+  };
+
+  const getMovementIcon = (m: MovementRow) => {
+    const cat = getMovementCategory(m);
+    if (cat === 'VENTAS') return <Receipt className="w-4 h-4 text-emerald-400" />;
+    if (cat === 'AUMENTOS') return <ArrowDown className="w-4 h-4 text-blue-400" />;
+    if (cat === 'DISMINUCIONES') return <ArrowUp className="w-4 h-4 text-red-400" />;
+    return <ArrowRightLeft className="w-4 h-4 text-amber-400" />;
+  };
+
+  const getMovementBadge = (m: MovementRow) => {
+    const cat = getMovementCategory(m);
+    const labels: Record<MovementCategory, string> = {
+      VENTAS: 'Venta',
+      AUMENTOS: 'Aumento',
+      DISMINUCIONES: 'Disminución',
+      TRANSFERENCIAS: 'Transferencia',
+    };
+    return (
+      <Badge variant="outline" className={CATEGORY_COLORS[cat] ?? 'bg-gray-500/20 text-gray-300'}>
+        {labels[cat]}
+      </Badge>
+    );
+  };
+
+  const getStoreDisplay = (m: MovementRow) => {
+    if (m.type === 'TRANSFER' && m.store_from_name && m.store_to_name) {
+      return `Desde ${m.store_from_name} → Hacia ${m.store_to_name}`;
+    }
+    return m.store_name;
   };
 
   const formatCambio = (qty: number) => {
@@ -315,12 +434,23 @@ export const HistorialPage: React.FC = () => {
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
-                  placeholder="Buscar por nombre o SKU..."
+                  placeholder="Buscar producto, SKU, razón..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-9 glass-input"
                 />
               </div>
+              <Select value={storeFilter} onValueChange={setStoreFilter}>
+                <SelectTrigger className="w-[220px] glass-panel-dense border-white/20">
+                  <SelectValue placeholder="Todas las sucursales" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas las sucursales</SelectItem>
+                  {stores.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {/* Paginación por día */}
               {datesList.length > 0 && (
                 <div className="flex items-center gap-2 flex-wrap">
@@ -355,30 +485,30 @@ export const HistorialPage: React.FC = () => {
               )}
             </div>
 
-            {/* Totales del día (badges con color por tipo) */}
+            {/* Totales del día (badges con colores por categoría) */}
             {currentDateKey && (
               <Card className="glass-panel-dense border-white/10">
                 <CardContent className="p-4">
                   <p className="text-sm font-semibold text-white/90 mb-3">Totales del día</p>
                   <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline" className={TYPE_BADGE_CLASS.IN + ' font-mono px-3 py-1'}>
-                      Entradas (IN): +{dailyTotalsByType.IN}
+                    <Badge variant="outline" className={CATEGORY_COLORS.VENTAS + ' font-mono px-3 py-1'}>
+                      Ventas: {dailyTotalsByCategory.VENTAS}
                     </Badge>
-                    <Badge variant="outline" className={TYPE_BADGE_CLASS.OUT + ' font-mono px-3 py-1'}>
-                      Salidas (OUT): {dailyTotalsByType.OUT}
+                    <Badge variant="outline" className={CATEGORY_COLORS.AUMENTOS + ' font-mono px-3 py-1'}>
+                      Aumentos: +{dailyTotalsByCategory.AUMENTOS}
                     </Badge>
-                    <Badge variant="outline" className={TYPE_BADGE_CLASS.ADJUST + ' font-mono px-3 py-1'}>
-                      Ajustes (ADJUST): {dailyTotalsByType.ADJUST >= 0 ? '+' : ''}{dailyTotalsByType.ADJUST}
+                    <Badge variant="outline" className={CATEGORY_COLORS.DISMINUCIONES + ' font-mono px-3 py-1'}>
+                      Disminuciones: {dailyTotalsByCategory.DISMINUCIONES}
                     </Badge>
-                    <Badge variant="outline" className={TYPE_BADGE_CLASS.TRANSFER + ' font-mono px-3 py-1'}>
-                      Transferencias (TRANSFER): {dailyTotalsByType.TRANSFER >= 0 ? '+' : ''}{dailyTotalsByType.TRANSFER}
+                    <Badge variant="outline" className={CATEGORY_COLORS.TRANSFERENCIAS + ' font-mono px-3 py-1'}>
+                      Transferencias: {dailyTotalsByCategory.TRANSFERENCIAS >= 0 ? '+' : ''}{dailyTotalsByCategory.TRANSFERENCIAS}
                     </Badge>
                   </div>
                 </CardContent>
               </Card>
             )}
 
-            {/* Sub-pestañas por tipo (colores como en la tabla: verde IN, rojo OUT, azul ADJUST, ámbar TRANSFER) */}
+            {/* Sub-pestañas por categoría (Ventas primero, luego Aumentos, Disminuciones, Transferencias) */}
             <Tabs value={movementTypeFilter} onValueChange={(v) => setMovementTypeFilter(v as MovementTypeFilter)} className="w-full">
               <TabsList className="flex flex-wrap gap-2 h-auto p-1 bg-transparent border-0">
                 <TabsTrigger
@@ -388,31 +518,31 @@ export const HistorialPage: React.FC = () => {
                   Todos
                 </TabsTrigger>
                 <TabsTrigger
-                  value="IN"
+                  value="VENTAS"
                   className="text-xs font-medium text-emerald-300 data-[state=active]:bg-emerald-500 data-[state=active]:text-white border border-emerald-400/50"
                 >
-                  Entradas (IN)
+                  Ventas
                 </TabsTrigger>
                 <TabsTrigger
-                  value="OUT"
-                  className="text-xs font-medium text-red-300 data-[state=active]:bg-red-500 data-[state=active]:text-white border border-red-400/50"
-                >
-                  Salidas (OUT)
-                </TabsTrigger>
-                <TabsTrigger
-                  value="ADJUST"
+                  value="AUMENTOS"
                   className="text-xs font-medium text-blue-300 data-[state=active]:bg-blue-500 data-[state=active]:text-white border border-blue-400/50"
                 >
-                  Ajustes (ADJUST)
+                  Aumentos
                 </TabsTrigger>
                 <TabsTrigger
-                  value="TRANSFER"
+                  value="DISMINUCIONES"
+                  className="text-xs font-medium text-red-300 data-[state=active]:bg-red-500 data-[state=active]:text-white border border-red-400/50"
+                >
+                  Disminuciones
+                </TabsTrigger>
+                <TabsTrigger
+                  value="TRANSFERENCIAS"
                   className="text-xs font-medium text-amber-300 data-[state=active]:bg-amber-500 data-[state=active]:text-white border border-amber-400/50"
                 >
-                  Transferencias (TRANSFER)
+                  Transferencias
                 </TabsTrigger>
               </TabsList>
-              {(['ALL', 'IN', 'OUT', 'ADJUST', 'TRANSFER'] as const).map((tabValue) => (
+              {(['ALL', 'VENTAS', 'AUMENTOS', 'DISMINUCIONES', 'TRANSFERENCIAS'] as const).map((tabValue) => (
                 <TabsContent key={tabValue} value={tabValue} className="mt-4">
                   <Card className="glass-panel-dense">
                     <CardContent className="p-0">
@@ -429,55 +559,99 @@ export const HistorialPage: React.FC = () => {
                           <p className="text-center text-muted-foreground py-12">Selecciona una fecha.</p>
                         ) : movementsForCurrentDay.length === 0 ? (
                           <p className="text-center text-muted-foreground py-12">
-                            No hay movimientos para esta fecha{tabValue !== 'ALL' ? ` de tipo ${tabValue}` : ''}.
+                            No hay movimientos para esta fecha{tabValue !== 'ALL' ? ` de categoría ${tabValue}` : ''}.
                           </p>
                         ) : (
-                          <table className="w-full glass-table">
-                            <thead>
-                              <tr>
-                                <th className="text-left py-4 px-4">Hora</th>
-                                <th className="text-left py-4 px-4">Producto</th>
-                                <th className="text-left py-4 px-4">Tienda</th>
-                                <th className="text-center py-4 px-4">Tipo</th>
-                                <th className="text-right py-4 px-4">Cambio</th>
-                                <th className="text-center py-4 px-4">Conciliación</th>
-                                <th className="text-left py-4 px-4">Usuario</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {movementsForCurrentDay.map((m) => (
-                                <tr key={m.id}>
-                                  <td className="py-4 px-4 text-sm text-white/80 font-mono">
-                                    {formatFecha(m.created_at)}
-                                  </td>
-                                  <td className="py-4 px-4">
-                                    <div className="font-medium text-white">{m.product_name}</div>
-                                    <div className="text-xs text-muted-foreground font-mono">{m.product_sku}</div>
-                                  </td>
-                                  <td className="py-4 px-4 text-white/90">{m.store_name}</td>
-                                  <td className="py-4 px-4 text-center">
-                                    <Badge
-                                      variant="outline"
-                                      className={TYPE_BADGE_CLASS[m.type] ?? 'bg-gray-500/20 text-gray-300'}
-                                    >
-                                      {m.type}
-                                    </Badge>
-                                  </td>
-                                  <td
-                                    className={`py-4 px-4 text-right font-semibold ${
-                                      m.qty >= 0 ? 'text-emerald-300' : 'text-red-300'
-                                    }`}
-                                  >
-                                    {formatCambio(m.qty)}
-                                  </td>
-                                  <td className="py-4 px-4 text-center text-white/90 font-mono text-sm">
-                                    {formatConciliacion(m.old_qty, m.new_qty)}
-                                  </td>
-                                  <td className="py-4 px-4 text-white/90">{m.user_name}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-[100px]">Hora</TableHead>
+                                <TableHead>Producto</TableHead>
+                                <TableHead className="text-center">Tipo</TableHead>
+                                <TableHead className="text-right">Cambio</TableHead>
+                                <TableHead className="text-center">Detalles</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {movementsForCurrentDay.map((m) => {
+                                const isExpanded = expandedMovementId === m.id;
+                                return (
+                                  <React.Fragment key={m.id}>
+                                    <TableRow className={isExpanded ? 'bg-white/10' : ''}>
+                                      <TableCell className="text-sm font-mono text-white/80">
+                                        {formatFecha(m.created_at)}
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="flex items-center gap-2">
+                                          {getMovementIcon(m)}
+                                          <div>
+                                            <div className="font-medium text-white">{m.product_name}</div>
+                                            <div className="text-xs text-muted-foreground font-mono">{m.product_sku}</div>
+                                          </div>
+                                        </div>
+                                      </TableCell>
+                                      <TableCell className="text-center">{getMovementBadge(m)}</TableCell>
+                                      <TableCell
+                                        className={`text-right font-semibold ${
+                                          m.qty >= 0 ? 'text-emerald-300' : 'text-red-300'
+                                        }`}
+                                      >
+                                        {m.qty >= 0 ? '+' : ''}{m.qty}
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => setExpandedMovementId(isExpanded ? null : m.id)}
+                                          className="text-xs border-white/30 hover:bg-white/10"
+                                        >
+                                          {isExpanded ? (
+                                            <>
+                                              <ChevronUp className="h-3 w-3 mr-1" />
+                                              Ocultar
+                                            </>
+                                          ) : (
+                                            <>
+                                              <ChevronDown className="h-3 w-3 mr-1" />
+                                              Ver detalles
+                                            </>
+                                          )}
+                                        </Button>
+                                      </TableCell>
+                                    </TableRow>
+                                    {isExpanded && (
+                                      <TableRow>
+                                        <TableCell colSpan={5} className="glass-muted-dark p-4 border-l-4 border-l-blue-400/50">
+                                          <div className="flex items-center gap-2 mb-2">
+                                            <Package className="w-4 h-4 text-blue-400" />
+                                            <h4 className="font-semibold text-sm text-white">Detalles de la transacción</h4>
+                                          </div>
+                                          <div className="space-y-2 text-sm">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                              <Store className="w-3 h-3 shrink-0 text-muted-foreground" />
+                                              <span className="text-white/90">{getStoreDisplay(m)}</span>
+                                            </div>
+                                            {m.reason && (
+                                              <p className="text-white/80">{m.reason}</p>
+                                            )}
+                                            {m.old_qty != null && m.new_qty != null && (
+                                              <p className="font-mono text-white/70">
+                                                Conciliación: {m.old_qty} → {m.new_qty}
+                                              </p>
+                                            )}
+                                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                              <Clock className="w-3 h-3" />
+                                              {formatFechaConSegundos(m.created_at)}
+                                            </p>
+                                          </div>
+                                        </TableCell>
+                                      </TableRow>
+                                    )}
+                                  </React.Fragment>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
                         )}
                       </div>
                     </CardContent>
