@@ -39,6 +39,10 @@ import {
   ChevronUp,
   Receipt,
   Package,
+  RefreshCw,
+  Smartphone,
+  Headphones,
+  Wrench,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format, parseISO } from 'date-fns';
@@ -117,6 +121,8 @@ export const HistorialPage: React.FC = () => {
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [storeFilter, setStoreFilter] = useState<string>('all');
   const [expandedMovementId, setExpandedMovementId] = useState<string | null>(null);
+  const [snapshotCapturing, setSnapshotCapturing] = useState(false);
+  const [expandedCierreDay, setExpandedCierreDay] = useState<string | null>(null);
 
   const fetchMovements = async () => {
     if (!userProfile?.company_id) {
@@ -235,6 +241,32 @@ export const HistorialPage: React.FC = () => {
       setSnapshots([]);
     } finally {
       setSnapshotsLoading(false);
+    }
+  };
+
+  const handleCaptureSnapshot = async () => {
+    if (!userProfile?.company_id) return;
+    setSnapshotCapturing(true);
+    try {
+      const { data, error } = await supabase.rpc('request_inventory_snapshot', {
+        p_captured_at: new Date().toISOString(),
+      });
+      if (error) throw error;
+      toast({
+        title: 'Snapshot capturado',
+        description: `Se registraron ${data ?? 0} tiendas en el cierre de inventario.`,
+        variant: 'success',
+      });
+      await fetchSnapshots();
+    } catch (err: any) {
+      console.error('Error al capturar snapshot:', err);
+      toast({
+        title: 'Error',
+        description: err.message ?? 'No se pudo ejecutar el snapshot',
+        variant: 'destructive',
+      });
+    } finally {
+      setSnapshotCapturing(false);
     }
   };
 
@@ -665,72 +697,137 @@ export const HistorialPage: React.FC = () => {
         <TabsContent value="cierres" className="space-y-6 mt-6">
           <Card className="glass-panel-dense">
             <CardContent className="p-4">
-              <h2 className="text-lg font-semibold flex items-center gap-2 mb-2">
-                <CalendarCheck className="w-5 h-5" />
-                Resumen de Cierres
-              </h2>
-              <p className="text-sm text-muted-foreground mb-4">
-                Unidades por categoría por tienda (coincide con Estadísticas). Valor USD excluye productos sin costo.
-              </p>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+                <div>
+                  <h2 className="text-lg font-semibold flex items-center gap-2 mb-1">
+                    <CalendarCheck className="w-5 h-5" />
+                    Resumen de Cierres
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    Unidades por categoría por tienda (coincide con Estadísticas). Cron a 00:00 Venezuela (04:00 UTC).
+                  </p>
+                </div>
+                {(userProfile?.role === 'admin' || userProfile?.role === 'master_admin') && (
+                  <Button
+                    onClick={handleCaptureSnapshot}
+                    disabled={snapshotCapturing}
+                    className="shrink-0"
+                  >
+                    <RefreshCw className={`w-4 h-4 mr-2 ${snapshotCapturing ? 'animate-spin' : ''}`} />
+                    {snapshotCapturing ? 'Capturando...' : 'Capturar snapshot ahora'}
+                  </Button>
+                )}
+              </div>
               {snapshotsLoading ? (
                 <div className="flex items-center justify-center py-12">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
                 </div>
               ) : snapshots.length === 0 ? (
                 <p className="text-center text-muted-foreground py-12">
-                  No hay cierres registrados. Ejecuta el snapshot desde Supabase o el cron a las 00:00.
+                  No hay cierres registrados. Usa el botón arriba o espera al cron a las 00:00.
                 </p>
               ) : (
-                <div className="space-y-8">
+                <div className="space-y-3">
                   {snapshotsByDate.map(([day, rows]) => {
                     const totalPhones = rows.reduce((a, s) => a + s.qty_phones, 0);
                     const totalAcc = rows.reduce((a, s) => a + s.qty_accessories, 0);
                     const totalServ = rows.reduce((a, s) => a + s.qty_services, 0);
-                    // Total = suma de las 3 categorías (como en el dashboard), no total_stock (que puede incluir sin categoría)
                     const totalUnits = totalPhones + totalAcc + totalServ;
                     const totalValue = rows.reduce((a, s) => a + s.total_value_usd, 0);
+                    const isExpanded = expandedCierreDay === day;
                     return (
-                      <div key={day}>
-                        <h3 className="text-base font-semibold text-white/90 mb-3">
-                          Fecha: {formatDateOnly(rows[0]?.captured_at ?? day)}
-                        </h3>
-                        <div className="overflow-x-auto rounded-md border border-white/10">
-                          <table className="w-full glass-table">
-                            <thead>
-                              <tr>
-                                <th className="text-left py-3 px-4">Tienda</th>
-                                <th className="text-right py-3 px-4">Teléfonos</th>
-                                <th className="text-right py-3 px-4">Accesorios</th>
-                                <th className="text-right py-3 px-4">Servicios</th>
-                                <th className="text-right py-3 px-4">Total</th>
-                                <th className="text-right py-3 px-4">Valor USD</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {rows.map((s) => {
-                                const rowTotal = s.qty_phones + s.qty_accessories + s.qty_services;
-                                return (
-                                  <tr key={s.id}>
-                                    <td className="py-3 px-4 font-medium text-white/95">{s.store_name}</td>
-                                    <td className="py-3 px-4 text-right text-white/90 font-mono">{s.qty_phones}</td>
-                                    <td className="py-3 px-4 text-right text-white/90 font-mono">{s.qty_accessories}</td>
-                                    <td className="py-3 px-4 text-right text-white/90 font-mono">{s.qty_services}</td>
-                                    <td className="py-3 px-4 text-right text-white font-mono font-semibold">{rowTotal}</td>
-                                    <td className="py-3 px-4 text-right text-white font-mono">{formatUsd(s.total_value_usd)}</td>
-                                  </tr>
-                                );
-                              })}
-                              <tr className="bg-white/10 font-semibold">
-                                <td className="py-3 px-4 text-white">TOTAL</td>
-                                <td className="py-3 px-4 text-right font-mono text-white">{totalPhones}</td>
-                                <td className="py-3 px-4 text-right font-mono text-white">{totalAcc}</td>
-                                <td className="py-3 px-4 text-right font-mono text-white">{totalServ}</td>
-                                <td className="py-3 px-4 text-right font-mono text-white">{totalUnits}</td>
-                                <td className="py-3 px-4 text-right font-mono text-white">{formatUsd(totalValue)}</td>
-                              </tr>
-                            </tbody>
-                          </table>
+                      <div key={day} className="border border-white/10 rounded-lg overflow-hidden">
+                        {/* Resumen compacto por día */}
+                        <div
+                          className="flex flex-wrap items-center justify-between gap-4 p-4 cursor-pointer hover:bg-white/5 transition-colors"
+                          onClick={() => setExpandedCierreDay(isExpanded ? null : day)}
+                        >
+                          {/* Izquierda: Fecha */}
+                          <div className="shrink-0">
+                            <span className="text-sm text-muted-foreground">Fecha: </span>
+                            <span className="font-semibold text-white/95">{formatDateOnly(rows[0]?.captured_at ?? day)}</span>
+                          </div>
+
+                          {/* Centro: Badges de categorías */}
+                          <div className="flex flex-wrap gap-2 justify-center flex-1 min-w-0">
+                            <Badge variant="outline" className="bg-blue-500/10 border-blue-400/50 text-blue-400 font-mono px-3 py-1.5">
+                              <Smartphone className="w-3.5 h-3.5 mr-1.5 shrink-0" /> Teléfonos: <strong className="font-bold ml-0.5">{totalPhones}</strong>
+                            </Badge>
+                            <Badge variant="outline" className="bg-green-500/10 border-green-400/50 text-green-400 font-mono px-3 py-1.5">
+                              <Headphones className="w-3.5 h-3.5 mr-1.5 shrink-0" /> Accesorios: <strong className="font-bold ml-0.5">{totalAcc}</strong>
+                            </Badge>
+                            <Badge variant="outline" className="bg-amber-500/10 border-amber-400/50 text-amber-400 font-mono px-3 py-1.5">
+                              <Wrench className="w-3.5 h-3.5 mr-1.5 shrink-0" /> Servicio técnico: <strong className="font-bold ml-0.5">{totalServ}</strong>
+                            </Badge>
+                          </div>
+
+                          {/* Derecha: Total, USD y botón */}
+                          <div className="flex items-center gap-4 shrink-0">
+                            <div className="flex items-center gap-4 text-right">
+                              <span className="text-sm font-mono text-white/90">
+                                Total: <strong className="font-bold text-white">{totalUnits}</strong>
+                              </span>
+                              <span className="text-sm font-semibold text-emerald-300 font-mono">{formatUsd(totalValue)}</span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => { e.stopPropagation(); setExpandedCierreDay(isExpanded ? null : day); }}
+                            >
+                              {isExpanded ? <ChevronUp className="h-4 w-4 mr-1" /> : <ChevronDown className="h-4 w-4 mr-1" />}
+                              {isExpanded ? 'Ocultar' : 'Ver detalles'}
+                            </Button>
+                          </div>
                         </div>
+                        {/* Detalle por sucursal (expandible) */}
+                        {isExpanded && (
+                          <div className="border-t border-white/10 p-4 bg-white/5">
+                            <p className="text-xs text-muted-foreground mb-3">Totalización por sucursal y categoría</p>
+                            <div className="overflow-x-auto rounded-md border border-white/10">
+                              <table className="w-full glass-table">
+                                <thead>
+                                  <tr>
+                                    <th className="text-left py-3 px-4">Tienda</th>
+                                    <th className="text-right py-3 px-4 text-blue-400">
+                                      <span className="inline-flex items-center gap-1"><Smartphone className="w-3.5 h-3.5" /> Teléfonos</span>
+                                    </th>
+                                    <th className="text-right py-3 px-4 text-green-400">
+                                      <span className="inline-flex items-center gap-1"><Headphones className="w-3.5 h-3.5" /> Accesorios</span>
+                                    </th>
+                                    <th className="text-right py-3 px-4 text-amber-400">
+                                      <span className="inline-flex items-center gap-1"><Wrench className="w-3.5 h-3.5" /> Servicio técnico</span>
+                                    </th>
+                                    <th className="text-right py-3 px-4">Total</th>
+                                    <th className="text-right py-3 px-4">Valor USD</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {rows.map((s) => {
+                                    const rowTotal = s.qty_phones + s.qty_accessories + s.qty_services;
+                                    return (
+                                      <tr key={s.id}>
+                                        <td className="py-3 px-4 font-medium text-white/95">{s.store_name}</td>
+                                        <td className="py-3 px-4 text-right font-mono text-blue-400">{s.qty_phones}</td>
+                                        <td className="py-3 px-4 text-right font-mono text-green-400">{s.qty_accessories}</td>
+                                        <td className="py-3 px-4 text-right font-mono text-amber-400">{s.qty_services}</td>
+                                        <td className="py-3 px-4 text-right text-white font-mono font-semibold">{rowTotal}</td>
+                                        <td className="py-3 px-4 text-right text-white font-mono">{formatUsd(s.total_value_usd)}</td>
+                                      </tr>
+                                    );
+                                  })}
+                                  <tr className="bg-white/10 font-semibold">
+                                    <td className="py-3 px-4 text-white">TOTAL</td>
+                                    <td className="py-3 px-4 text-right font-mono text-blue-400">{totalPhones}</td>
+                                    <td className="py-3 px-4 text-right font-mono text-green-400">{totalAcc}</td>
+                                    <td className="py-3 px-4 text-right font-mono text-amber-400">{totalServ}</td>
+                                    <td className="py-3 px-4 text-right font-mono text-white">{totalUnits}</td>
+                                    <td className="py-3 px-4 text-right font-mono text-white">{formatUsd(totalValue)}</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
