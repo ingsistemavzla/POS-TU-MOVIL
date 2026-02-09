@@ -1,0 +1,278 @@
+INSTRUCCIONES EXACTAS: ENCABEZADO PDF PARA WEB PÚBLICA
+(Copiar exactamente del sistema principal)
+
+═══════════════════════════════════════════════════════════════════════
+
+COPIA Y PEGA ESTE CÓDIGO EXACTO EN EL GENERADOR DE PDF DE LA WEB PÚBLICA:
+
+═══════════════════════════════════════════════════════════════════════
+
+// 1. FUNCIÓN PARA AGREGAR LOGO (Copiar esta función completa)
+
+function addLogo(doc: jsPDF, y: number, maxWidth: number = 25): number {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const logoPath = '/logo_factura.png'; // ← Ruta del logo en carpeta public
+  
+  try {
+    // Dimensiones reales del logo: 500x257 (proporción ~1.945:1)
+    const logoAspectRatio = 500 / 257; // ~1.945
+    
+    // Calcular dimensiones manteniendo proporciones exactas
+    const finalWidth = maxWidth;
+    const finalHeight = maxWidth / logoAspectRatio;
+    
+    // Centrar el logo horizontalmente
+    const logoX = (pageWidth - finalWidth) / 2;
+    
+    // Agregar la imagen con las dimensiones calculadas
+    doc.addImage(logoPath, 'PNG', logoX, y, finalWidth, finalHeight);
+    
+    return y + finalHeight + 8; // Espaciado después del logo
+  } catch (error) {
+    console.warn('Error loading logo, using placeholder:', error);
+    // Fallback: continuar sin logo
+    return y + 5;
+  }
+}
+
+═══════════════════════════════════════════════════════════════════════
+
+// 2. CÓDIGO COMPLETO DEL ENCABEZADO (Después de crear jsPDF)
+
+const doc = new jsPDF({
+  orientation: 'portrait',  // ← VERTICAL
+  unit: 'mm',
+  format: 'a4',
+});
+
+const pageWidth = doc.internal.pageSize.getWidth();
+const margin = 15;
+let currentY = margin;
+
+// ============================================
+// ENCABEZADO COMPLETO (IGUAL AL SISTEMA PRINCIPAL)
+// ============================================
+
+// 1. LOGO CENTRADO
+currentY = addLogo(doc, currentY, 25);
+
+// 2. INFORMACIÓN DE LA EMPRESA (Formato profesional)
+doc.setFont('helvetica', 'bold');
+doc.setFontSize(14);
+doc.setTextColor(0, 120, 120); // Verde esmeralda
+doc.text('TU MOVIL C.A.', pageWidth / 2, currentY, { align: 'center' });
+currentY += 5;
+
+doc.setFont('helvetica', 'normal');
+doc.setFontSize(10);
+doc.setTextColor(60, 60, 60); // Gris oscuro
+doc.text('RIF: J-12345678-9', pageWidth / 2, currentY, { align: 'center' });
+currentY += 5;
+
+doc.setFont('helvetica', 'normal');
+doc.setFontSize(9);
+doc.setTextColor(80, 80, 80); // Gris medio
+doc.text('Av. Principal, Centro CONCORDE, Local 12', pageWidth / 2, currentY, { align: 'center' });
+doc.text('Porlamar, Estado Nueva Esparta, Venezuela', pageWidth / 2, currentY + 5, { align: 'center' });
+currentY += 12;
+
+// 3. LÍNEA SEPARADORA ELEGANTE
+doc.setDrawColor(0, 120, 120); // Verde esmeralda
+doc.setLineWidth(0.5);
+const separatorMargin = 25;
+doc.line(separatorMargin, currentY, pageWidth - separatorMargin, currentY);
+currentY += 8;
+
+// 4. TÍTULO DEL DOCUMENTO
+doc.setFont('helvetica', 'bold');
+doc.setFontSize(16);
+doc.setTextColor(0, 120, 120); // Verde esmeralda
+const title = `Lista de Precios - ${categoryName}`;
+// categoryName debe ser: "Teléfonos", "Accesorios", "Servicio Técnico"
+doc.text(title, pageWidth / 2, currentY, { align: 'center' });
+currentY += 8;
+
+// 5. INFORMACIÓN DE FECHA Y HORA (Centrado). Tasa BCV no se imprime por ser variable.
+doc.setFont('helvetica', 'normal');
+doc.setFontSize(9);
+doc.setTextColor(0, 0, 0); // Negro
+
+const now = new Date();
+const dateStr = now.toLocaleDateString('es-VE', {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+});
+const timeStr = now.toLocaleTimeString('es-VE', {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+});
+
+doc.text(`Fecha: ${dateStr}  |  Hora: ${timeStr}`, pageWidth / 2, currentY, { align: 'center' });
+currentY += 8;
+
+// ============================================
+// FIN DEL ENCABEZADO
+// ============================================
+
+// AHORA usar currentY como startY en autoTable():
+autoTable(doc, {
+  startY: currentY,  // ← Usar el currentY después del encabezado completo
+  // ... resto de configuración de la tabla
+});
+
+═══════════════════════════════════════════════════════════════════════
+
+ESPECIFICACIONES EXACTAS:
+
+LOGO:
+- Ruta: '/logo_factura.png' (debe estar en carpeta public del proyecto web)
+- Tamaño: 25mm de ancho
+- Proporción: 500x257 (mantener proporción exacta)
+- Posición: Centrado horizontalmente
+
+INFORMACIÓN DE EMPRESA:
+- Nombre: "TU MOVIL C.A." - 14pt, negrita, verde (0, 120, 120), centrado
+- RIF: "RIF: J-12345678-9" - 10pt, normal, gris oscuro (60, 60, 60), centrado
+- Dirección línea 1: "Av. Principal, Centro CONCORDE, Local 12" - 9pt, normal, gris (80, 80, 80), centrado
+- Dirección línea 2: "Porlamar, Estado Nueva Esparta, Venezuela" - 9pt, normal, gris (80, 80, 80), centrado, +5mm de Y
+
+LÍNEA SEPARADORA:
+- Color: Verde esmeralda (0, 120, 120)
+- Ancho: 0.5mm
+- Márgenes: 25mm desde cada lado
+- Espaciado después: 8mm
+
+TÍTULO:
+- Texto: "Lista de Precios - [Categoría]"
+- Tamaño: 16pt
+- Estilo: Negrita
+- Color: Verde esmeralda (0, 120, 120)
+- Alineación: Centrado
+- Espaciado después: 8mm
+
+FECHA Y HORA (sin tasa BCV; la tasa es variable y no se imprime en el encabezado):
+- Fuente: Helvetica normal, 9pt, negro
+- Formato fecha: "14 de enero de 2026" (español Venezuela)
+- Formato hora: "10:30:45" (24 horas)
+- Alineación: Centrado
+- Espaciado final antes de tabla: 8mm
+
+═══════════════════════════════════════════════════════════════════════
+
+EJEMPLO COMPLETO EN FUNCIÓN:
+
+function generatePriceListPDF(
+  products: WebProduct[],
+  category: string,
+  categoryName: string, // "Teléfonos", "Accesorios", "Servicio Técnico"
+  krecePercentage: number,
+  chasePercentage: number,
+  bcvRate: number
+): jsPDF {
+  // Crear PDF
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  let currentY = 15;
+
+  // ========== ENCABEZADO COMPLETO ==========
+  
+  // Logo
+  currentY = addLogo(doc, currentY, 25);
+
+  // Información de empresa
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(0, 120, 120);
+  doc.text('TU MOVIL C.A.', pageWidth / 2, currentY, { align: 'center' });
+  currentY += 5;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(60, 60, 60);
+  doc.text('RIF: J-12345678-9', pageWidth / 2, currentY, { align: 'center' });
+  currentY += 5;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(80, 80, 80);
+  doc.text('Av. Principal, Centro CONCORDE, Local 12', pageWidth / 2, currentY, { align: 'center' });
+  doc.text('Porlamar, Estado Nueva Esparta, Venezuela', pageWidth / 2, currentY + 5, { align: 'center' });
+  currentY += 12;
+
+  // Línea separadora
+  doc.setDrawColor(0, 120, 120);
+  doc.setLineWidth(0.5);
+  const separatorMargin = 25;
+  doc.line(separatorMargin, currentY, pageWidth - separatorMargin, currentY);
+  currentY += 8;
+
+  // Título
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(0, 120, 120);
+  doc.text(`Lista de Precios - ${categoryName}`, pageWidth / 2, currentY, { align: 'center' });
+  currentY += 8;
+
+  // Fecha y hora (tasa BCV no se imprime por ser variable)
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(0, 0, 0);
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('es-VE', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  const timeStr = now.toLocaleTimeString('es-VE', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+
+  doc.text(`Fecha: ${dateStr}  |  Hora: ${timeStr}`, pageWidth / 2, currentY, { align: 'center' });
+  currentY += 8;
+  // ========== FIN ENCABEZADO ==========
+
+  // Generar tabla usando currentY
+  autoTable(doc, {
+    startY: currentY,
+    // ... configuración de tabla
+  });
+
+  return doc;
+}
+
+═══════════════════════════════════════════════════════════════════════
+
+REQUISITOS:
+
+1. Logo: Debe existir el archivo `/logo_factura.png` en la carpeta `public/` del proyecto web
+   ═══════════════════════════════════════════════════════════════════════
+   📁 UBICACIÓN DEL LOGO EN EL SISTEMA PRINCIPAL:
+   Ruta: public/logo_factura.png
+   Tamaño del archivo: 32 KB
+   Dimensiones: 500 x 257 píxeles (proporción 1.945:1)
+   
+   📋 INSTRUCCIONES PARA COPIAR A LA WEB PÚBLICA:
+   1. Abrir la carpeta: C:\Users\Dell\Documents\todo-bcv-pos\public\
+   2. Copiar el archivo: logo_factura.png
+   3. Pegar en la carpeta public/ del proyecto de la web pública
+   4. Asegurarse de que la ruta sea exactamente: public/logo_factura.png
+   5. El código ya está configurado para usar: '/logo_factura.png'
+   ═══════════════════════════════════════════════════════════════════════
+
+2. Fuentes: jsPDF usa Helvetica por defecto (no requiere instalación)
+3. Colores: Usar valores RGB exactos especificados
+4. Espaciado: Respetar los incrementos de currentY exactamente
+5. Alineación: Todo centrado excepto la tabla (que se centra con márgenes)
+
+═══════════════════════════════════════════════════════════════════════
+

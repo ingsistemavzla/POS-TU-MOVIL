@@ -95,7 +95,7 @@ export const generatePriceListPDF = async (
   doc.text(title, pageWidth / 2, currentY, { align: 'center' });
   currentY += 8;
 
-  // 5. Información de fecha, hora y tasa BCV (centrado)
+  // 5. Información de fecha y hora (centrado). Tasa BCV no se imprime por ser variable.
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(0, 0, 0);
@@ -112,10 +112,7 @@ export const generatePriceListPDF = async (
     second: '2-digit',
   });
   
-  // Información centrada en dos líneas
   doc.text(`Fecha: ${dateStr}  |  Hora: ${timeStr}`, pageWidth / 2, currentY, { align: 'center' });
-  currentY += 5;
-  doc.text(`Tasa BCV: ${params.bcvRate.toFixed(4)}`, pageWidth / 2, currentY, { align: 'center' });
   currentY += 8;
 
   // Preparar datos de la tabla
