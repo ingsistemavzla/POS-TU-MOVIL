@@ -163,6 +163,8 @@ export type Database = {
           company_id: string
           created_at: string
           id: string
+          new_qty: number | null
+          old_qty: number | null
           product_id: string
           qty: number
           reason: string | null
@@ -175,6 +177,8 @@ export type Database = {
           company_id: string
           created_at?: string
           id?: string
+          new_qty?: number | null
+          old_qty?: number | null
           product_id: string
           qty: number
           reason?: string | null
@@ -187,6 +191,8 @@ export type Database = {
           company_id?: string
           created_at?: string
           id?: string
+          new_qty?: number | null
+          old_qty?: number | null
           product_id?: string
           qty?: number
           reason?: string | null
@@ -229,6 +235,51 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inventory_snapshots: {
+        Row: {
+          id: string
+          company_id: string
+          store_id: string
+          total_products: number
+          total_stock: number
+          total_value_usd: number
+          captured_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          store_id: string
+          total_products?: number
+          total_stock?: number
+          total_value_usd?: number
+          captured_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          store_id?: string
+          total_products?: number
+          total_stock?: number
+          total_value_usd?: number
+          captured_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_snapshots_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_snapshots_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
             referencedColumns: ["id"]
           },
         ]

@@ -1,0 +1,40 @@
+# Cierre diario de inventario (snapshots) a las 00:00 Venezuela (04:00 UTC)
+# Invoca la Edge Function de Supabase que ejecuta capture_inventory_snapshots.
+#
+# Secretos necesarios en el repo (Settings → Secrets and variables → Actions):
+#   SUPABASE_URL              → https://TU_PROJECT_REF.supabase.co
+#   SUPABASE_SERVICE_ROLE_KEY → service_role key del proyecto Supabase
+
+name: Daily inventory snapshot
+
+on:
+  schedule:
+    # 04:00 UTC = 00:00 Venezuela (UTC-4)
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    # Permite ejecutar manualmente desde la pestaña Actions
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Edge Function
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY secrets"
+            exit 1
+          fi
+          URL="${SUPABASE_URL%/}/functions/v1/capture-inventory-snapshot"
+          echo "Calling $URL ..."
+          RESP=$(curl -s -w "\n%{http_code}" -X POST "$URL" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json")
+          HTTP_CODE=$(echo "$RESP" | tail -n1)
+          BODY=$(echo "$RESP" | sed '$d')
+          echo "Response ($HTTP_CODE): $BODY"
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            exit 1
+          fi
