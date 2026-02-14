@@ -44,7 +44,7 @@ interface StoreInventory {
   qty: number;
 }
 
-import { PRODUCT_CATEGORIES } from '@/constants/categories';
+import { PRODUCT_CATEGORIES, getCategoryLabel } from '@/constants/categories';
 
 interface ProductFormProps {
   product?: Product | null;
@@ -62,6 +62,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
   const { userProfile } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [formData, setFormData] = useState({
     sku: '',
     barcode: '',
@@ -102,6 +103,12 @@ export const ProductForm: React.FC<ProductFormProps> = ({
         }
       }, 500);
     } else {
+      // Nuevo producto: preseleccionar categoría para evitar error "categoría requerida"
+      const defaultCategory = PRODUCT_CATEGORIES[0]?.value || '';
+      setFormData(prev => ({
+        ...prev,
+        category: prev.category || defaultCategory,
+      }));
       // Initialize store inventories for new product
       setStoreInventories(stores.map(store => ({
         store_id: store.id,
@@ -209,7 +216,12 @@ export const ProductForm: React.FC<ProductFormProps> = ({
         description: "La categoría del producto es requerida",
         variant: "destructive",
       });
-      setLoading(false);
+      return;
+    }
+
+    // Nuevo producto: mostrar modal de confirmación antes de crear
+    if (!product) {
+      setShowConfirmModal(true);
       return;
     }
 
@@ -253,65 +265,12 @@ export const ProductForm: React.FC<ProductFormProps> = ({
             console.error('Error updating inventory:', error);
           }
         }
-      } else {
-        // Create new product with inventories
-        const { data: result, error } = await (supabase as any).rpc('create_product_v3', {
-          p_sku: formData.sku.trim(),
-          p_barcode: formData.barcode.trim() || null,
-          p_name: formData.name.trim(),
-          p_category: formData.category.trim() || null,
-          p_cost_usd: formData.cost_usd,
-          p_sale_price_usd: formData.sale_price_usd,
-          p_store_inventories: storeInventories.map(inv => ({
-            store_id: inv.store_id,
-            qty: inv.qty
-          })),
+
+        toast({
+          title: "✅ Producto actualizado",
+          description: `"${formData.name}" se ha actualizado correctamente.`,
+          variant: "success",
         });
-
-        if (error) {
-          console.error('Error creating product:', error);
-          // Mensaje de error más descriptivo
-          let errorMessage = "No se pudo crear el producto";
-          if (error.message?.includes('permission') || error.message?.includes('INSUFFICIENT_PERMISSIONS')) {
-            errorMessage = "Solo los administradores pueden crear productos";
-          } else if (error.message?.includes('duplicate') || error.message?.includes('unique')) {
-            errorMessage = `El SKU "${formData.sku}" ya existe. Por favor usa otro SKU.`;
-          } else if (error.message) {
-            errorMessage = error.message;
-          }
-          toast({
-            title: "Error al crear producto",
-            description: errorMessage,
-            variant: "destructive",
-          });
-          return;
-        }
-
-        if (result && typeof result === 'object' && 'error' in result && result.error) {
-          console.error('Error from RPC result:', result);
-          let errorMessage = "No se pudo crear el producto";
-          if (result.message) {
-            errorMessage = result.message;
-          } else if (result.code === 'INSUFFICIENT_PERMISSIONS') {
-            errorMessage = "Solo los administradores pueden crear productos";
-          }
-          toast({
-            title: "Error al crear producto",
-            description: errorMessage,
-            variant: "destructive",
-          });
-          return;
-        }
-
-        // Verificar que el resultado sea válido
-        if (!result || (typeof result === 'object' && 'error' in result)) {
-          toast({
-            title: "Error",
-            description: "La función de creación no retornó un resultado válido. Verifica que la función SQL existe en Supabase.",
-            variant: "destructive",
-          });
-          return;
-        }
       }
 
       onSuccess();
@@ -320,6 +279,77 @@ export const ProductForm: React.FC<ProductFormProps> = ({
       toast({
         title: "Error",
         description: "Ocurrió un error inesperado",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConfirmCreate = async () => {
+    setShowConfirmModal(false);
+    setLoading(true);
+
+    try {
+      const { data: result, error } = await (supabase as any).rpc('create_product_v3', {
+        p_sku: formData.sku.trim(),
+        p_barcode: formData.barcode.trim() || null,
+        p_name: formData.name.trim(),
+        p_category: formData.category.trim() || null,
+        p_cost_usd: formData.cost_usd,
+        p_sale_price_usd: formData.sale_price_usd,
+        p_store_inventories: storeInventories.map(inv => ({
+          store_id: inv.store_id,
+          qty: inv.qty
+        })),
+      });
+
+      if (error) {
+        let errorMessage = "No se pudo crear el producto";
+        if (error.message?.includes('permission') || error.message?.includes('INSUFFICIENT_PERMISSIONS')) {
+          errorMessage = "Solo los administradores pueden crear productos";
+        } else if (error.message?.includes('duplicate') || error.message?.includes('unique')) {
+          errorMessage = `El SKU "${formData.sku}" ya existe. Por favor usa otro SKU.`;
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+        toast({
+          title: "Error al crear producto",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (result && typeof result === 'object' && 'error' in result && result.error) {
+        toast({
+          title: "Error al crear producto",
+          description: (result as { message?: string }).message || "No se pudo crear el producto",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (!result || (typeof result === 'object' && 'error' in result)) {
+        toast({
+          title: "Error",
+          description: "La función de creación no retornó un resultado válido.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      toast({
+        title: "✅ Producto creado",
+        description: `"${formData.name}" se ha creado correctamente.`,
+        variant: "success",
+      });
+      onSuccess();
+    } catch (error) {
+      console.error('Error in handleConfirmCreate:', error);
+      toast({
+        title: "Error",
+        description: "Ocurrió un error inesperado al crear el producto",
         variant: "destructive",
       });
     } finally {
@@ -370,6 +400,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
   };
 
   return (
+    <>
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
@@ -555,5 +586,54 @@ export const ProductForm: React.FC<ProductFormProps> = ({
         </form>
       </DialogContent>
     </Dialog>
+
+    {/* Modal de confirmación antes de crear producto nuevo */}
+    <Dialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
+        <DialogContent className="max-w-md" aria-describedby="confirmacion-producto-desc">
+          <DialogHeader>
+            <DialogTitle>¿Estás listo para crear un producto?</DialogTitle>
+          </DialogHeader>
+          <div id="confirmacion-producto-desc" className="space-y-4 text-sm">
+            <p className="text-white/80">Verifica que los datos son correctos, especialmente la categoría:</p>
+            <div className="rounded-lg bg-white/5 p-4 space-y-2">
+              <div><span className="text-white/60">Nombre:</span> <span className="text-white font-medium">{formData.name || '—'}</span></div>
+              <div><span className="text-white/60">SKU:</span> <span className="text-white font-medium">{formData.sku || '—'}</span></div>
+              {formData.barcode && (
+                <div><span className="text-white/60">Código de barras:</span> <span className="text-white">{formData.barcode}</span></div>
+              )}
+              <div className="pt-2 border-t border-white/10">
+                <span className="text-white/60">Categoría:</span>{' '}
+                <span className="inline-flex items-center px-2 py-1 rounded-md bg-amber-500/20 text-amber-300 font-semibold">
+                  {getCategoryLabel(formData.category || null)}
+                </span>
+                <p className="text-xs text-white/50 mt-1">Asegúrate de que sea la correcta (Teléfono, Accesorio o Servicio Técnico)</p>
+              </div>
+              <div><span className="text-white/60">Costo:</span> <span className="text-white">${formData.cost_usd?.toFixed(2) || '0.00'} USD</span></div>
+              <div><span className="text-white/60">Precio venta:</span> <span className="text-white font-medium">${formData.sale_price_usd?.toFixed(2) || '0.00'} USD</span></div>
+              {storeInventories.some(inv => inv.qty > 0) && (
+                <div className="pt-2 border-t border-white/10">
+                  <span className="text-white/60">Stock inicial:</span>
+                  <ul className="mt-1 space-y-1">
+                    {storeInventories.filter(inv => inv.qty > 0).map(inv => {
+                      const store = stores.find(s => s.id === inv.store_id);
+                      return store ? <li key={store.id} className="text-white">{store.name}: {inv.qty} und.</li> : null;
+                    })}
+                  </ul>
+                </div>
+              )}
+            </div>
+            <p className="text-amber-300/90 text-xs">¿Confirmas que deseas crear este producto?</p>
+          </div>
+          <div className="flex justify-end gap-3 pt-4">
+            <Button type="button" variant="outline" onClick={() => setShowConfirmModal(false)} disabled={loading}>
+              Cancelar
+            </Button>
+            <Button onClick={handleConfirmCreate} disabled={loading} className="min-w-[100px]">
+              {loading ? 'Guardando...' : 'Confirmar y crear'}
+            </Button>
+          </div>
+        </DialogContent>
+    </Dialog>
+    </>
   );
 };

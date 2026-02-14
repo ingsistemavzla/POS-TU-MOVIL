@@ -1,9 +1,8 @@
 -- ============================================================================
--- Migración: Validación de integridad en create_product_v3
+-- Fix: "column reference product_id is ambiguous" en create_product_v3
 -- ============================================================================
--- Fecha: 2025-02-09
--- Descripción: RAISE EXCEPTION si p_name, p_sku o p_category son NULL o vacíos
---              (TRIM). Valida p_cost_usd y p_sale_price_usd > 0.
+-- Renombrar variable product_id → v_product_id para evitar conflicto con
+-- la columna product_id de la tabla inventories.
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.create_product_v3(
@@ -34,7 +33,6 @@ DECLARE
   v_actual_inventories integer;
   v_admin_user_id uuid;
 BEGIN
-  -- Get user's company
   SELECT company_id INTO user_company_id
   FROM public.users
   WHERE auth_user_id = auth.uid()
@@ -44,14 +42,10 @@ BEGIN
     RAISE EXCEPTION 'User not found or not associated with a company';
   END IF;
 
-  -- Check if user is admin
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Only administrators can create products';
   END IF;
 
-  -- ====================================================================================
-  -- VALIDACIÓN DE INTEGRIDAD: Campos obligatorios y numéricos > 0
-  -- ====================================================================================
   IF p_name IS NULL OR TRIM(COALESCE(p_name, '')) = '' THEN
     RAISE EXCEPTION 'El nombre del producto es requerido';
   END IF;
@@ -68,18 +62,15 @@ BEGIN
     RAISE EXCEPTION 'El precio de venta (USD) debe ser mayor a 0';
   END IF;
 
-  -- Obtener ID de admin para movimientos
   SELECT id INTO v_admin_user_id
   FROM public.users
   WHERE company_id = user_company_id AND role = 'admin'
   LIMIT 1;
 
-  -- Contar tiendas activas ANTES de crear producto (Safety Count - Paso 1)
   SELECT COUNT(*) INTO v_expected_stores
   FROM public.stores
   WHERE company_id = user_company_id AND active = true;
 
-  -- Crear mapa de inventarios recibidos del Frontend
   FOR store_inventory IN SELECT * FROM jsonb_array_elements(p_store_inventories) LOOP
     store_id := (store_inventory->>'store_id')::uuid;
     IF store_id IS NOT NULL THEN
@@ -93,7 +84,6 @@ BEGIN
     END IF;
   END LOOP;
 
-  -- Crear el producto
   INSERT INTO public.products (
     company_id, sku, barcode, name, category,
     cost_usd, sale_price_usd, tax_rate, active
@@ -106,7 +96,6 @@ BEGIN
 
   v_product_id := product_record.id;
 
-  -- LÓGICA HÍBRIDA: Crear inventario para TODAS las tiendas activas
   FOR store_record IN
     SELECT id FROM public.stores
     WHERE company_id = user_company_id AND active = true
@@ -147,7 +136,6 @@ BEGIN
     END IF;
   END LOOP;
 
-  -- SAFETY COUNT
   SELECT COUNT(*) INTO v_actual_inventories
   FROM public.inventories
   WHERE product_id = v_product_id AND company_id = user_company_id;
@@ -160,6 +148,3 @@ BEGIN
   RETURN row_to_json(product_record);
 END;
 $$;
-
-COMMENT ON FUNCTION public.create_product_v3(text, text, text, text, decimal, decimal, decimal, jsonb) IS
-'Crea un producto con inventario en todas las tiendas activas. Requiere: name, sku, category no vacíos; cost_usd y sale_price_usd > 0.';
