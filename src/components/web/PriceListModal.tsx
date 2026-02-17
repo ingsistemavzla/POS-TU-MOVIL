@@ -14,6 +14,8 @@ interface PriceListModalProps {
   open: boolean;
   onClose: () => void;
   onGenerate: (params: PriceListParams) => void;
+  /** BCV (Público) desde Gestión Web — pre-llena la tasa para consistencia con el panel */
+  initialBcvRate?: number | null;
 }
 
 export interface PriceListParams {
@@ -29,6 +31,7 @@ export const PriceListModal: React.FC<PriceListModalProps> = ({
   open,
   onClose,
   onGenerate,
+  initialBcvRate,
 }) => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
@@ -42,12 +45,16 @@ export const PriceListModal: React.FC<PriceListModalProps> = ({
   const [chasePercentage, setChasePercentage] = useState<string>('0');
   const [bcvRate, setBcvRate] = useState<string>('0');
 
-  // Cargar tasa BCV al abrir el modal
+  // Cargar tasa BCV: prioridad a initialBcvRate (Gestión Web), sino getBcvRate()
   useEffect(() => {
     if (open) {
-      loadBcvRate();
+      if (initialBcvRate != null && initialBcvRate > 0) {
+        setBcvRate(initialBcvRate.toFixed(4));
+      } else {
+        loadBcvRate();
+      }
     }
-  }, [open]);
+  }, [open, initialBcvRate]);
 
   const loadBcvRate = async () => {
     setLoadingBcv(true);
@@ -302,7 +309,7 @@ export const PriceListModal: React.FC<PriceListModalProps> = ({
               placeholder="0.0000"
             />
             <p className="text-xs text-white/70">
-              Tasa BCV para calcular el precio en bolívares. Se carga automáticamente pero puedes editarla manualmente.
+              BCV (Público) para columna Bs. Pre-llenado desde Gestión Web si está configurado. Editable.
             </p>
           </div>
         </div>

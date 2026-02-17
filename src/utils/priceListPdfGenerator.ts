@@ -12,6 +12,17 @@ interface ProductForPriceList {
   web_visible: boolean;
 }
 
+/** Tasas para inflado web. Métodos excluyentes:
+ *  RATE: P_final = P_base * (web_adjustment_rate / manual_bcv_rate)
+ *  PERCENTAGE: P_final = P_base * (1 + web_tax_percentage / 100)
+ */
+export interface WebPricingSettings {
+  web_adjustment_method?: 'RATE' | 'PERCENTAGE';
+  web_adjustment_rate?: number;
+  manual_bcv_rate?: number;
+  web_tax_percentage?: number;
+}
+
 // Función para agregar logo centrado (similar a otros reportes)
 function addLogo(doc: jsPDF, y: number, maxWidth: number = 25): number {
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -39,12 +50,30 @@ function addLogo(doc: jsPDF, y: number, maxWidth: number = 25): number {
   }
 }
 
+function applyWebInflation(
+  salePriceUsd: number,
+  webPricing: WebPricingSettings | null | undefined
+): number {
+  if (!webPricing) return salePriceUsd;
+  const method = webPricing.web_adjustment_method ?? 'RATE';
+  if (method === 'PERCENTAGE') {
+    const pct = webPricing.web_tax_percentage ?? 0;
+    return salePriceUsd * (1 + pct / 100);
+  }
+  const adj = webPricing.web_adjustment_rate;
+  const bcv = webPricing.manual_bcv_rate;
+  if (!bcv || bcv <= 0 || adj == null || adj <= 0) return salePriceUsd;
+  return salePriceUsd * (adj / bcv);
+}
+
 /**
- * Genera un PDF de lista de precios con los productos filtrados
+ * Genera un PDF de lista de precios con los productos filtrados.
+ * Si webPricing está presente, aplica inflado (solo para exportación web).
  */
 export const generatePriceListPDF = async (
   products: ProductForPriceList[],
-  params: PriceListParams
+  params: PriceListParams,
+  webPricing?: WebPricingSettings | null
 ): Promise<jsPDF> => {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -115,9 +144,14 @@ export const generatePriceListPDF = async (
   doc.text(`Fecha: ${dateStr}  |  Hora: ${timeStr}`, pageWidth / 2, currentY, { align: 'center' });
   currentY += 8;
 
-  // Preparar datos de la tabla
+  // Tasa BCV para columna BS: manual_bcv_rate (público) si hay webPricing, sino params.bcvRate
+  const bcvRateForBs = (webPricing?.manual_bcv_rate && webPricing.manual_bcv_rate > 0)
+    ? webPricing.manual_bcv_rate
+    : params.bcvRate;
+
+  // Preparar datos de la tabla (aplica inflado web cuando corresponda)
   const tableData = products.map((product) => {
-    const precioVenta = product.sale_price_usd;
+    const precioVenta = applyWebInflation(product.sale_price_usd, webPricing);
     const stockTotal = product.total_stock;
     
     // Calcular inicial Krece (precio * porcentaje / 100)
@@ -130,8 +164,8 @@ export const generatePriceListPDF = async (
       ? (precioVenta * params.chasePercentage) / 100 
       : 0;
     
-    // Calcular valor en BS BCV (precio * tasa BCV)
-    const valorBsBcv = precioVenta * params.bcvRate;
+    // Valor en BS: precio (inflado o no) * tasa BCV pública
+    const valorBsBcv = precioVenta * bcvRateForBs;
 
     // Convertir nombre a mayúsculas y truncar si es muy largo
     const productName = product.name.toUpperCase();
@@ -218,14 +252,16 @@ export const generatePriceListPDF = async (
 };
 
 /**
- * Descarga el PDF de lista de precios
+ * Descarga el PDF de lista de precios.
+ * Si webPricing está presente, aplica inflado (solo catálogo/exportación web).
  */
 export const downloadPriceListPDF = async (
   products: ProductForPriceList[],
-  params: PriceListParams
+  params: PriceListParams,
+  webPricing?: WebPricingSettings | null
 ): Promise<void> => {
   try {
-    const doc = await generatePriceListPDF(products, params);
+    const doc = await generatePriceListPDF(products, params, webPricing);
     const categoryLabel = getCategoryLabel(params.category);
     const fileName = `lista-precios-${categoryLabel.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`;
     doc.save(fileName);

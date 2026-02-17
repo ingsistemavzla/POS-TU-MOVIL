@@ -14,6 +14,10 @@ export interface SystemSettings {
   receipt_footer: string;
   barcode_prefix: string;
   low_stock_threshold: number;
+  web_adjustment_rate?: number | null;
+  web_tax_percentage?: number | null;
+  manual_bcv_rate?: number | null;
+  web_adjustment_method?: 'RATE' | 'PERCENTAGE' | null;
   created_at: string;
   updated_at: string;
 }
@@ -34,7 +38,7 @@ export function useSystemSettings() {
       // ✅ OPTIMIZACIÓN: Seleccionar solo las columnas necesarias en lugar de select('*')
       const { data, error } = await supabase
         .from('system_settings')
-        .select('id, company_id, tax_rate, currency, timezone, language, auto_backup, notifications_enabled, receipt_footer, barcode_prefix, low_stock_threshold, created_at, updated_at')
+        .select('id, company_id, tax_rate, currency, timezone, language, auto_backup, notifications_enabled, receipt_footer, barcode_prefix, low_stock_threshold, web_adjustment_rate, web_tax_percentage, manual_bcv_rate, web_adjustment_method, created_at, updated_at')
         .eq('company_id', userProfile.company_id)
         .single();
 
@@ -71,6 +75,10 @@ export function useSystemSettings() {
         receipt_footer: 'Gracias por su compra',
         barcode_prefix: 'POS',
         low_stock_threshold: 10,
+        web_adjustment_rate: null,
+        web_tax_percentage: 0,
+        manual_bcv_rate: null,
+        web_adjustment_method: 'RATE',
       };
 
       const { data, error } = await supabase

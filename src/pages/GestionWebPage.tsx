@@ -13,6 +13,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -30,6 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { 
   Search, 
   Edit, 
@@ -46,14 +57,19 @@ import {
   Loader2,
   Pencil,
   Check,
-  FileText
+  FileText,
+  Settings,
+  RefreshCw,
+  RotateCcw
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useSystemSettings } from '@/hooks/useSystemSettings';
 import { PRODUCT_CATEGORIES, getCategoryLabel } from '@/constants/categories';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { PriceListModal, PriceListParams } from '@/components/web/PriceListModal';
-import { downloadPriceListPDF } from '@/utils/priceListPdfGenerator';
+import { downloadPriceListPDF, WebPricingSettings } from '@/utils/priceListPdfGenerator';
+import { getBcvRate } from '@/utils/bcvRate';
 
 // ============================================================================
 // INTERFACES
@@ -108,6 +124,176 @@ export const GestionWebPage: React.FC = () => {
   // ✅ Estado para modal de lista de precios
   const [showPriceListModal, setShowPriceListModal] = useState(false);
   const [generatingPriceList, setGeneratingPriceList] = useState(false);
+
+  // ✅ Configuración global (precios dinámicos web)
+  const { settings, updateSettings } = useSystemSettings();
+  const [webAdjustmentMethod, setWebAdjustmentMethod] = useState<'RATE' | 'PERCENTAGE'>('RATE');
+  const [webAdjustmentRate, setWebAdjustmentRate] = useState('');
+  const [webTaxPercentage, setWebTaxPercentage] = useState('');
+  const [manualBcvRate, setManualBcvRate] = useState('');
+  const [savingWebConfig, setSavingWebConfig] = useState(false);
+  const [loadingBcvRate, setLoadingBcvRate] = useState(false);
+  const [showRestablecerConfirm, setShowRestablecerConfirm] = useState(false);
+
+  useEffect(() => {
+    if (settings) {
+      setWebAdjustmentMethod((settings.web_adjustment_method ?? 'RATE') as 'RATE' | 'PERCENTAGE');
+      setWebAdjustmentRate(settings.web_adjustment_rate != null ? String(settings.web_adjustment_rate) : '');
+      setWebTaxPercentage(String(settings.web_tax_percentage ?? 0));
+      const bcvVal = settings.manual_bcv_rate != null ? String(settings.manual_bcv_rate) : '';
+      setManualBcvRate(bcvVal);
+      // Si no hay valor guardado, cargar desde API (como el POS)
+      if (bcvVal === '') {
+        setLoadingBcvRate(true);
+        getBcvRate().then((rate) => {
+          if (rate !== null) setManualBcvRate(rate.toFixed(2));
+        }).finally(() => setLoadingBcvRate(false));
+      }
+    }
+  }, [settings]);
+
+  const handleRefreshBcvRate = async () => {
+    setLoadingBcvRate(true);
+    try {
+      const rate = await getBcvRate();
+      if (rate !== null) {
+        setManualBcvRate(rate.toFixed(2));
+        toast({ title: "BCV (Público) actualizado", description: `Bs ${rate.toFixed(2)} desde API Banco Central`, variant: "default" });
+      } else {
+        toast({ title: "No se pudo obtener", description: "La API Banco Central no respondió. Ingresa BCV (Público) manualmente.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "No se pudo cargar el BCV (Público)", variant: "destructive" });
+    } finally {
+      setLoadingBcvRate(false);
+    }
+  };
+
+  const handleSaveWebConfig = async () => {
+    if (!settings) return;
+    setSavingWebConfig(true);
+    try {
+      const bcv = manualBcvRate.trim() ? parseFloat(manualBcvRate) : null;
+      const adj = webAdjustmentRate.trim() ? parseFloat(webAdjustmentRate) : null;
+      const tax = parseFloat(webTaxPercentage);
+
+      if (webAdjustmentMethod === 'RATE') {
+        if (adj == null || isNaN(adj) || adj <= 0) {
+          toast({ title: "Error", description: "Con método Tasa: BCV (Interno) debe ser > 0", variant: "destructive" });
+          return;
+        }
+        if (bcv == null || isNaN(bcv) || bcv <= 0) {
+          toast({ title: "Error", description: "Con método Tasa: BCV (Público) debe ser > 0", variant: "destructive" });
+          return;
+        }
+      } else {
+        if (isNaN(tax) || tax < 0) {
+          toast({ title: "Error", description: "Con método Porcentaje: Recargo % debe ser ≥ 0", variant: "destructive" });
+          return;
+        }
+      }
+
+      const ok = await updateSettings({
+        web_adjustment_method: webAdjustmentMethod,
+        web_adjustment_rate: webAdjustmentMethod === 'RATE' ? adj : null,
+        web_tax_percentage: webAdjustmentMethod === 'PERCENTAGE' ? tax : 0,
+        manual_bcv_rate: bcv,
+      });
+      if (ok) {
+        toast({
+          title: "Ajuste de precio web aplicado correctamente",
+          description: `Método: ${webAdjustmentMethod === 'RATE' ? 'Tasa Inversa' : 'Porcentaje'}. Precios en USD actualizados.`,
+          variant: "success",
+        });
+      }
+    } catch (e) {
+      toast({ title: "Error", description: "No se pudo guardar", variant: "destructive" });
+    } finally {
+      setSavingWebConfig(false);
+    }
+  };
+
+  /** Calcula el precio final web en USD según valores actuales de los inputs (previsualización en tiempo real) */
+  const computeWebPriceFinal = (salePriceUsd: number): number => {
+    if (webAdjustmentMethod === 'RATE') {
+      const adj = webAdjustmentRate.trim() ? parseFloat(webAdjustmentRate) : null;
+      const bcv = manualBcvRate.trim() ? parseFloat(manualBcvRate) : null;
+      if (!adj || !bcv || bcv <= 0 || adj <= 0) return salePriceUsd;
+      return salePriceUsd * (adj / bcv);
+    }
+    const pct = parseFloat(webTaxPercentage) || 0;
+    if (pct <= 0) return salePriceUsd;
+    return salePriceUsd * (1 + pct / 100);
+  };
+
+  /** Calcula el precio final web según lo GUARDADO en settings (para la tabla, no cambia al cambiar de tab) */
+  const computeWebPriceFinalFromSettings = (salePriceUsd: number): number => {
+    if (!settings) return salePriceUsd;
+    const method = settings.web_adjustment_method ?? 'RATE';
+    if (method === 'RATE') {
+      const adj = settings.web_adjustment_rate;
+      const bcv = settings.manual_bcv_rate;
+      if (!adj || !bcv || bcv <= 0 || adj <= 0) return salePriceUsd;
+      return salePriceUsd * (adj / bcv);
+    }
+    const pct = settings.web_tax_percentage ?? 0;
+    if (pct <= 0) return salePriceUsd;
+    return salePriceUsd * (1 + pct / 100);
+  };
+
+  /** Hay cambios sin guardar respecto a lo que está en settings */
+  const hasUnsavedChanges = useMemo(() => {
+    if (!settings) return false;
+    const method = settings.web_adjustment_method ?? 'RATE';
+    const savedAdj = settings.web_adjustment_rate != null ? String(settings.web_adjustment_rate) : '';
+    const savedTax = String(settings.web_tax_percentage ?? 0);
+    const savedBcv = settings.manual_bcv_rate != null ? String(settings.manual_bcv_rate) : '';
+    const savedMethod = (settings.web_adjustment_method ?? 'RATE') as 'RATE' | 'PERCENTAGE';
+    return (
+      webAdjustmentMethod !== savedMethod ||
+      webAdjustmentRate !== savedAdj ||
+      webTaxPercentage !== savedTax ||
+      manualBcvRate !== savedBcv
+    );
+  }, [settings, webAdjustmentMethod, webAdjustmentRate, webTaxPercentage, manualBcvRate]);
+
+  /** Hay ajuste guardado en la tabla (para permitir Restablecer) */
+  const hasSavedAdjustment = useMemo(() => {
+    if (!settings) return false;
+    return (
+      (settings.web_adjustment_rate != null && settings.web_adjustment_rate > 0) ||
+      ((settings.web_tax_percentage ?? 0) > 0) ||
+      (settings.manual_bcv_rate != null && settings.manual_bcv_rate > 0)
+    );
+  }, [settings]);
+
+  const handleRestablecerAjustes = () => {
+    const bcv = manualBcvRate.trim() ? parseFloat(manualBcvRate) : null;
+    if (bcv == null || isNaN(bcv) || bcv <= 0) {
+      toast({
+        title: "BCV (Público) requerido",
+        description: "Ingresa el BCV (Público) para restablecer (se usará como BCV Interno nivelado).",
+        variant: "destructive",
+      });
+      return;
+    }
+    setShowRestablecerConfirm(true);
+  };
+
+  const confirmRestablecerAjustes = () => {
+    const bcv = manualBcvRate.trim() ? parseFloat(manualBcvRate) : null;
+    if (bcv == null || isNaN(bcv) || bcv <= 0) return;
+    setShowRestablecerConfirm(false);
+    setWebAdjustmentRate(String(bcv));
+    setWebTaxPercentage('0');
+    updateSettings({
+      web_adjustment_rate: bcv,
+      web_tax_percentage: 0,
+      manual_bcv_rate: bcv,
+    }).then((ok) => {
+      if (ok) toast({ title: "Ajustes restablecidos", variant: "success" });
+    });
+  };
 
   // ============================================================================
   // CARGA DE PRODUCTOS (Solo Lectura - Usa RPC)
@@ -879,8 +1065,36 @@ export const GestionWebPage: React.FC = () => {
         web_visible: p.web_visible,
       }));
 
-      // Generar y descargar PDF
-      await downloadPriceListPDF(productsForPDF, params);
+      // Tasas web para inflado (solo exportación web - no afecta POS)
+      const method = settings?.web_adjustment_method ?? 'RATE';
+      const useRate = method === 'RATE' &&
+        settings?.web_adjustment_rate != null &&
+        settings?.manual_bcv_rate != null &&
+        settings.web_adjustment_rate > 0 &&
+        settings.manual_bcv_rate > 0;
+      const usePct = method === 'PERCENTAGE' &&
+        settings?.web_tax_percentage != null &&
+        settings.web_tax_percentage !== 0;
+      const webPricing: WebPricingSettings | null =
+        useRate
+          ? {
+              web_adjustment_method: 'RATE',
+              web_adjustment_rate: settings!.web_adjustment_rate!,
+              manual_bcv_rate: settings!.manual_bcv_rate!,
+              web_tax_percentage: 0,
+            }
+          : usePct
+            ? {
+                web_adjustment_method: 'PERCENTAGE',
+                web_tax_percentage: settings!.web_tax_percentage ?? 0,
+                manual_bcv_rate: (settings?.manual_bcv_rate && settings.manual_bcv_rate > 0)
+                  ? settings.manual_bcv_rate
+                  : undefined, // para columna BS en PDF
+              }
+            : null;
+
+      // Generar y descargar PDF (aplica inflado si webPricing está configurado)
+      await downloadPriceListPDF(productsForPDF, params, webPricing);
 
       toast({
         title: "PDF generado",
@@ -963,6 +1177,181 @@ export const GestionWebPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Configuración Global - Ajuste de Precios Web (un solo contenedor) */}
+      <Card className="glass-card border border-white/10">
+        <CardContent className="pt-6 pb-6">
+          {/* Fila superior: Izquierda (header + método) | Derecha (BCV Público referencia) */}
+          <div className="flex flex-col md:flex-row md:items-start gap-6 mb-4">
+            {/* Izquierda: Header + Método de ajuste */}
+            <div className="flex-1 min-w-0">
+              <CardTitle className="text-lg flex items-center gap-2 mb-1">
+                <Settings className="w-5 h-5 text-emerald-400" />
+                Ajuste de Precios Web
+              </CardTitle>
+              <p className="text-sm text-white/70 mb-4">
+                Solo afecta el catálogo público y listas de exportación. No modifica precios de tienda.
+              </p>
+              <div>
+                <Label className="text-xs font-medium text-white/80 block mb-2">Método de ajuste</Label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Tabs value={webAdjustmentMethod} onValueChange={(v) => setWebAdjustmentMethod(v as 'RATE' | 'PERCENTAGE')}>
+                    <TabsList className="grid grid-cols-2 h-11 p-1 bg-zinc-900 border border-white/10">
+                      <TabsTrigger
+                        value="RATE"
+                        className={cn(
+                          "text-sm font-medium transition-all",
+                          webAdjustmentMethod === 'RATE'
+                            ? "bg-emerald-600 text-white border border-emerald-500/50 shadow-sm"
+                            : "bg-zinc-800/90 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800"
+                        )}
+                      >
+                        Tasa Inversa
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="PERCENTAGE"
+                        className={cn(
+                          "text-sm font-medium transition-all",
+                          webAdjustmentMethod === 'PERCENTAGE'
+                            ? "bg-emerald-600 text-white border border-emerald-500/50 shadow-sm"
+                            : "bg-zinc-800/90 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800"
+                        )}
+                      >
+                        Porcentaje
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                  <Button
+                    onClick={handleRestablecerAjustes}
+                    disabled={!hasSavedAdjustment}
+                    variant="outline"
+                    size="sm"
+                    className="h-11 border-red-500/50 text-red-400 hover:bg-red-500/20 hover:text-red-300 disabled:opacity-40"
+                    title="Restablecer: BCV Interno = BCV Público, Recargo % = 0"
+                  >
+                    <RotateCcw className="w-4 h-4 mr-2" />
+                    Restablecer Ajustes
+                  </Button>
+                </div>
+                <p className="text-xs text-white/50 mt-2">
+                  {webAdjustmentMethod === 'RATE'
+                    ? 'Ajusta tu tasa BCV (Interno) respecto a la referencia pública para definir el porcentaje de aumento en (USD) de la web.'
+                    : 'Añade un recargo % sobre el precio de tienda (ej: 10% → $100 pasa a $110).'}
+                </p>
+              </div>
+            </div>
+
+            {/* Derecha: Referencia BCV (Público) — misma altura, esquina superior derecha, más ancho */}
+            <div className="md:w-[320px] shrink-0 p-4 rounded-lg bg-white/5 border border-white/10">
+              <h3 className="text-sm font-semibold text-white/90 mb-2">Referencia</h3>
+              <Label className="text-xs text-white/60">BCV (Público) desde API Banco Central</Label>
+              <div className="flex items-center gap-2 mt-1">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={manualBcvRate}
+                  onChange={(e) => setManualBcvRate(e.target.value)}
+                  placeholder="Cargar desde API..."
+                  className="w-28 h-10 text-sm font-semibold text-emerald-300 bg-white/5 border-emerald-500/30"
+                />
+                <span className="text-xs text-white/50">Bs</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10 shrink-0"
+                  onClick={handleRefreshBcvRate}
+                  disabled={loadingBcvRate}
+                  title="Actualizar desde API"
+                >
+                  {loadingBcvRate ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Abajo: Parámetros editables + Ejemplo */}
+          <div className="p-3 rounded-lg bg-white/5 border border-white/10 mb-4">
+            <h3 className="text-sm font-semibold text-white/90 mb-3">Parámetros</h3>
+            <div className="flex flex-wrap items-end gap-4">
+              {webAdjustmentMethod === 'RATE' && (
+                <div className="min-w-[140px]">
+                  <Label className="text-xs font-medium text-white/80">BCV (Interno)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={webAdjustmentRate}
+                    onChange={(e) => setWebAdjustmentRate(e.target.value)}
+                    placeholder="50"
+                    className="glass-input mt-1"
+                  />
+                </div>
+              )}
+              {webAdjustmentMethod === 'PERCENTAGE' && (
+                <div className="min-w-[140px]">
+                  <Label className="text-xs font-medium text-white/80">Recargo % web</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={webTaxPercentage}
+                    onChange={(e) => setWebTaxPercentage(e.target.value)}
+                    placeholder="0"
+                    className="glass-input mt-1"
+                  />
+                </div>
+              )}
+              <div className="text-xs text-white/50 py-1">
+                <span className="text-white/70">Ejemplo:</span>{' '}
+                {webAdjustmentMethod === 'RATE' ? (
+                  (() => {
+                    const adj = webAdjustmentRate.trim() ? parseFloat(webAdjustmentRate) : null;
+                    const bcv = manualBcvRate.trim() ? parseFloat(manualBcvRate) : null;
+                    const pts = adj != null && bcv != null ? Math.round(adj - bcv) : null;
+                    const finalUsd = computeWebPriceFinal(100);
+                    return (
+                      <span className="text-emerald-400/90">
+                        $100 POS ({pts != null ? `${pts >= 0 ? '+' : ''}${pts} pts` : 'XX pts'}) → ${finalUsd.toFixed(2)} WEB
+                        {bcv != null && bcv > 0 && (
+                          <> (Bs. {(finalUsd * bcv).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</>
+                        )}
+                      </span>
+                    );
+                  })()
+                ) : (
+                  (() => {
+                    const pct = parseFloat(webTaxPercentage) || 0;
+                    const finalUsd = computeWebPriceFinal(100);
+                    const bcv = manualBcvRate.trim() ? parseFloat(manualBcvRate) : null;
+                    return (
+                      <span className="text-emerald-400/90">
+                        $100 POS ({pct > 0 ? `+${pct.toFixed(1)}` : 'XX'}%) → ${finalUsd.toFixed(2)} WEB
+                        {bcv != null && bcv > 0 && (
+                          <> (Bs. {(finalUsd * bcv).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</>
+                        )}
+                      </span>
+                    );
+                  })()
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Acciones — esquina inferior derecha (solo Guardar) */}
+          <div className="flex justify-end">
+            <Button
+              onClick={handleSaveWebConfig}
+              disabled={savingWebConfig || !settings || !hasUnsavedChanges}
+              className="bg-primary-dark text-white hover:bg-primary-dark/90"
+            >
+              {savingWebConfig ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+              Guardar
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Filtros */}
       <Card>
         <CardContent className="p-4">
@@ -1039,7 +1428,8 @@ export const GestionWebPage: React.FC = () => {
                     <TableHead className="w-[80px]">Imagen</TableHead>
                     <TableHead>Nombre del Producto</TableHead>
                     <TableHead className="w-[100px] text-right">Stock</TableHead>
-                    <TableHead className="w-[120px] text-right">Precio (USD)</TableHead>
+                    <TableHead className="w-[120px] text-right">USD (POS)</TableHead>
+                    <TableHead className="w-[140px] text-right">USD (WEB)</TableHead>
                     <TableHead className="w-[120px] text-center">Visibilidad</TableHead>
                     <TableHead className="w-[100px] text-center">Acción</TableHead>
                   </TableRow>
@@ -1107,7 +1497,7 @@ export const GestionWebPage: React.FC = () => {
                         </div>
                       </TableCell>
 
-                      {/* Precio (USD) - Edición Inline */}
+                      {/* USD (POS) - Edición Inline */}
                       <TableCell>
                         <div className="flex items-center justify-end gap-2">
                           {editingPriceId === product.id ? (
@@ -1185,6 +1575,20 @@ export const GestionWebPage: React.FC = () => {
                               </Button>
                             </div>
                           )}
+                        </div>
+                      </TableCell>
+
+                      {/* USD (WEB) - Según lo guardado (no cambia al cambiar de tab) */}
+                      <TableCell>
+                        <div className="text-right">
+                          <span className={cn(
+                            "font-semibold",
+                            computeWebPriceFinalFromSettings(product.sale_price_usd) !== product.sale_price_usd
+                              ? "text-amber-400"
+                              : "text-white/70"
+                          )}>
+                            ${computeWebPriceFinalFromSettings(product.sale_price_usd).toFixed(2)}
+                          </span>
                         </div>
                       </TableCell>
 
@@ -1575,11 +1979,33 @@ export const GestionWebPage: React.FC = () => {
         </Dialog>
       )}
 
-      {/* Modal de Lista de Precios */}
+      {/* Modal de confirmación Restablecer Ajustes */}
+      <AlertDialog open={showRestablecerConfirm} onOpenChange={setShowRestablecerConfirm}>
+        <AlertDialogContent className="!bg-[rgba(17,24,39,0.98)] backdrop-blur-xl border border-emerald-500/40 shadow-xl shadow-black/50 text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-emerald-300 font-semibold">¿Restablecer ajustes?</AlertDialogTitle>
+            <AlertDialogDescription className="text-white/85">
+              Se pondrá BCV (Interno) = BCV (Público) y Recargo % = 0. USD (WEB) quedará igual a USD (POS).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/20 hover:text-emerald-200 bg-transparent">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmRestablecerAjustes}
+              className="bg-emerald-600 text-white hover:bg-emerald-700 border-emerald-500/50"
+            >
+              Restablecer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal de Lista de Precios — pre-llena BCV desde Gestión Web */}
       <PriceListModal
         open={showPriceListModal}
         onClose={() => setShowPriceListModal(false)}
         onGenerate={handleGeneratePriceList}
+        initialBcvRate={settings?.manual_bcv_rate ?? undefined}
       />
     </div>
   );
