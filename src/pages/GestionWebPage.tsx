@@ -986,7 +986,7 @@ export const GestionWebPage: React.FC = () => {
         productId: editingProduct.id,
         previousPrice: data.previous_price,
         newPrice: data.new_price,
-        imageUrlSent: cleanImageUrl,
+        imageUrlSent: finalImageUrl,
         imageUrlOld: data.image_url_old,  // ✅ Imagen anterior
         imageUrlFinal: data.image_url_final,  // ✅ Imagen final guardada
         visibleSent: finalVisible,
