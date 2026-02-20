@@ -513,7 +513,7 @@ export const GestionWebPage: React.FC = () => {
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('product-images')
         .upload(filePath, file, {
-          cacheControl: '3600',
+          cacheControl: '0', // ✅ No cache / max-age=0 para reflejo inmediato en WEB
           upsert: true, // ✅ Siempre sobrescribir si existe
         });
 
@@ -924,20 +924,23 @@ export const GestionWebPage: React.FC = () => {
     setSaving(true);
 
     try {
-      // ✅ Limpiar timestamp de cache busting de la URL antes de guardar en BD
+      // ✅ URL base sin query params (para almacenar path canónico)
       const rawImageUrl = editingProduct.temp_image_url?.trim() || '';
-      const cleanImageUrl = rawImageUrl 
-        ? rawImageUrl.split('?')[0].trim() // Remover query params (cache busting) y espacios
+      const baseImageUrl = rawImageUrl 
+        ? rawImageUrl.split('?')[0].trim()
         : null;
       
-      // ✅ Asegurar que si la URL está vacía después del trim, se pase como null
-      const finalImageUrl = cleanImageUrl && cleanImageUrl.length > 0 ? cleanImageUrl : null;
+      // ✅ Cache buster: añadir ?t=timestamp para que la WEB/navegador interprete la URL como nueva
+      // Cada guardado genera URL única → evita caché de imagen anterior tras subir reemplazo
+      const finalImageUrl = baseImageUrl && baseImageUrl.length > 0 
+        ? `${baseImageUrl}?t=${Date.now()}`
+        : null;
 
       console.log('💾 Guardando cambios:', {
         productId: editingProduct.id,
         price: editingProduct.temp_sale_price_usd,
         rawImageUrl: rawImageUrl,
-        cleanImageUrl: cleanImageUrl,
+        baseImageUrl: baseImageUrl,
         finalImageUrl: finalImageUrl,
         imageUrlLength: finalImageUrl?.length || 0,
         visible: finalVisible,
@@ -951,7 +954,7 @@ export const GestionWebPage: React.FC = () => {
       const rpcParams = {
         p_product_id: editingProduct.id,
         p_sale_price_usd: editingProduct.temp_sale_price_usd,
-        p_web_image_url: finalImageUrl, // ✅ URL limpia (sin cache busting) o null si está vacía
+        p_web_image_url: finalImageUrl, // ✅ URL con cache buster (?t=timestamp) para reflejo inmediato en WEB
         p_web_visible: finalVisible,
       };
       
