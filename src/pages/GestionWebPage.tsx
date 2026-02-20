@@ -495,8 +495,7 @@ export const GestionWebPage: React.FC = () => {
             .remove(uniqueFilesToDelete);
           
           if (bulkDeleteError) {
-            console.error('❌ Error al borrar archivos:', bulkDeleteError);
-            console.warn('⚠️ No se pudieron borrar archivos anteriores:', bulkDeleteError);
+            console.warn('⚠️ No se pudieron borrar imágenes anteriores (continuando subida). Causa:', bulkDeleteError);
           } else {
             console.log(`✅ ${uniqueFilesToDelete.length} archivo(s) anterior(es) borrado(s):`, uniqueFilesToDelete);
           }
@@ -505,7 +504,7 @@ export const GestionWebPage: React.FC = () => {
         }
       } catch (deleteError) {
         // Si falla al borrar, continuar de todas formas (no crítico)
-        console.error('❌ Error al limpiar imágenes anteriores:', deleteError);
+        console.warn('⚠️ Error al limpiar imágenes anteriores (continuando subida). Causa:', deleteError);
       }
 
       // ✅ PASO 2: Subir nueva imagen (siempre con upsert para sobrescribir si existe)
@@ -905,19 +904,22 @@ export const GestionWebPage: React.FC = () => {
       // Usuario borró la URL, intentar borrar la imagen del Storage
       try {
         const oldUrl = editingProduct.web_image_url;
-        if (oldUrl.includes('supabase.co/storage/v1/object/public/product-images/')) {
+        if (oldUrl?.includes('supabase.co/storage/v1/object/public/product-images/')) {
           const urlParts = oldUrl.split('product-images/');
           if (urlParts.length > 1) {
-            const oldFilePath = `product-images/${urlParts[1]}`;
-            await supabase.storage
-              .from('product-images')
-              .remove([oldFilePath]);
-            console.log('✅ Imagen anterior borrada del Storage');
+            // ✅ Path relativo al bucket: company_id/product_id.ext (sin product-images/ ni ?t=)
+            const oldFilePath = urlParts[1].split('?')[0].trim();
+            if (oldFilePath) {
+              await supabase.storage
+                .from('product-images')
+                .remove([oldFilePath]);
+              console.log('✅ Imagen anterior borrada del Storage');
+            }
           }
         }
       } catch (deleteError) {
-        // Si falla al borrar, continuar de todas formas (no crítico)
-        console.warn('⚠️ No se pudo borrar la imagen anterior del Storage:', deleteError);
+        // Si falla al borrar, continuar de todas formas (no crítico para el flujo)
+        console.warn('⚠️ No se pudo borrar la imagen anterior del Storage (continuando). Causa:', deleteError);
       }
     }
 
@@ -1448,7 +1450,7 @@ export const GestionWebPage: React.FC = () => {
                         {product.web_image_url ? (
                           <div className="relative w-12 h-12 rounded overflow-hidden border border-white/10 bg-muted flex-shrink-0">
                             <img
-                              key={`${product.id}-${product.updated_at}`}
+                              key={product.web_image_url}
                               src={`${product.web_image_url}${product.web_image_url.includes('?') ? '&' : '?'}t=${new Date(product.updated_at).getTime()}`}
                               alt={product.name}
                               className="w-full h-full object-cover"
