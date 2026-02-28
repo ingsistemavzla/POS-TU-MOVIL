@@ -66,6 +66,12 @@ function applyWebInflation(
   return salePriceUsd * (adj / bcv);
 }
 
+/** Redondeo al entero más cercano (Base 1), igual que get_public_web_products_catalog: decimal >= 0.50 sube, < 0.50 baja */
+function roundToInteger(value: number): number {
+  if (!Number.isFinite(value)) return value;
+  return Math.round(value);
+}
+
 /**
  * Genera un PDF de lista de precios con los productos filtrados.
  * Si webPricing está presente, aplica inflado (solo para exportación web).
@@ -144,61 +150,45 @@ export const generatePriceListPDF = async (
   doc.text(`Fecha: ${dateStr}  |  Hora: ${timeStr}`, pageWidth / 2, currentY, { align: 'center' });
   currentY += 8;
 
-  // Tasa BCV para columna BS: manual_bcv_rate (público) si hay webPricing, sino params.bcvRate
-  const bcvRateForBs = (webPricing?.manual_bcv_rate && webPricing.manual_bcv_rate > 0)
-    ? webPricing.manual_bcv_rate
-    : params.bcvRate;
+  // Precio USD según modo: INTERNACIONAL = POS (sin inflado), NACIONAL = inflado + redondeo al entero
+  const isNacional = params.priceMode === 'NACIONAL';
+  const precioColumnLabel = isNacional ? 'PRECIO N' : 'PRECIO I';
 
-  // Preparar datos de la tabla (aplica inflado web cuando corresponda)
+  // Preparar datos de la tabla: Producto | Stock | Cashea | Krece | Precio (USD al final)
   const tableData = products.map((product) => {
-    const precioVenta = applyWebInflation(product.sale_price_usd, webPricing);
+    const precioUsd = isNacional && webPricing
+      ? roundToInteger(applyWebInflation(product.sale_price_usd, webPricing))
+      : product.sale_price_usd;
     const stockTotal = product.total_stock;
-    
-    // Calcular inicial Krece (precio * porcentaje / 100)
-    const inicialKrece = params.krecePercentage > 0 
-      ? (precioVenta * params.krecePercentage) / 100 
-      : 0;
-    
-    // Calcular inicial Cashea (precio * porcentaje / 100)
-    const inicialCashea = params.chasePercentage > 0 
-      ? (precioVenta * params.chasePercentage) / 100 
-      : 0;
-    
-    // Valor en BS: precio (inflado o no) * tasa BCV pública
-    const valorBsBcv = precioVenta * bcvRateForBs;
 
-    // Convertir nombre a mayúsculas y truncar si es muy largo
+    const inicialKrece = params.krecePercentage > 0 ? (precioUsd * params.krecePercentage) / 100 : 0;
+    const inicialCashea = params.chasePercentage > 0 ? (precioUsd * params.chasePercentage) / 100 : 0;
+
     const productName = product.name.toUpperCase();
-    const maxNameLength = 35; // Reducido para que quepa mejor
-    const truncatedName = productName.length > maxNameLength 
-      ? productName.substring(0, maxNameLength - 3) + '...' 
+    const maxNameLength = 35;
+    const truncatedName = productName.length > maxNameLength
+      ? productName.substring(0, maxNameLength - 3) + '...'
       : productName;
 
-    // Orden: Producto, Precio Venta, Stock, Cashea, Krece, BS BCV
+    const precioFormato = isNacional && webPricing ? precioUsd.toFixed(0) : precioUsd.toFixed(2);
     return [
       truncatedName,
-      `$${precioVenta.toFixed(2)}`,
       stockTotal.toString(),
-      `$${inicialCashea.toFixed(2)}`, // Cashea primero
-      `$${inicialKrece.toFixed(2)}`, // Krece después
-      `Bs. ${valorBsBcv.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      `$${inicialCashea.toFixed(2)}`,
+      `$${inicialKrece.toFixed(2)}`,
+      `$${precioFormato}`,
     ];
   });
 
-  // Generar tabla con autoTable (centrada)
-  // Calcular ancho de tabla para centrarla mejor
-  const tableWidth = 170; // Ancho fijo para la tabla
-  const tableStartX = (pageWidth - tableWidth) / 2; // Centrar la tabla
-  
+  const tableWidth = 150;
   autoTable(doc, {
     startY: currentY,
     head: [[
       'Producto',
-      'Precio Venta',
       'Stock',
-      `Cashea (${params.chasePercentage.toFixed(1)}%)`, // Cashea primero
-      `Krece (${params.krecePercentage.toFixed(1)}%)`, // Krece después
-      'BS BCV',
+      `Cashea (${params.chasePercentage.toFixed(1)}%)`,
+      `Krece (${params.krecePercentage.toFixed(1)}%)`,
+      precioColumnLabel,
     ]],
     body: tableData,
     theme: 'striped',
@@ -217,21 +207,20 @@ export const generatePriceListPDF = async (
       fillColor: [245, 245, 245],
     },
     columnStyles: {
-      0: { cellWidth: 55, halign: 'left' }, // Producto
-      1: { cellWidth: 22, halign: 'right' }, // Precio de Venta
-      2: { cellWidth: 15, halign: 'center' }, // Stock
-      3: { cellWidth: 24, halign: 'right' }, // Inicial Cashea
-      4: { cellWidth: 24, halign: 'right' }, // Inicial Krece
-      5: { cellWidth: 30, halign: 'right' }, // Valor en BS BCV
+      0: { cellWidth: 55, halign: 'left' },   // Producto
+      1: { cellWidth: 18, halign: 'center' }, // Stock
+      2: { cellWidth: 24, halign: 'right' },  // Cashea
+      3: { cellWidth: 24, halign: 'right' },   // Krece
+      4: { cellWidth: 29, halign: 'right' },  // PRECIO N / PRECIO I
     },
-    margin: { left: (pageWidth - tableWidth) / 2, right: (pageWidth - tableWidth) / 2 }, // Centrar la tabla
+    margin: { left: (pageWidth - tableWidth) / 2, right: (pageWidth - tableWidth) / 2 },
     styles: {
-      cellPadding: 1.65, // Espaciado interno aumentado 10%
+      cellPadding: 1.65,
       lineWidth: 0.1,
       lineColor: [200, 200, 200],
       fontSize: 7,
     },
-    tableWidth: tableWidth, // Ancho fijo para centrar mejor
+    tableWidth: tableWidth,
   });
 
   // Obtener la posición final después de la tabla

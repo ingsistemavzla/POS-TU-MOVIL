@@ -6,17 +6,16 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { PRODUCT_CATEGORIES, getCategoryLabel } from '@/constants/categories';
-import { getBcvRate } from '@/utils/bcvRate';
-import { Loader2, FileText, RefreshCw } from 'lucide-react';
+import { Loader2, FileText, DollarSign, Globe } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface PriceListModalProps {
   open: boolean;
   onClose: () => void;
   onGenerate: (params: PriceListParams) => void;
-  /** BCV (Público) desde Gestión Web — pre-llena la tasa para consistencia con el panel */
-  initialBcvRate?: number | null;
 }
+
+export type PriceListPriceMode = 'NACIONAL' | 'INTERNACIONAL';
 
 export interface PriceListParams {
   category: string;
@@ -24,18 +23,17 @@ export interface PriceListParams {
   onlyWithStock: boolean;
   krecePercentage: number;
   chasePercentage: number;
-  bcvRate: number;
+  /** Modo de precio: NACIONAL = USD web (inflado + redondeo al entero), INTERNACIONAL = USD POS */
+  priceMode: PriceListPriceMode;
 }
 
 export const PriceListModal: React.FC<PriceListModalProps> = ({
   open,
   onClose,
   onGenerate,
-  initialBcvRate,
 }) => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
-  const [loadingBcv, setLoadingBcv] = useState(false);
   
   // Estados del formulario
   const [category, setCategory] = useState<string>('all');
@@ -43,43 +41,7 @@ export const PriceListModal: React.FC<PriceListModalProps> = ({
   const [onlyWithStock, setOnlyWithStock] = useState(false);
   const [krecePercentage, setKrecePercentage] = useState<string>('0');
   const [chasePercentage, setChasePercentage] = useState<string>('0');
-  const [bcvRate, setBcvRate] = useState<string>('0');
-
-  // Cargar tasa BCV: prioridad a initialBcvRate (Gestión Web), sino getBcvRate()
-  useEffect(() => {
-    if (open) {
-      if (initialBcvRate != null && initialBcvRate > 0) {
-        setBcvRate(initialBcvRate.toFixed(4));
-      } else {
-        loadBcvRate();
-      }
-    }
-  }, [open, initialBcvRate]);
-
-  const loadBcvRate = async () => {
-    setLoadingBcv(true);
-    try {
-      const rate = await getBcvRate();
-      if (rate !== null) {
-        setBcvRate(rate.toFixed(4));
-      } else {
-        toast({
-          title: "Advertencia",
-          description: "No se pudo obtener la tasa BCV automáticamente. Por favor, ingrésala manualmente.",
-          variant: "default",
-        });
-      }
-    } catch (error) {
-      console.error('Error loading BCV rate:', error);
-      toast({
-        title: "Error",
-        description: "No se pudo cargar la tasa BCV. Por favor, ingrésala manualmente.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoadingBcv(false);
-    }
-  };
+  const [priceMode, setPriceMode] = useState<PriceListPriceMode>('NACIONAL');
 
   const handleGenerate = () => {
     // Validaciones
@@ -92,9 +54,17 @@ export const PriceListModal: React.FC<PriceListModalProps> = ({
       return;
     }
 
+    if (!priceMode || (priceMode !== 'NACIONAL' && priceMode !== 'INTERNACIONAL')) {
+      toast({
+        title: "Error de validación",
+        description: "Debes seleccionar el tipo de precio para la lista (USD Nacional o USD Internacional)",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const krece = parseFloat(krecePercentage);
     const chase = parseFloat(chasePercentage);
-    const bcv = parseFloat(bcvRate);
 
     if (isNaN(krece) || krece < 0 || krece > 100) {
       toast({
@@ -114,22 +84,13 @@ export const PriceListModal: React.FC<PriceListModalProps> = ({
       return;
     }
 
-    if (isNaN(bcv) || bcv <= 0) {
-      toast({
-        title: "Error de validación",
-        description: "La tasa BCV debe ser un número mayor a 0",
-        variant: "destructive",
-      });
-      return;
-    }
-
     onGenerate({
       category,
       onlyVisible,
       onlyWithStock,
       krecePercentage: krece,
       chasePercentage: chase,
-      bcvRate: bcv,
+      priceMode,
     });
   };
 
@@ -140,7 +101,7 @@ export const PriceListModal: React.FC<PriceListModalProps> = ({
     setOnlyWithStock(false);
     setKrecePercentage('0');
     setChasePercentage('0');
-    setBcvRate('0');
+    setPriceMode('NACIONAL');
     onClose();
   };
 
@@ -229,6 +190,41 @@ export const PriceListModal: React.FC<PriceListModalProps> = ({
             </div>
           </div>
 
+          {/* Modo de precio: obligatorio para imprimir (siempre en USD) */}
+          <div className="space-y-2 p-4 bg-white/10 backdrop-blur-sm rounded-lg border border-emerald-500/20">
+            <Label htmlFor="priceMode" className="text-white font-medium text-sm">
+              Precio en la lista (siempre en USD) *
+            </Label>
+            <Select
+              value={priceMode}
+              onValueChange={(v) => setPriceMode(v as PriceListPriceMode)}
+            >
+              <SelectTrigger
+                id="priceMode"
+                className="glass-input bg-white/10 border-white/30 text-white hover:bg-white/15 focus:ring-2 focus:ring-emerald-500/50"
+              >
+                <SelectValue placeholder="Selecciona el tipo de precio para la lista" />
+              </SelectTrigger>
+              <SelectContent className="glass-panel border-emerald-500/30 bg-[rgba(9,9,9,0.95)]">
+                <SelectItem value="NACIONAL" className="text-white hover:bg-emerald-500/20 focus:bg-emerald-500/30 cursor-pointer">
+                  <span className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-amber-400 shrink-0" />
+                    USD Nacional (precio web, inflado + redondeo al entero)
+                  </span>
+                </SelectItem>
+                <SelectItem value="INTERNACIONAL" className="text-white hover:bg-emerald-500/20 focus:bg-emerald-500/30 cursor-pointer">
+                  <span className="flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-emerald-400 shrink-0" />
+                    USD Internacional (precio POS)
+                  </span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-white/70">
+              Debes elegir un tipo de precio. La lista se imprime solo en dólares. Nacional = precio ajustado para web; Internacional = mismo precio que ve el cajero en el POS.
+            </p>
+          </div>
+
           {/* Porcentajes de Inicial */}
           <div className="space-y-4 p-4 bg-white/10 backdrop-blur-sm rounded-lg border border-emerald-500/20">
             <Label className="text-white font-medium text-sm">Porcentajes de Inicial</Label>
@@ -275,43 +271,6 @@ export const PriceListModal: React.FC<PriceListModalProps> = ({
               </p>
             </div>
           </div>
-
-          {/* Tasa BCV */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="bcvRate" className="text-white font-medium text-sm">
-                Tasa BCV *
-              </Label>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={loadBcvRate}
-                disabled={loadingBcv}
-                className="h-8 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/20 hover:border-emerald-500/70"
-              >
-                {loadingBcv ? (
-                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-3 h-3 mr-1" />
-                )}
-                Actualizar
-              </Button>
-            </div>
-            <Input
-              id="bcvRate"
-              type="number"
-              step="0.0001"
-              min="0"
-              value={bcvRate}
-              onChange={(e) => setBcvRate(e.target.value)}
-              className="glass-input bg-white/10 border-white/30 text-white placeholder:text-white/50 focus:ring-2 focus:ring-emerald-500/50"
-              placeholder="0.0000"
-            />
-            <p className="text-xs text-white/70">
-              BCV (Público) para columna Bs. Pre-llenado desde Gestión Web si está configurado. Editable.
-            </p>
-          </div>
         </div>
 
         <DialogFooter className="gap-2">
@@ -324,7 +283,7 @@ export const PriceListModal: React.FC<PriceListModalProps> = ({
           </Button>
           <Button
             onClick={handleGenerate}
-            disabled={loading || loadingBcv}
+            disabled={loading}
             className="bg-emerald-600 text-white hover:bg-emerald-700 border-emerald-500/50 shadow-lg shadow-emerald-500/20"
           >
             {loading ? (

@@ -213,32 +213,53 @@ export const GestionWebPage: React.FC = () => {
     }
   };
 
+  /** Redondeo al entero más cercano (Base 1), igual que get_public_web_products_catalog: decimal >= 0.50 sube, < 0.50 baja */
+  const roundToInteger = (value: number): number => {
+    if (!Number.isFinite(value)) return value;
+    return Math.round(value);
+  };
+
   /** Calcula el precio final web en USD según valores actuales de los inputs (previsualización en tiempo real) */
   const computeWebPriceFinal = (salePriceUsd: number): number => {
+    let finalPrice = salePriceUsd;
+
     if (webAdjustmentMethod === 'RATE') {
       const adj = webAdjustmentRate.trim() ? parseFloat(webAdjustmentRate) : null;
       const bcv = manualBcvRate.trim() ? parseFloat(manualBcvRate) : null;
-      if (!adj || !bcv || bcv <= 0 || adj <= 0) return salePriceUsd;
-      return salePriceUsd * (adj / bcv);
+      if (adj && bcv && bcv > 0 && adj > 0) {
+        finalPrice = salePriceUsd * (adj / bcv);
+      }
+    } else {
+      const pct = parseFloat(webTaxPercentage) || 0;
+      if (pct > 0) {
+        finalPrice = salePriceUsd * (1 + pct / 100);
+      }
     }
-    const pct = parseFloat(webTaxPercentage) || 0;
-    if (pct <= 0) return salePriceUsd;
-    return salePriceUsd * (1 + pct / 100);
+
+    return roundToInteger(finalPrice);
   };
 
   /** Calcula el precio final web según lo GUARDADO en settings (para la tabla, no cambia al cambiar de tab) */
   const computeWebPriceFinalFromSettings = (salePriceUsd: number): number => {
-    if (!settings) return salePriceUsd;
+    if (!settings) return roundToInteger(salePriceUsd);
+
     const method = settings.web_adjustment_method ?? 'RATE';
+    let finalPrice = salePriceUsd;
+
     if (method === 'RATE') {
       const adj = settings.web_adjustment_rate;
       const bcv = settings.manual_bcv_rate;
-      if (!adj || !bcv || bcv <= 0 || adj <= 0) return salePriceUsd;
-      return salePriceUsd * (adj / bcv);
+      if (adj && bcv && bcv > 0 && adj > 0) {
+        finalPrice = salePriceUsd * (adj / bcv);
+      }
+    } else {
+      const pct = settings.web_tax_percentage ?? 0;
+      if (pct > 0) {
+        finalPrice = salePriceUsd * (1 + pct / 100);
+      }
     }
-    const pct = settings.web_tax_percentage ?? 0;
-    if (pct <= 0) return salePriceUsd;
-    return salePriceUsd * (1 + pct / 100);
+
+    return roundToInteger(finalPrice);
   };
 
   /** Hay cambios sin guardar respecto a lo que está en settings */
@@ -1317,7 +1338,7 @@ export const GestionWebPage: React.FC = () => {
                     const finalUsd = computeWebPriceFinal(100);
                     return (
                       <span className="text-emerald-400/90">
-                        $100 POS ({pts != null ? `${pts >= 0 ? '+' : ''}${pts} pts` : 'XX pts'}) → ${finalUsd.toFixed(2)} WEB
+                        $100 POS ({pts != null ? `${pts >= 0 ? '+' : ''}${pts} pts` : 'XX pts'}) → ${finalUsd.toFixed(0)} WEB
                         {bcv != null && bcv > 0 && (
                           <> (Bs. {(finalUsd * bcv).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</>
                         )}
@@ -1331,7 +1352,7 @@ export const GestionWebPage: React.FC = () => {
                     const bcv = manualBcvRate.trim() ? parseFloat(manualBcvRate) : null;
                     return (
                       <span className="text-emerald-400/90">
-                        $100 POS ({pct > 0 ? `+${pct.toFixed(1)}` : 'XX'}%) → ${finalUsd.toFixed(2)} WEB
+                        $100 POS ({pct > 0 ? `+${pct.toFixed(1)}` : 'XX'}%) → ${finalUsd.toFixed(0)} WEB
                         {bcv != null && bcv > 0 && (
                           <> (Bs. {(finalUsd * bcv).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</>
                         )}
@@ -1583,7 +1604,7 @@ export const GestionWebPage: React.FC = () => {
                         </div>
                       </TableCell>
 
-                      {/* USD (WEB) - Según lo guardado (no cambia al cambiar de tab) */}
+                      {/* USD (WEB) - Precio público (inflado + redondeo al entero, coherente con web y PDF) */}
                       <TableCell>
                         <div className="text-right">
                           <span className={cn(
@@ -1592,7 +1613,7 @@ export const GestionWebPage: React.FC = () => {
                               ? "text-amber-400"
                               : "text-white/70"
                           )}>
-                            ${computeWebPriceFinalFromSettings(product.sale_price_usd).toFixed(2)}
+                            ${computeWebPriceFinalFromSettings(product.sale_price_usd).toFixed(0)}
                           </span>
                         </div>
                       </TableCell>
@@ -2010,7 +2031,6 @@ export const GestionWebPage: React.FC = () => {
         open={showPriceListModal}
         onClose={() => setShowPriceListModal(false)}
         onGenerate={handleGeneratePriceList}
-        initialBcvRate={settings?.manual_bcv_rate ?? undefined}
       />
     </div>
   );

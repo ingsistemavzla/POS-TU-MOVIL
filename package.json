@@ -15,6 +15,7 @@
     "test:coverage": "vitest run --coverage",
     "migrate:transfer": "node scripts/apply-transfer-inventory-migration.js",
     "migrate:users": "node scripts/apply-user-management-migrations.js",
+    "reset:web-images": "node scripts/reset-web-product-images.js",
     "supabase:push": "npx supabase db push"
   },
   "dependencies": {
