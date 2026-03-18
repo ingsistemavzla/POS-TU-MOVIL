@@ -290,6 +290,8 @@ export default function POS() {
   const [finalBcvRate, setFinalBcvRate] = useState(41.73); // ✅ Tasa final a usar (puede ser editada)
   const [isEditingBcvRate, setIsEditingBcvRate] = useState(false);
   const [bcvRateInput, setBcvRateInput] = useState("41.73");
+  const lastBcvRefreshAtRef = useRef<number | null>(null);
+  const bcvRefreshInFlightRef = useRef(false);
   const [productView, setProductView] = useState<'cards' | 'list'>('cards');
   const [showSaleModal, setShowSaleModal] = useState(false);
   const [completedSaleData, setCompletedSaleData] = useState<any>(null);
@@ -343,6 +345,44 @@ export default function POS() {
       // Lazy load products: only fetch on explicit search or scan
       fetchBcvRate();
     }
+  }, [userProfile?.company_id]);
+
+  // Auto-refresco de BCV:
+  // - Cada 30 minutos.
+  // - Al volver a enfocar la pestaña/ventana si la tasa está vieja.
+  useEffect(() => {
+    if (!userProfile?.company_id) return;
+
+    const THIRTY_MIN_MS = 30 * 60 * 1000;
+    const MAX_STALE_MS = 2 * 60 * 60 * 1000; // 2 horas
+
+    const maybeRefresh = () => {
+      const last = lastBcvRefreshAtRef.current;
+      const now = Date.now();
+      if (last && now - last < MAX_STALE_MS) return;
+      fetchBcvRate();
+    };
+
+    const intervalId = window.setInterval(() => {
+      fetchBcvRate();
+    }, THIRTY_MIN_MS);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') maybeRefresh();
+    };
+    const onFocus = () => maybeRefresh();
+    const onOnline = () => maybeRefresh();
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('online', onOnline);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('online', onOnline);
+    };
   }, [userProfile?.company_id]);
 
   // Recargar stock cuando cambie la tienda seleccionada
@@ -462,6 +502,8 @@ export default function POS() {
   };
 
   const fetchBcvRate = async () => {
+    if (bcvRefreshInFlightRef.current) return;
+    bcvRefreshInFlightRef.current = true;
     try {
       const rate = await getBcvRate();
       
@@ -470,11 +512,14 @@ export default function POS() {
         setBcvRate(rate);
         setFinalBcvRate(rate); // ✅ Sincronizar tasa final con la de API
         setBcvRateInput(rate.toString());
+        lastBcvRefreshAtRef.current = Date.now();
       } else {
         console.error('Could not fetch BCV rate from API or database');
       }
     } catch (err) {
       console.error('Fetch BCV rate error:', err);
+    } finally {
+      bcvRefreshInFlightRef.current = false;
     }
   };
   

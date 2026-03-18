@@ -15,7 +15,13 @@ interface DolarApiResponse {
  */
 export const fetchBcvRateFromApi = async (): Promise<number | null> => {
   try {
-    const response = await fetch('https://ve.dolarapi.com/v1/dolares');
+    // Evitar respuestas cacheadas (algunos proxies/navegadores cachean GET).
+    // `cache: 'no-store'` + cache-buster garantiza lectura fresca.
+    const url = `https://ve.dolarapi.com/v1/dolares?t=${Date.now()}`;
+    const response = await fetch(url, {
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    });
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
