@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "@/components/layout/UserMenu";
+import { GlobalBcvBadge } from "@/components/layout/GlobalBcvBadge";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { NegativeStockAlert } from "@/components/inventory/NegativeStockAlert";
@@ -384,6 +385,7 @@ export default function MainLayout() {
                 <img src="/logo.png" alt="Logo" className="w-6 h-6 xs:w-8 xs:h-8 object-contain max-w-none" style={{ objectFit: 'contain' }} />
                 <img src="/logotipo.png" alt="Logotipo" className="h-4 xs:h-6 object-contain" />
               </Link>
+              <GlobalBcvBadge />
             </div>
             
             <div className="flex items-center space-x-2 xs:space-x-4">

@@ -52,9 +52,9 @@ import { SaleCompletionModal } from "@/components/pos/SaleCompletionModal";
 import { IMEIModal } from "@/components/pos/IMEIModal";
 import { Label } from "@/components/ui/label";
 import { printInvoice } from "@/utils/printInvoice";
-import { getBcvRate } from "@/utils/bcvRate";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useToast } from "@/hooks/use-toast";
+import { useBcv } from "@/contexts/BcvContext";
 // import { CashRegisterWidget } from "@/components/cash-register/CashRegisterWidget";
 
 interface CartItem {
@@ -290,8 +290,6 @@ export default function POS() {
   const [finalBcvRate, setFinalBcvRate] = useState(41.73); // ✅ Tasa final a usar (puede ser editada)
   const [isEditingBcvRate, setIsEditingBcvRate] = useState(false);
   const [bcvRateInput, setBcvRateInput] = useState("41.73");
-  const lastBcvRefreshAtRef = useRef<number | null>(null);
-  const bcvRefreshInFlightRef = useRef(false);
   const [productView, setProductView] = useState<'cards' | 'list'>('cards');
   const [showSaleModal, setShowSaleModal] = useState(false);
   const [completedSaleData, setCompletedSaleData] = useState<any>(null);
@@ -322,6 +320,7 @@ export default function POS() {
   
   // Toast para notificaciones
   const { toast } = useToast();
+  const { rate: globalBcvRate, canManageBcv, setManualRate } = useBcv();
 
   // Efecto para validar el flujo del Wizard (SIN MODALES - PANELES INLINE)
   useEffect(() => {
@@ -341,49 +340,13 @@ export default function POS() {
   // El backend genera los números de forma atómica usando una SEQUENCE de PostgreSQL
 
   useEffect(() => {
-    if (userProfile?.company_id) {
-      // Lazy load products: only fetch on explicit search or scan
-      fetchBcvRate();
+    if (!Number.isFinite(globalBcvRate) || globalBcvRate <= 0) return;
+    setBcvRate(globalBcvRate);
+    if (cart.length === 0 && !isProcessingSale) {
+      setFinalBcvRate(globalBcvRate);
+      setBcvRateInput(globalBcvRate.toFixed(2));
     }
-  }, [userProfile?.company_id]);
-
-  // Auto-refresco de BCV:
-  // - Cada 30 minutos.
-  // - Al volver a enfocar la pestaña/ventana si la tasa está vieja.
-  useEffect(() => {
-    if (!userProfile?.company_id) return;
-
-    const THIRTY_MIN_MS = 30 * 60 * 1000;
-    const MAX_STALE_MS = 2 * 60 * 60 * 1000; // 2 horas
-
-    const maybeRefresh = () => {
-      const last = lastBcvRefreshAtRef.current;
-      const now = Date.now();
-      if (last && now - last < MAX_STALE_MS) return;
-      fetchBcvRate();
-    };
-
-    const intervalId = window.setInterval(() => {
-      fetchBcvRate();
-    }, THIRTY_MIN_MS);
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') maybeRefresh();
-    };
-    const onFocus = () => maybeRefresh();
-    const onOnline = () => maybeRefresh();
-
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    window.addEventListener('focus', onFocus);
-    window.addEventListener('online', onOnline);
-
-    return () => {
-      window.clearInterval(intervalId);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      window.removeEventListener('focus', onFocus);
-      window.removeEventListener('online', onOnline);
-    };
-  }, [userProfile?.company_id]);
+  }, [globalBcvRate, cart.length, isProcessingSale]);
 
   // Recargar stock cuando cambie la tienda seleccionada
   useEffect(() => {
@@ -501,25 +464,13 @@ export default function POS() {
     }
   };
 
-  const fetchBcvRate = async () => {
-    if (bcvRefreshInFlightRef.current) return;
-    bcvRefreshInFlightRef.current = true;
-    try {
-      const rate = await getBcvRate();
-      
-      if (rate !== null) {
-        console.log('BCV rate loaded:', rate);
-        setBcvRate(rate);
-        setFinalBcvRate(rate); // ✅ Sincronizar tasa final con la de API
-        setBcvRateInput(rate.toString());
-        lastBcvRefreshAtRef.current = Date.now();
-      } else {
-        console.error('Could not fetch BCV rate from API or database');
-      }
-    } catch (err) {
-      console.error('Fetch BCV rate error:', err);
-    } finally {
-      bcvRefreshInFlightRef.current = false;
+  const commitManualBcvRate = async (nextRate: number) => {
+    if (!Number.isFinite(nextRate) || nextRate <= 0) return;
+    setBcvRate(nextRate);
+    setFinalBcvRate(nextRate);
+    setBcvRateInput(nextRate.toFixed(2));
+    if (canManageBcv) {
+      await setManualRate(nextRate);
     }
   };
   
@@ -3651,8 +3602,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                       if (isNaN(numValue) || numValue <= 0) {
                         setBcvRateInput(finalBcvRate.toFixed(2));
                       } else {
-                        setBcvRateInput(numValue.toFixed(2));
-                        setFinalBcvRate(numValue);
+                        void commitManualBcvRate(numValue);
                       }
                     }}
                     className="w-28 h-9 text-base font-bold !bg-[rgba(17,24,39,0.8)] !border-emerald-500/50 focus:!border-emerald-400 focus:!ring-emerald-400/50 !text-emerald-300 placeholder:!text-emerald-300/50"
@@ -3874,8 +3824,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                       if (isNaN(numValue) || numValue <= 0) {
                         setBcvRateInput(finalBcvRate.toFixed(2));
                       } else {
-                        setBcvRateInput(numValue.toFixed(2));
-                        setFinalBcvRate(numValue);
+                        void commitManualBcvRate(numValue);
                       }
                     }}
                     className="w-28 h-9 text-base font-bold !bg-[rgba(17,24,39,0.8)] !border-emerald-500/50 focus:!border-emerald-400 focus:!ring-emerald-400/50 !text-emerald-300 placeholder:!text-emerald-300/50"

@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { StoreProvider } from "@/contexts/StoreContext";
+import { BcvProvider } from "@/contexts/BcvContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { PasswordSetupGuard } from "@/components/auth/PasswordSetupGuard";
 import { ShoppingCart } from "lucide-react";
@@ -437,13 +438,15 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
       <StoreProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <AppRoutes />
-          </BrowserRouter>
-        </TooltipProvider>
+        <BcvProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <AppRoutes />
+            </BrowserRouter>
+          </TooltipProvider>
+        </BcvProvider>
       </StoreProvider>
     </AuthProvider>
   </QueryClientProvider>
