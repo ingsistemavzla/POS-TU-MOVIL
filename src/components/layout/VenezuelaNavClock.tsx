@@ -24,14 +24,14 @@ export function VenezuelaNavClock() {
 
   return (
     <div
-      className="flex items-center gap-1 xs:gap-1.5 px-1.5 xs:px-2.5 py-0.5 xs:py-1 rounded-md bg-emerald-950/40 border border-emerald-500/35 text-dark-bg shrink-0"
+      className="flex items-center gap-1 xs:gap-1.5 px-1.5 xs:px-2.5 py-0.5 xs:py-1 rounded-md bg-emerald-500/15 border border-emerald-400/45 shrink-0 shadow-sm shadow-emerald-900/20"
       title="Hora Venezuela (America/Caracas). Nueva Esparta — Margarita. Útil para ventanas de facturación; el instante es el del reloj de tu equipo convertido a esta zona."
     >
-      <Clock className="w-3 h-3 xs:w-3.5 xs:h-3.5 text-emerald-600 flex-shrink-0" aria-hidden />
-      <span className="tabular-nums text-[10px] xs:text-xs font-semibold tracking-tight text-dark-bg">
+      <Clock className="w-3 h-3 xs:w-3.5 xs:h-3.5 text-emerald-300 flex-shrink-0 brightness-110" aria-hidden />
+      <span className="tabular-nums text-[10px] xs:text-xs font-semibold tracking-tight text-white">
         {timeStr}
       </span>
-      <span className="hidden sm:inline text-[10px] font-medium text-dark-bg/80 border-l border-emerald-500/40 pl-1.5 ml-0.5">
+      <span className="hidden sm:inline text-[10px] font-medium text-emerald-100/95 border-l border-emerald-400/55 pl-1.5 ml-0.5">
         Margarita
       </span>
     </div>
