@@ -1402,10 +1402,7 @@ export default function SalesPage() {
 
   return (
     <div className="space-y-6">
-      {/* Filtro global de sucursal (barra verde) */}
-      <StoreFilterBar pageTitle="Historial de Ventas" />
-
-      {/* Header */}
+      {/* Header: título y acciones primero; filtro de sucursal va debajo (antes del historial) */}
       <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
         <div className="space-y-2">
           <h1 className="text-2xl font-bold flex items-center sm:text-3xl">
@@ -1458,6 +1455,9 @@ export default function SalesPage() {
           ) : null}
         </div>
       </div>
+
+      {/* Filtro global de sucursal: debajo de Gestión de Ventas, encima del card Historial */}
+      <StoreFilterBar pageTitle="Historial de Ventas" />
 
       {/* Sales Table */}
       <Card className="glass-panel-dense">

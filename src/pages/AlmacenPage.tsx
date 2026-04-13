@@ -39,9 +39,9 @@ import { ProductForm } from '../components/pos/ProductForm';
 import { useToast } from '@/hooks/use-toast';
 import { PRODUCT_CATEGORIES, getCategoryLabel } from '@/constants/categories';
 import { sanitizeInventoryData } from '@/utils/inventoryValidation';
-import { InventoryFinancialHeader } from '@/components/inventory/InventoryFinancialHeader';
 import { BranchStockMatrix } from '@/components/inventory/BranchStockMatrix';
 import { InventoryDashboardHeader } from '@/components/inventory/InventoryDashboardHeader';
+import { StoreFilterBar } from '@/components/inventory/StoreFilterBar';
 
 interface Product {
   id: string;
@@ -81,7 +81,6 @@ export const AlmacenPage: React.FC = () => {
   // ✅ OPTIMIZACIÓN: Debounce en búsqueda (espera 300ms después de que usuario deje de escribir)
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [storeFilter, setStoreFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('name');
   const [sortOrder, setSortOrder] = useState<string>('asc');
   const [lowStockOnly, setLowStockOnly] = useState<boolean>(false);
@@ -575,15 +574,10 @@ export const AlmacenPage: React.FC = () => {
           (product.barcode && product.barcode.toLowerCase().includes(debouncedSearchTerm.toLowerCase()));
         
         const matchesCategory = categoryFilter === 'all' || product.category === categoryFilter;
-        
-        // Filtro por tienda (basado en inventario)
-        const matchesStore = storeFilter === 'all' || 
-          (storeInventories[product.id]?.some(inv => inv.store_id === storeFilter && inv.qty > 0));
-        
-        // Filtro de stock bajo
+
         const matchesLowStock = !lowStockOnly || (product.total_stock || 0) < 5;
-        
-        return matchesSearch && matchesCategory && matchesStore && matchesLowStock;
+
+        return matchesSearch && matchesCategory && matchesLowStock;
       })
       .sort((a, b) => {
       let comparison = 0;
@@ -607,7 +601,7 @@ export const AlmacenPage: React.FC = () => {
       
       return sortOrder === 'asc' ? comparison : -comparison;
     });
-  }, [products, debouncedSearchTerm, categoryFilter, storeFilter, lowStockOnly, sortBy, sortOrder, storeInventories]);
+  }, [products, debouncedSearchTerm, categoryFilter, lowStockOnly, sortBy, sortOrder, storeInventories]);
 
   // Calcular valor total
   const getTotalValue = (product: Product) => {
@@ -643,6 +637,8 @@ export const AlmacenPage: React.FC = () => {
           Nuevo Producto
         </Button>
       </div>
+
+      <StoreFilterBar pageTitle="Almacén" />
 
       {/* Header del Dashboard de Inventario */}
       <InventoryDashboardHeader

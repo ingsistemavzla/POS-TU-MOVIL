@@ -74,7 +74,7 @@ interface StoreInventory {
 
 export const ArticulosPage: React.FC = () => {
   const { userProfile } = useAuth();
-  const { selectedStoreId, availableStores } = useStore();
+  const { availableStores } = useStore();
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -170,9 +170,6 @@ export const ArticulosPage: React.FC = () => {
         return;
       }
 
-      // GERENTE: Solo su tienda asignada
-      const isManager = userProfile.role === 'manager';
-      
       // Usar availableStores del StoreContext en lugar de cargar localmente
       const storesData = availableStores;
 
@@ -271,68 +268,34 @@ export const ArticulosPage: React.FC = () => {
         });
       }
 
-      // 🔥 RESTAURACIÓN: Determinar la sucursal activa para el filtro
-      const activeStoreId = selectedStoreId && selectedStoreId !== 'all' 
-        ? selectedStoreId 
-        : (isManager && userProfile.assigned_store_id 
-          ? userProfile.assigned_store_id 
-          : null);
-
-      // 🔥 RESTAURACIÓN: Si hay filtro de sucursal, solo mostrar productos con stock en esa sucursal
-      // Si no hay filtro, asegurar que todos los productos tengan inventario para todas las tiendas
-      if (activeStoreId) {
-        // FILTRADO POR SUCURSAL: Solo productos con stock en la sucursal seleccionada
-        productsData?.forEach((product: Product) => {
-          if (!inventoriesByProduct[product.id]) {
-            inventoriesByProduct[product.id] = [];
-          }
-          // Solo agregar la sucursal seleccionada
+      // Filtro global de sucursal (StoreFilterBar) solo alimenta KPIs vía useInventoryFinancialSummary.
+      // Aquí siempre mostramos todos los productos con desglose por cada sucursal visible (RLS).
+      productsData?.forEach((product: Product) => {
+        if (!inventoriesByProduct[product.id]) {
+          inventoriesByProduct[product.id] = [];
+        }
+        storesData?.forEach((store: Store) => {
           const exists = inventoriesByProduct[product.id].some(
-            inv => inv.store_id === activeStoreId
+            inv => inv.store_id === store.id
           );
           if (!exists) {
-            const store = storesData?.find((s: Store) => s.id === activeStoreId);
             inventoriesByProduct[product.id].push({
-              store_id: activeStoreId,
-              store_name: store?.name || 'Tienda Desconocida',
+              store_id: store.id,
+              store_name: store.name,
               qty: 0,
             });
           }
         });
-      } else {
-        // SIN FILTRO: Asegurar que todos los productos tengan inventario para todas las tiendas
-        productsData?.forEach((product: Product) => {
-          if (!inventoriesByProduct[product.id]) {
-            inventoriesByProduct[product.id] = [];
-          }
-          storesData?.forEach((store: Store) => {
-            const exists = inventoriesByProduct[product.id].some(
-              inv => inv.store_id === store.id
-            );
-            if (!exists) {
-              inventoriesByProduct[product.id].push({
-                store_id: store.id,
-                store_name: store.name,
-                qty: 0,
-              });
-            }
-          });
-          inventoriesByProduct[product.id].sort((a, b) => 
-            a.store_name.localeCompare(b.store_name)
-          );
-        });
-      }
+        inventoriesByProduct[product.id].sort((a, b) =>
+          a.store_name.localeCompare(b.store_name)
+        );
+      });
 
-      // ✅ CORRECCIÓN: Calcular total_stock SIEMPRE sumando todas las tiendas (consistencia con Almacén)
-      // El filtro de tienda solo afecta qué productos se muestran, pero el total_stock siempre es la suma global
+      // total_stock: suma global por tienda (igual que Almacén)
       const productsWithStock = (productsData || []).map((product: any) => {
         const stockByStore = stockByProductStore.get(product.id) || {};
-        
-        // ✅ SIEMPRE sumar todas las tiendas para mantener consistencia con panel Almacén
-        // El filtro de tienda (activeStoreId) solo afecta la visualización de detalles, no el total
         const totalStock = Object.values(stockByStore).reduce((sum, qty) => sum + (qty || 0), 0);
-        
-        // 🔍 DEBUG: Log para verificar cálculo de stock
+
         if (product.sku === 'R5CY71TZ3JM' || product.name.toLowerCase().includes('samsung galaxy a26')) {
           console.log(`[ArticulosPage] Producto ${product.sku} (${product.name}):`, {
             stockByStore,
@@ -341,25 +304,12 @@ export const ArticulosPage: React.FC = () => {
             inventories: inventoriesByProduct[product.id]?.map(inv => ({ store: inv.store_name, qty: inv.qty }))
           });
         }
-        
+
         return {
           ...product,
           total_stock: totalStock,
           stockByStore: stockByStore,
         };
-      }).filter((product: any) => {
-        // 🔥 RESTAURACIÓN: Si hay filtro de sucursal, solo mostrar productos con stock > 0 en esa sucursal
-        if (activeStoreId) {
-          // 🛡️ EXCEPCIÓN QUIRÚRGICA: Servicio Técnico siempre visible (incluso con stock 0)
-          // Esto permite que servicios técnicos aparezcan aunque no tengan inventario físico
-          if (product.category === 'technical_service') {
-            return true; // Siempre mostrar Servicio Técnico
-          }
-          // Para otras categorías, mantener lógica de stock físico
-          return product.total_stock > 0;
-        }
-        // Sin filtro, mostrar todos los productos
-        return true;
       });
 
       console.log('[ArticulosPage] Productos procesados:', {
@@ -398,7 +348,7 @@ export const ArticulosPage: React.FC = () => {
       fetchData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userProfile?.company_id, selectedStoreId, categoryFilter]); // ✅ Agregado categoryFilter
+  }, [userProfile?.company_id, categoryFilter]);
 
   // ✅ OPTIMIZACIÓN: Limpiar cache expirado periódicamente
   useEffect(() => {
@@ -589,11 +539,7 @@ export const ArticulosPage: React.FC = () => {
         (product.barcode && product.barcode.toLowerCase().includes(debouncedSearchTerm.toLowerCase()));
       
       const matchesCategory = categoryFilter === 'all' || product.category === categoryFilter;
-      
-      // ✅ FILTRO DE SUCURSAL ELIMINADO: Ahora se hace a nivel SQL, no en JavaScript
-      // El filtro por tienda ya se aplicó en la consulta SQL, así que todos los productos
-      // que lleguen aquí ya están filtrados por la sucursal seleccionada
-      
+
       return matchesSearch && matchesCategory;
     });
   }, [products, debouncedSearchTerm, categoryFilter]);
@@ -738,22 +684,7 @@ export const ArticulosPage: React.FC = () => {
                         <span>Stock por Tienda:</span>
                       </div>
                       <div className="space-y-1">
-                        {inventories
-                          // 🔥 RESTAURACIÓN: Filtrar por sucursal seleccionada o tienda asignada
-                          .filter((inv) => {
-                            const isManager = userProfile?.role === 'manager';
-                            // Si hay filtro de sucursal activo, solo mostrar esa sucursal
-                            if (selectedStoreId && selectedStoreId !== 'all') {
-                              return inv.store_id === selectedStoreId;
-                            }
-                            // Si es manager, solo mostrar su tienda asignada
-                            if (isManager && userProfile?.assigned_store_id) {
-                              return inv.store_id === userProfile.assigned_store_id;
-                            }
-                            // Sin filtro: mostrar todas las sucursales
-                            return true;
-                          })
-                          .map((inv) => {
+                        {inventories.map((inv) => {
                           const transfer = transferring[product.id];
                           const isEditingOpen = editingPopover?.productId === product.id && editingPopover?.storeId === inv.store_id;
                           const isTransferOpen = transferPopover?.productId === product.id && transferPopover?.storeId === inv.store_id;
