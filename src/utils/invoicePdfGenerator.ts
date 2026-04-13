@@ -1,4 +1,5 @@
 import jsPDF from 'jspdf';
+import { formatVenezuelaDateAndTime } from '@/utils/venezuelaTime';
 
 interface InvoiceData {
   id: string;
@@ -172,11 +173,7 @@ export const generateInvoicePDF = (invoiceData: InvoiceData): void => {
   doc.text(invoiceNumber, rightColumn, yPosition);
   yPosition += 5;
   
-  const saleDate = new Date(invoiceData.created_at).toLocaleDateString('es-VE');
-  const saleTime = new Date(invoiceData.created_at).toLocaleTimeString('es-VE', { 
-    hour: '2-digit', 
-    minute: '2-digit' 
-  });
+  const { dateStr: saleDate, timeStr: saleTime } = formatVenezuelaDateAndTime(invoiceData.created_at);
   
   doc.text(`Fecha: ${saleDate}`, rightColumn, yPosition);
   yPosition += 5;

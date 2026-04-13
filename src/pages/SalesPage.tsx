@@ -79,6 +79,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { GenerateReportModal } from "@/components/reports/GenerateReportModal";
+import { formatVenezuelaDateTime } from "@/utils/venezuelaTime";
 
 export default function SalesPage() {
   const { toast } = useToast();
@@ -933,19 +934,7 @@ export default function SalesPage() {
     );
   };
 
-  const formatDate = (dateString: string) => {
-    // Convertir a fecha local y formatear correctamente
-    const date = new Date(dateString);
-    return date.toLocaleString('es-VE', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false, // Formato 24 horas
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone // Usar zona horaria local
-    });
-  };
+  const formatDate = (dateString: string) => formatVenezuelaDateTime(dateString);
 
   const handleViewSale = (saleId: string) => {
     setSelectedSaleId(saleId);
@@ -1402,7 +1391,7 @@ export default function SalesPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header: título y acciones primero; filtro de sucursal va debajo (antes del historial) */}
+      {/* Header: título y acciones; el filtro de sucursal va dentro del card del historial */}
       <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
         <div className="space-y-2">
           <h1 className="text-2xl font-bold flex items-center sm:text-3xl">
@@ -1456,9 +1445,6 @@ export default function SalesPage() {
         </div>
       </div>
 
-      {/* Filtro global de sucursal: debajo de Gestión de Ventas, encima del card Historial */}
-      <StoreFilterBar pageTitle="Historial de Ventas" />
-
       {/* Sales Table */}
       <Card className="glass-panel-dense">
         <CardHeader>
@@ -1506,7 +1492,10 @@ export default function SalesPage() {
                 </Select>
               </div>
             </div>
-            {/* Segunda fila: Filtros rápidos (sin filtro local de sucursal, ya manejado por StoreFilterBar) */}
+
+            <StoreFilterBar pageTitle="Historial de Ventas" />
+
+            {/* Filtros rápidos: categoría, rango y fechas */}
             <div className="flex flex-wrap items-center gap-3 pt-2 border-t">
               {/* Filtro por Categoría */}
               <div className="flex items-center space-x-2">

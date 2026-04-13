@@ -30,6 +30,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "@/components/layout/UserMenu";
 import { GlobalBcvBadge } from "@/components/layout/GlobalBcvBadge";
+import { VenezuelaNavClock } from "@/components/layout/VenezuelaNavClock";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { NegativeStockAlert } from "@/components/inventory/NegativeStockAlert";
@@ -373,7 +374,7 @@ export default function MainLayout() {
         )}
       >
         {/* Top Bar - Mobile First */}
-        <header className="h-14 xs:h-16 border-b border-green-500/30" style={{
+        <header className="sticky top-0 z-30 h-14 xs:h-16 border-b border-green-500/30" style={{
           background: 'rgba(3, 9, 6, 0.95)',
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
@@ -388,7 +389,8 @@ export default function MainLayout() {
               <GlobalBcvBadge />
             </div>
             
-            <div className="flex items-center space-x-2 xs:space-x-4">
+            <div className="flex items-center space-x-2 xs:space-x-4 shrink-0">
+              <VenezuelaNavClock />
               {/* Store Indicator - Mobile First */}
               <div className="flex items-center space-x-1 xs:space-x-2 px-2 xs:px-3 py-1 rounded-md bg-white/20">
                 <Store className="w-3 h-3 xs:w-4 xs:h-4 text-dark-bg flex-shrink-0" />
