@@ -154,7 +154,8 @@ export function useSalesData(): UseSalesDataReturn {
           p_company_id: null, // La RPC lo deduce del usuario autenticado
           p_store_id: filters.storeId || null,
           p_date_from: filters.dateFrom || null,
-          p_date_to: filters.dateTo || null
+          p_date_to: filters.dateTo || null,
+          p_category: filters.category || null,
         });
         metadata = result.data;
         metadataError = result.error;
@@ -190,13 +191,13 @@ export function useSalesData(): UseSalesDataReturn {
       }
 
       // ✅ CORRECCIÓN: Removido p_category porque la función get_sales_history_v2 NO lo acepta
-      // El filtro de categoría se aplicará en el frontend después de obtener los datos
+      // ✅ ACTUALIZADO: p_category ahora se filtra en backend para mantener consistencia con metadatos.
       const { data: rpcData, error: rpcError } = await (supabase as any).rpc('get_sales_history_v2', {
         p_company_id: null, // La RPC lo deduce del usuario autenticado
         p_store_id: filters.storeId || null,
         p_date_from: filters.dateFrom || null,
         p_date_to: filters.dateTo || null,
-        // ❌ REMOVIDO: p_category: filters.category || null, // Este parámetro no existe en la función
+        p_category: filters.category || null,
         p_limit: pageSize,
         p_offset: offset
       });
@@ -437,59 +438,10 @@ export function useSalesData(): UseSalesDataReturn {
       // La RPC ya devuelve las ventas ordenadas por fecha descendente
       let sortedSales = transformedSales;
 
-      // ✅ FILTRO DE CATEGORÍA EN FRONTEND (ya que la RPC no lo soporta)
-      if (filters.category && filters.category !== 'all') {
-        sortedSales = sortedSales.filter(sale => {
-          // Verificar si algún item de la venta pertenece a la categoría filtrada
-          return sale.items?.some(item => item.category === filters.category);
-        });
-        
-        // ✅ CORRECCIÓN: Recalcular categoryStats solo desde ventas filtradas por categoría
-        categoryStats = {
-          phones: { units: 0, amount_usd: 0, amount_bs: 0 },
-          accessories: { units: 0, amount_usd: 0, amount_bs: 0 },
-          technical_service: { units: 0, amount_usd: 0, amount_bs: 0 },
-        };
-
-        sortedSales.forEach(sale => {
-          if (sale.items && Array.isArray(sale.items)) {
-            sale.items.forEach(item => {
-              const category = item.category || 'accessories';
-              if (category === 'phones') {
-                categoryStats.phones.units += item.qty || 0;
-                categoryStats.phones.amount_usd += item.subtotal || 0;
-              } else if (category === 'accessories') {
-                categoryStats.accessories.units += item.qty || 0;
-                categoryStats.accessories.amount_usd += item.subtotal || 0;
-              } else if (category === 'technical_service') {
-                categoryStats.technical_service.units += item.qty || 0;
-                categoryStats.technical_service.amount_usd += item.subtotal || 0;
-              }
-            });
-          }
-        });
-
-        // Calcular BS desde USD
-        categoryStats.phones.amount_bs = categoryStats.phones.amount_usd * 41.73;
-        categoryStats.accessories.amount_bs = categoryStats.accessories.amount_usd * 41.73;
-        categoryStats.technical_service.amount_bs = categoryStats.technical_service.amount_usd * 41.73;
-
-        // Recalcular totalCount y totalAmount desde ventas filtradas
-        totalCount = sortedSales.length;
-        serverTotalAmountUsd = sortedSales.reduce((sum, sale) => sum + (sale.total_usd || 0), 0);
-        averageAmount = totalCount > 0 ? serverTotalAmountUsd / totalCount : 0;
-        
-        console.log('✅ [FILTRO] Estadísticas recalculadas después de filtrar por categoría:', categoryStats);
-      }
-
       const response: SalesResponse = {
         sales: sortedSales, // Usar las ventas ordenadas (página actual)
-        totalCount: filters.category && filters.category !== 'all' 
-          ? sortedSales.length // Aproximación cuando hay filtro de categoría
-          : totalCount, // Total real del servidor cuando no hay filtro de categoría
-        totalPages: filters.category && filters.category !== 'all'
-          ? Math.ceil(sortedSales.length / pageSize)
-          : totalPages,
+        totalCount, // Total real del servidor (incluye filtro de categoría en backend)
+        totalPages,
         currentPage: page,
         totalAmount: serverTotalAmountUsd,
         averageAmount,
