@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useDebounce } from '@/hooks/useDebounce';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -42,6 +43,7 @@ import { sanitizeInventoryData } from '@/utils/inventoryValidation';
 import { BranchStockMatrix } from '@/components/inventory/BranchStockMatrix';
 import { InventoryDashboardHeader } from '@/components/inventory/InventoryDashboardHeader';
 import { StoreFilterBar } from '@/components/inventory/StoreFilterBar';
+import { downloadInventoryListPDF } from '@/utils/inventoryListPdfGenerator';
 
 interface Product {
   id: string;
@@ -90,6 +92,10 @@ export const AlmacenPage: React.FC = () => {
   const [storeInventories, setStoreInventories] = useState<Record<string, StoreInventory[]>>({});
   const [transferring, setTransferring] = useState<Record<string, { from: string; to: string; qty: number; processing?: boolean }>>({});
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
+
+  const [showInventoryListDialog, setShowInventoryListDialog] = useState(false);
+  const [inventoryListCategory, setInventoryListCategory] = useState<string>('all');
+  const [generatingInventoryList, setGeneratingInventoryList] = useState(false);
 
   // 🛡️ Privacidad: solo admin y master_admin pueden ver costo/utilidad
   const canSeeCosts = userProfile?.role === 'admin' || userProfile?.role === 'master_admin';
@@ -627,15 +633,25 @@ export const AlmacenPage: React.FC = () => {
           <h1 className="text-3xl font-bold">Almacén</h1>
           <p className="text-muted-foreground">Gestión unificada de productos e inventario</p>
         </div>
-        {/* 🛡️ SEGURIDAD: RLS maneja los permisos de creación */}
-        {/* Si el usuario no tiene permiso, el botón puede estar visible pero la acción fallará en el backend */}
-        <Button onClick={() => {
-          setEditingProduct(null);
-          setShowForm(true);
-        }}>
-          <Plus className="w-4 h-4 mr-2" />
-          Nuevo Producto
-        </Button>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Button
+            onClick={() => setShowInventoryListDialog(true)}
+            className="bg-primary-dark text-white hover:bg-primary-dark/90 w-full sm:w-auto"
+          >
+            <Package className="w-4 h-4 mr-2" />
+            Lista de Inventario
+          </Button>
+
+          {/* 🛡️ SEGURIDAD: RLS maneja los permisos de creación */}
+          {/* Si el usuario no tiene permiso, el botón puede estar visible pero la acción fallará en el backend */}
+          <Button onClick={() => {
+            setEditingProduct(null);
+            setShowForm(true);
+          }} className="w-full sm:w-auto">
+            <Plus className="w-4 h-4 mr-2" />
+            Nuevo Producto
+          </Button>
+        </div>
       </div>
 
       <StoreFilterBar pageTitle="Almacén" />
@@ -976,6 +992,86 @@ export const AlmacenPage: React.FC = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Dialog: Lista de Inventario */}
+      <Dialog open={showInventoryListDialog} onOpenChange={setShowInventoryListDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Lista de Inventario</DialogTitle>
+            <DialogDescription>
+              PDF básico para conteo: Nombre, Stock Total y Precio del sistema.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label>Categoría</Label>
+            <Select value={inventoryListCategory} onValueChange={setInventoryListCategory}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona categoría" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas las categorías</SelectItem>
+                {PRODUCT_CATEGORIES.map((cat) => (
+                  <SelectItem key={cat.value} value={cat.value}>
+                    {cat.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowInventoryListDialog(false)}
+              disabled={generatingInventoryList}
+            >
+              Cancelar
+            </Button>
+            <Button
+              className="bg-primary-dark text-white hover:bg-primary-dark/90"
+              disabled={generatingInventoryList || products.length === 0}
+              onClick={async () => {
+                setGeneratingInventoryList(true);
+                try {
+                  const items = products
+                    .filter((p) => inventoryListCategory === 'all' || p.category === inventoryListCategory)
+                    .slice()
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((p) => ({
+                      name: p.name,
+                      category: p.category ?? null,
+                      total_stock: p.total_stock || 0,
+                      sale_price_usd: p.sale_price_usd,
+                    }));
+
+                  await downloadInventoryListPDF({
+                    items,
+                    category: inventoryListCategory,
+                  });
+
+                  setShowInventoryListDialog(false);
+                  toast({
+                    title: "PDF generado",
+                    description: "Se descargó la lista de inventario.",
+                    variant: "success",
+                  });
+                } catch (e: any) {
+                  toast({
+                    title: "Error",
+                    description: e?.message || "No se pudo generar el PDF.",
+                    variant: "destructive",
+                  });
+                } finally {
+                  setGeneratingInventoryList(false);
+                }
+              }}
+            >
+              {generatingInventoryList ? "Generando..." : "Generar PDF"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal de Producto */}
       {showForm && (
