@@ -75,7 +75,7 @@ export const PhoneMockup3D: React.FC = () => {
                 <div className="relative z-10 text-center space-y-2">
                   <div className="mx-auto w-16 h-16 animate-pulse-custom">
                     <img 
-                      src="https://galenospro.com/wp-content/uploads/2025/05/FAVICON.png" 
+                      src="/logo.svg" 
                       alt="Logo" 
                       className="w-full h-full object-contain"
                     />

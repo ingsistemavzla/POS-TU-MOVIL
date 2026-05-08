@@ -135,7 +135,7 @@ const AuthPage: React.FC = () => {
       <div className="absolute top-0 left-0 right-0 z-[50] flex items-center justify-between p-6 glass-navbar border-b border-emerald-500/20">
         <div className="flex items-center space-x-3">
           <img 
-            src="https://galenospro.com/wp-content/uploads/2025/05/FAVICON.png" 
+            src="/logo.svg" 
             alt="Logo" 
             className="h-10 w-10 object-contain"
           />

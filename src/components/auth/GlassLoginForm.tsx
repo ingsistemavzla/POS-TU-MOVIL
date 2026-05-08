@@ -45,7 +45,7 @@ export const GlassLoginForm: React.FC<GlassLoginFormProps> = ({ onToggleMode }) 
         {/* Logo justo encima del título */}
         <div className="flex justify-center mb-4">
           <img 
-            src="/TUMOVILMGTA.png" 
+            src="/logo.svg" 
             alt="Logo Tu Móvil Margarita" 
             className="h-20 w-20 object-contain"
           />
