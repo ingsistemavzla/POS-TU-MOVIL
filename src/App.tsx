@@ -16,6 +16,7 @@ const MainLayout = lazy(() => import("./components/layout/MainLayout"));
 const AuthPage = lazy(() => import("./pages/AuthPage"));
 const AuthCallback = lazy(() => import("./pages/AuthCallback"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+const ServerStatusPage = lazy(() => import("./pages/ServerStatusPage"));
 
 // Lazy load heavy pages for code splitting
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -149,7 +150,9 @@ const AppRoutes = () => {
   useEffect(() => {
     if (!user && !userProfile && !loading && !urlCleanedRef.current) {
       // Solo limpiar si NO estamos ya en la raíz
-      if (window.location.pathname !== '/') {
+      const path = window.location.pathname;
+      const isAllowedPublicPath = path === '/' || path === '/server' || path === '/auth/callback';
+      if (!isAllowedPublicPath) {
         urlCleanedRef.current = true;
         // ✅ window.location.replace limpia la URL completamente sin dejar historial
         window.location.replace('/');
@@ -179,6 +182,14 @@ const AppRoutes = () => {
             <AuthPage />
           </Suspense>
         } />
+        <Route
+          path="/server"
+          element={
+            <Suspense fallback={<LoadingFallback />}>
+              <ServerStatusPage />
+            </Suspense>
+          }
+        />
         <Route path="/admin" element={<Navigate to="/" replace />} />
         <Route path="/manager" element={<Navigate to="/" replace />} />
         <Route path="/cashier" element={<Navigate to="/" replace />} />
@@ -189,6 +200,14 @@ const AppRoutes = () => {
 
   return (
     <Routes>
+      <Route
+        path="/server"
+        element={
+          <Suspense fallback={<LoadingFallback />}>
+            <ServerStatusPage />
+          </Suspense>
+        }
+      />
       <Route 
         path="/auth/callback" 
         element={
