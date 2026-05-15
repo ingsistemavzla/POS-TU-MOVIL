@@ -5,6 +5,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { MaintenanceEnforcer } from "@/components/auth/MaintenanceEnforcer";
+import { MaintenanceLoginShell } from "@/components/auth/MaintenanceLoginShell";
+import { useMaintenanceMode } from "@/hooks/useMaintenanceMode";
+import { isMaintenanceModeActive } from "@/config/maintenance";
 import { StoreProvider } from "@/contexts/StoreContext";
 import { BcvProvider } from "@/contexts/BcvContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
@@ -453,6 +457,28 @@ const AppRoutes = () => {
   );
 };
 
+const AppRouterShell = () => {
+  const { active: hookMaintenance } = useMaintenanceMode();
+  const maintenanceBlocked = hookMaintenance || isMaintenanceModeActive();
+
+  if (maintenanceBlocked) {
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="*" element={<MaintenanceLoginShell />} />
+        </Routes>
+      </BrowserRouter>
+    );
+  }
+
+  return (
+    <BrowserRouter>
+      <MaintenanceEnforcer />
+      <AppRoutes />
+    </BrowserRouter>
+  );
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
@@ -461,9 +487,7 @@ const App = () => (
           <TooltipProvider>
             <Toaster />
             <Sonner />
-            <BrowserRouter>
-              <AppRoutes />
-            </BrowserRouter>
+            <AppRouterShell />
           </TooltipProvider>
         </BcvProvider>
       </StoreProvider>

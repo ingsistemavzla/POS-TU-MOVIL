@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Loader2, CheckCircle, Mail } from 'lucide-react';
+import { MaintenanceBanner } from '@/components/auth/MaintenanceBanner';
+import { useMaintenanceMode } from '@/hooks/useMaintenanceMode';
 
 interface GlassRegisterFormProps {
   onToggleMode: () => void;
@@ -24,6 +26,7 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
   const [success, setSuccess] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');
   const { signUp } = useAuth();
+  const { active: maintenanceActive } = useMaintenanceMode();
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -31,6 +34,8 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (maintenanceActive) return;
+
     setLoading(true);
     setError(null);
     setSuccess(false);
@@ -90,6 +95,8 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
     setLoading(false);
   };
 
+  const formDisabled = loading || maintenanceActive;
+
   return (
     <>
       <div className="w-full glass-card rounded-2xl p-8">
@@ -100,8 +107,10 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
           </p>
         </div>
 
+        <MaintenanceBanner />
+
         <form onSubmit={handleSubmit} className="grid gap-4">
-          {error && (
+          {error && !maintenanceActive && (
             <Alert variant="destructive" className="bg-red-500/20 border-red-500/50 text-white">
               <AlertDescription className="text-white">{error}</AlertDescription>
             </Alert>
@@ -129,7 +138,7 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
               value={formData.name}
               onChange={(e) => handleInputChange('name', e.target.value)}
               required
-              disabled={loading}
+              disabled={formDisabled}
               className="bg-slate-950/50 border-emerald-500/30 !text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
               style={{ color: '#ffffff !important' }}
             />
@@ -144,7 +153,7 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
               value={formData.email}
               onChange={(e) => handleInputChange('email', e.target.value)}
               required
-              disabled={loading}
+              disabled={formDisabled}
               className="bg-slate-950/50 border-emerald-500/30 !text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
               style={{ color: '#ffffff !important' }}
             />
@@ -159,7 +168,7 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
               value={formData.password}
               onChange={(e) => handleInputChange('password', e.target.value)}
               required
-              disabled={loading}
+              disabled={formDisabled}
               className="bg-slate-950/50 border-emerald-500/30 !text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
               style={{ color: '#ffffff !important' }}
             />
@@ -174,7 +183,7 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
               value={formData.confirmPassword}
               onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
               required
-              disabled={loading}
+              disabled={formDisabled}
               className="bg-slate-950/50 border-emerald-500/30 !text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
               style={{ color: '#ffffff !important' }}
             />
@@ -220,7 +229,7 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
                 type="button" 
                 variant="link" 
                 onClick={onToggleMode}
-                disabled={loading}
+                disabled={formDisabled}
                 className="text-sm text-[#00FF7F] hover:text-[#00ff9d] underline-offset-4"
               >
                 ¿Ya tienes cuenta? Iniciar sesión

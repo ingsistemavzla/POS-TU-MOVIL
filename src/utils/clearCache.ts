@@ -6,7 +6,7 @@
 export const clearAllCache = () => {
   try {
     // Limpiar localStorage (excepto configuraciones importantes)
-    const keysToKeep = ['theme', 'language']; // Mantener preferencias del usuario
+    const keysToKeep = ['theme', 'language', 'pos_maintenance_mode'];
     const allKeys = Object.keys(localStorage);
     allKeys.forEach(key => {
       if (!keysToKeep.includes(key)) {
@@ -38,8 +38,10 @@ export const clearAllCache = () => {
  */
 export const clearAuthCache = () => {
   try {
-    const authKeys = Object.keys(localStorage).filter(key => 
-      key.includes('auth') || key.includes('sb-') || key.includes('supabase')
+    const authKeys = Object.keys(localStorage).filter(
+      (key) =>
+        key !== 'pos_maintenance_mode' &&
+        (key.includes('auth') || key.includes('sb-') || key.includes('supabase'))
     );
     authKeys.forEach(key => {
       localStorage.removeItem(key);

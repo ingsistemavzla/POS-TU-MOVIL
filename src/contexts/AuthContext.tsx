@@ -1,10 +1,18 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { Tables } from '@/integrations/supabase/types';
 import { sessionKeepAlive } from '@/utils/sessionKeepAlive';
 import { clearAuthCache } from '@/utils/clearCache';
 import { useToast } from '@/hooks/use-toast';
+import {
+  blockAuthForMaintenance,
+  isMaintenanceModeActive,
+  MAINTENANCE_LOGIN_MESSAGE,
+  registerMaintenanceSessionEvict,
+  subscribeMaintenanceMode,
+} from '@/config/maintenance';
+import { useMaintenanceMode } from '@/hooks/useMaintenanceMode';
 
 type UserProfile = Tables<'users'>;
 
@@ -47,6 +55,7 @@ export const useAuth = () => {
 
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { active: maintenanceActive } = useMaintenanceMode();
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [company, setCompany] = useState<Company | null>(null);
@@ -63,9 +72,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   
   // Keep session alive with periodic refresh and cache cleanup
   useEffect(() => {
-    if (!session) return;
+    if (!session || isMaintenanceModeActive()) return;
     
     const keepAliveInterval = setInterval(async () => {
+      if (isMaintenanceModeActive()) {
+        void evictSessionForMaintenance();
+        return;
+      }
       try {
         const { data: { session: refreshedSession }, error } = await supabase.auth.refreshSession();
         if (error) {
@@ -96,6 +109,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [session]);
 
   const fetchUserProfile = async (userId: string, forceRefresh = false, isRetry = false): Promise<{ success: boolean; isNetworkError?: boolean; error?: string }> => {
+    if (isMaintenanceModeActive()) {
+      console.warn('[Maintenance] Validación de perfil cancelada.');
+      return { success: false, error: 'maintenance' };
+    }
+
     try {
       // Check cache first (unless forcing refresh)
       if (!forceRefresh) {
@@ -559,6 +577,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const refreshProfile = async () => {
+    if (isMaintenanceModeActive()) return;
     if (user?.id) {
       setIsSlowNetwork(false);
       retryAttemptsRef.current.delete(user.id); // Reset retry counter
@@ -570,6 +589,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const retryProfileFetch = async () => {
+    if (isMaintenanceModeActive()) return;
     if (user?.id) {
       setIsSlowNetwork(false);
       retryAttemptsRef.current.delete(user.id); // Reset retry counter
@@ -623,6 +643,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signIn = async (email: string, password: string) => {
     console.log('[Auth] Starting signIn...');
+
+    if (isMaintenanceModeActive()) {
+      const maintenanceBlock = await blockAuthForMaintenance();
+      if (maintenanceBlock.blocked) return { error: maintenanceBlock.error };
+      return { error: { message: MAINTENANCE_LOGIN_MESSAGE, name: 'TypeError' } };
+    }
+
+    const maintenanceBlock = await blockAuthForMaintenance();
+    if (maintenanceBlock.blocked) {
+      return { error: maintenanceBlock.error };
+    }
     
     // Step 1: Authenticate with Supabase
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -695,6 +726,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     assignedStoreId?: string | null
   ) => {
     console.log('[Auth] Starting signUp...', { email, companyId, role, assignedStoreId });
+
+    const maintenanceBlock = await blockAuthForMaintenance();
+    if (maintenanceBlock.blocked) {
+      return { error: maintenanceBlock.error };
+    }
     
     // Build metadata object for the trigger
     const metadata: Record<string, any> = {
@@ -735,51 +771,94 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { error };
   };
 
-  const signOut = async () => {
-    // ✅ LOGOUT COMPLETO: Limpiar navegador y sistema
-    try {
-      // Cerrar sesión en Supabase
-      await supabase.auth.signOut();
-      
-      // Limpiar localStorage (excepto preferencias)
-      const keysToKeep = ['theme', 'language'];
-      const allKeys = Object.keys(localStorage);
-      allKeys.forEach(key => {
-        if (!keysToKeep.includes(key)) {
-          localStorage.removeItem(key);
-        }
-      });
-      
-      // Limpiar sessionStorage completamente
-      sessionStorage.clear();
-      
-      // Limpiar cache de Supabase Auth
-      const supabaseKeys = Object.keys(localStorage).filter(key => 
-        key.includes('supabase') || key.includes('sb-')
-      );
-      supabaseKeys.forEach(key => {
+  const clearBrowserAuthStorage = () => {
+    const keysToKeep = ['theme', 'language', 'pos_maintenance_mode'];
+    const allKeys = Object.keys(localStorage);
+    allKeys.forEach((key) => {
+      if (!keysToKeep.includes(key)) {
         localStorage.removeItem(key);
-      });
-    } catch (error) {
-      console.error('[Auth] Error en logout completo:', error);
-    }
-    
-    // Limpiar estado de React
+      }
+    });
+    sessionStorage.clear();
+    const supabaseKeys = Object.keys(localStorage).filter(
+      (key) => key.includes('supabase') || key.includes('sb-')
+    );
+    supabaseKeys.forEach((key) => localStorage.removeItem(key));
+    clearAuthCache();
+  };
+
+  const resetAuthState = () => {
     setUser(null);
     setSession(null);
     setUserProfile(null);
     setCompany(null);
+    setRequiresPasswordSetup(false);
+    setIsSlowNetwork(false);
     profileCacheRef.current.clear();
     sessionKeepAlive.stop();
+    setLoading(false);
   };
 
+  const evictSessionForMaintenance = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('[Maintenance] Error en signOut:', error);
+    }
+    clearBrowserAuthStorage();
+    resetAuthState();
+    const path = window.location.pathname;
+    if (path !== '/' && path !== '/server' && path !== '/auth/callback') {
+      window.location.replace('/');
+    }
+  };
+
+  const signOut = async () => {
+    // ✅ LOGOUT COMPLETO: Limpiar navegador y sistema
+    try {
+      await supabase.auth.signOut();
+      clearBrowserAuthStorage();
+    } catch (error) {
+      console.error('[Auth] Error en logout completo:', error);
+    }
+    resetAuthState();
+  };
+
+  useLayoutEffect(() => {
+    registerMaintenanceSessionEvict(evictSessionForMaintenance);
+    if (isMaintenanceModeActive()) {
+      void evictSessionForMaintenance();
+    }
+    return () => registerMaintenanceSessionEvict(null);
+  }, []);
+
   useEffect(() => {
+    return subscribeMaintenanceMode(() => {
+      if (isMaintenanceModeActive()) {
+        void evictSessionForMaintenance();
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (maintenanceActive) {
+      void evictSessionForMaintenance();
+      return;
+    }
+
     let mounted = true;
     let timeoutId: NodeJS.Timeout;
     let isInitialized = false;
 
     const initializeAuth = async () => {
       try {
+        if (isMaintenanceModeActive()) {
+          console.warn('[Maintenance] Modo activo al iniciar — cerrando sesión.');
+          await evictSessionForMaintenance();
+          isInitialized = true;
+          return;
+        }
+
         // ✅ DETECCIÓN DE HARD REFRESH DESHABILITADA: Causaba loop infinito
         // La detección automática de hard refresh causaba problemas de recarga constante
         // Se manejará solo cuando no hay sesión válida después de cargar
@@ -803,6 +882,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (sessionError) {
           console.error('Error getting session:', sessionError);
           setLoading(false);
+          isInitialized = true;
+          return;
+        }
+
+        if (isMaintenanceModeActive()) {
+          console.warn('[Maintenance] Sesión detectada con mantenimiento ON — expulsando.');
+          await evictSessionForMaintenance();
           isInitialized = true;
           return;
         }
@@ -1003,6 +1089,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
 
+      if (isMaintenanceModeActive()) {
+        if (session?.user) {
+          console.warn('[Maintenance] Sesión detectada con mantenimiento activo — cerrando.');
+          await evictSessionForMaintenance();
+        } else {
+          resetAuthState();
+        }
+        return;
+      }
+
       console.log('Auth state change:', event, session?.user?.id);
 
       setSession(session);
@@ -1157,16 +1253,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       clearTimeout(timeoutId);
       subscription.unsubscribe();
     };
-  }, []);
+  }, [maintenanceActive]);
+
+  const authBlocked = maintenanceActive || isMaintenanceModeActive();
 
   return (
     <AuthContext.Provider
       value={{
-        user,
-        userProfile,
-        company,
-        session,
-        loading,
+        user: authBlocked ? null : user,
+        userProfile: authBlocked ? null : userProfile,
+        company: authBlocked ? null : company,
+        session: authBlocked ? null : session,
+        loading: authBlocked ? false : loading,
         requiresPasswordSetup,
         isSlowNetwork,
         signIn,

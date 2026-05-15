@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
+import { blockAuthForMaintenance, isMaintenanceModeActive } from '@/config/maintenance';
 
 const AuthCallback: React.FC = () => {
   const navigate = useNavigate();
@@ -10,6 +11,16 @@ const AuthCallback: React.FC = () => {
 
     const finalize = async () => {
       try {
+        if (isMaintenanceModeActive()) {
+          const block = await blockAuthForMaintenance();
+          if (block.blocked) {
+            await supabase.auth.signOut();
+            if (mounted) {
+              navigate('/?maintenance=1', { replace: true });
+            }
+            return;
+          }
+        }
         // Force a session fetch so tokens in URL are processed
         await supabase.auth.getSession();
       } catch (e) {
