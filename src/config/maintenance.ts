@@ -1,18 +1,20 @@
 /**
- * Modo mantenimiento (solo frontend).
- * Activar: window.posMaintenance.enable()
- * Probar en local: http://localhost:8080/?maintenance=1
+ * =============================================================================
+ * PROTOCOLO DE MANTENIMIENTO (solo frontend) — APAGADO por defecto
+ * =============================================================================
+ * Para ACTIVAR: MAINTENANCE_PROTOCOL_ENABLED = true y MAINTENANCE_FORCED_FROM_BUILD = true
+ * Ver ACTIVAR_MANTENIMIENTO.md y REPORTE_PROTOCOLO_MANTENIMIENTO.md
+ * =============================================================================
  */
+
+/** Interruptor maestro: false = el sistema opera normal (login, transacciones, rutas). */
+export const MAINTENANCE_PROTOCOL_ENABLED = false;
+
+/** Solo aplica si MAINTENANCE_PROTOCOL_ENABLED es true. Forzar ON en deploy. */
+export const MAINTENANCE_FORCED_FROM_BUILD = false;
 
 export const MAINTENANCE_STORAGE_KEY = 'pos_maintenance_mode';
 export const MAINTENANCE_LOGIN_MESSAGE = 'Failed to fetch';
-
-/**
- * Mantenimiento forzado en el build desplegado.
- * COMMIT DE DESACTIVACIÓN: poner en `false` → commit → push → redeploy.
- * Guía: DESACTIVAR_MANTENIMIENTO.md
- */
-export const MAINTENANCE_FORCED_FROM_BUILD = true;
 
 export type MaintenanceLoginErrorStyle =
   | 'failed_to_fetch'
@@ -31,9 +33,7 @@ const listeners = new Set<() => void>();
 type SessionEvictHandler = () => void | Promise<void>;
 let sessionEvictHandler: SessionEvictHandler | null = null;
 
-/** Estado en memoria (no se pierde con HMR ni lecturas tardías de localStorage) */
 let maintenanceActiveMemory = false;
-/** Permite apagar con disable() aunque VITE_MAINTENANCE_MODE=true */
 let maintenanceUserDisabled = false;
 
 function notifyListeners() {
@@ -68,6 +68,7 @@ function persistMaintenanceFlag(active: boolean): void {
 }
 
 function syncMaintenanceFromUrl(): boolean {
+  if (!MAINTENANCE_PROTOCOL_ENABLED) return false;
   if (typeof window === 'undefined') return false;
   const params = new URLSearchParams(window.location.search);
   const q = params.get('maintenance');
@@ -81,6 +82,12 @@ function syncMaintenanceFromUrl(): boolean {
 
 function bootstrapMaintenance(): void {
   if (typeof window === 'undefined') return;
+  if (!MAINTENANCE_PROTOCOL_ENABLED) {
+    localStorage.removeItem(MAINTENANCE_STORAGE_KEY);
+    maintenanceActiveMemory = false;
+    maintenanceUserDisabled = false;
+    return;
+  }
   const stored = localStorage.getItem(MAINTENANCE_STORAGE_KEY);
   if (stored === 'false') {
     maintenanceUserDisabled = true;
@@ -99,14 +106,12 @@ function bootstrapMaintenance(): void {
 }
 
 export function registerMaintenanceSessionEvict(handler: SessionEvictHandler | null): void {
+  if (!MAINTENANCE_PROTOCOL_ENABLED) return;
   sessionEvictHandler = handler;
 }
 
 async function evictActiveSessions(): Promise<void> {
-  if (!sessionEvictHandler) {
-    console.warn('[Maintenance] AuthProvider aún no registró cierre de sesión.');
-    return;
-  }
+  if (!MAINTENANCE_PROTOCOL_ENABLED || !sessionEvictHandler) return;
   try {
     await sessionEvictHandler();
   } catch (e) {
@@ -114,7 +119,6 @@ async function evictActiveSessions(): Promise<void> {
   }
 }
 
-/** Configuración efectiva */
 export function getMaintenanceSettings(): MaintenanceSettings {
   return {
     enabled: isMaintenanceModeActive(),
@@ -128,6 +132,7 @@ export function getMaintenanceSettings(): MaintenanceSettings {
 }
 
 export function isMaintenanceModeActive(): boolean {
+  if (!MAINTENANCE_PROTOCOL_ENABLED) return false;
   if (maintenanceUserDisabled) return false;
   if (MAINTENANCE_FORCED_FROM_BUILD) return true;
   if (readEnvMaintenance()) return true;
@@ -140,7 +145,7 @@ export function isMaintenanceModeActive(): boolean {
 }
 
 export async function enableMaintenanceMode(): Promise<void> {
-  if (typeof window === 'undefined') return;
+  if (!MAINTENANCE_PROTOCOL_ENABLED || typeof window === 'undefined') return;
   maintenanceUserDisabled = false;
   maintenanceActiveMemory = true;
   persistMaintenanceFlag(true);
@@ -154,7 +159,6 @@ export function disableMaintenanceMode(): void {
   maintenanceUserDisabled = true;
   maintenanceActiveMemory = false;
   persistMaintenanceFlag(false);
-  console.info('[Maintenance] DESACTIVADO.');
   notifyListeners();
 }
 
@@ -166,6 +170,7 @@ export function clearMaintenanceRuntimeOverride(): void {
 }
 
 export async function toggleMaintenanceMode(): Promise<boolean> {
+  if (!MAINTENANCE_PROTOCOL_ENABLED) return false;
   if (isMaintenanceModeActive()) {
     disableMaintenanceMode();
     return false;

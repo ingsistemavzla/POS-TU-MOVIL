@@ -5,10 +5,11 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { MaintenanceEnforcer } from "@/components/auth/MaintenanceEnforcer";
-import { MaintenanceLoginShell } from "@/components/auth/MaintenanceLoginShell";
-import { useMaintenanceMode } from "@/hooks/useMaintenanceMode";
-import { isMaintenanceModeActive } from "@/config/maintenance";
+// [MANTENIMIENTO] Descomentar imports y AppRouterShell alternativo para activar protocolo:
+// import { MaintenanceEnforcer } from "@/components/auth/MaintenanceEnforcer";
+// import { MaintenanceLoginShell } from "@/components/auth/MaintenanceLoginShell";
+// import { useMaintenanceMode } from "@/hooks/useMaintenanceMode";
+// import { isMaintenanceModeActive } from "@/config/maintenance";
 import { StoreProvider } from "@/contexts/StoreContext";
 import { BcvProvider } from "@/contexts/BcvContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
@@ -457,10 +458,10 @@ const AppRoutes = () => {
   );
 };
 
+/* [MANTENIMIENTO] Sustituir el <BrowserRouter> de App por AppRouterShell cuando el protocolo esté ON:
 const AppRouterShell = () => {
   const { active: hookMaintenance } = useMaintenanceMode();
   const maintenanceBlocked = hookMaintenance || isMaintenanceModeActive();
-
   if (maintenanceBlocked) {
     return (
       <BrowserRouter>
@@ -470,7 +471,6 @@ const AppRouterShell = () => {
       </BrowserRouter>
     );
   }
-
   return (
     <BrowserRouter>
       <MaintenanceEnforcer />
@@ -478,6 +478,7 @@ const AppRouterShell = () => {
     </BrowserRouter>
   );
 };
+*/
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -487,7 +488,9 @@ const App = () => (
           <TooltipProvider>
             <Toaster />
             <Sonner />
-            <AppRouterShell />
+            <BrowserRouter>
+              <AppRoutes />
+            </BrowserRouter>
           </TooltipProvider>
         </BcvProvider>
       </StoreProvider>

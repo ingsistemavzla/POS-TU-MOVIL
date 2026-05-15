@@ -9,6 +9,7 @@ import {
   blockAuthForMaintenance,
   isMaintenanceModeActive,
   MAINTENANCE_LOGIN_MESSAGE,
+  MAINTENANCE_PROTOCOL_ENABLED,
   registerMaintenanceSessionEvict,
   subscribeMaintenanceMode,
 } from '@/config/maintenance';
@@ -824,7 +825,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     resetAuthState();
   };
 
+  // [MANTENIMIENTO] Sin efecto si MAINTENANCE_PROTOCOL_ENABLED = false
   useLayoutEffect(() => {
+    if (!MAINTENANCE_PROTOCOL_ENABLED) return;
     registerMaintenanceSessionEvict(evictSessionForMaintenance);
     if (isMaintenanceModeActive()) {
       void evictSessionForMaintenance();
@@ -833,6 +836,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
+    if (!MAINTENANCE_PROTOCOL_ENABLED) return;
     return subscribeMaintenanceMode(() => {
       if (isMaintenanceModeActive()) {
         void evictSessionForMaintenance();
@@ -841,6 +845,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
+    if (!MAINTENANCE_PROTOCOL_ENABLED) return;
     if (maintenanceActive) {
       void evictSessionForMaintenance();
       return;
@@ -1255,7 +1260,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [maintenanceActive]);
 
-  const authBlocked = maintenanceActive || isMaintenanceModeActive();
+  const authBlocked =
+    MAINTENANCE_PROTOCOL_ENABLED && (maintenanceActive || isMaintenanceModeActive());
 
   return (
     <AuthContext.Provider
