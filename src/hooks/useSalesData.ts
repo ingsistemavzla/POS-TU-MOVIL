@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -127,8 +127,15 @@ export function useSalesData(): UseSalesDataReturn {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(15);
+  const [pageSize, setPageSizeState] = useState(20);
+
+  const setPageSize = useCallback((size: number) => {
+    setPageSizeState(Math.min(20, Math.max(10, size)));
+    setPage(1);
+  }, []);
   const [filters, setFiltersState] = useState<SalesFilters>({});
+  const dataRef = useRef<SalesResponse | null>(null);
+  dataRef.current = data;
 
   const fetchSalesData = useCallback(async () => {
     if (!userProfile?.company_id) {
@@ -136,71 +143,55 @@ export function useSalesData(): UseSalesDataReturn {
       return;
     }
 
+    const isInitialLoad = dataRef.current === null;
+
     try {
-      setLoading(true);
+      if (isInitialLoad) {
+        setLoading(true);
+      }
       setError(null);
 
       console.log('🔄 [RPC] Fetching sales data with get_sales_history_v2:', filters, 'page:', page, 'pageSize:', pageSize);
 
       const offset = (page - 1) * pageSize;
-      
-      // ✅ CRÍTICO: Obtener metadatos (totales reales) desde TODAS las ventas filtradas
-      // Esto debe ejecutarse SIEMPRE antes de obtener las ventas paginadas
-      let metadata: any = null;
-      let metadataError: any = null;
-      
-      try {
-        const result = await (supabase as any).rpc('get_sales_metadata_v2', {
-          p_company_id: null, // La RPC lo deduce del usuario autenticado
-          p_store_id: filters.storeId || null,
-          p_date_from: filters.dateFrom || null,
-          p_date_to: filters.dateTo || null,
-          p_category: filters.category || null,
-        });
-        metadata = result.data;
-        metadataError = result.error;
-      } catch (err) {
-        metadataError = err;
-        console.warn('⚠️ [RPC] La función get_sales_metadata_v2 no existe aún. Ejecuta el script SQL sql/12_crear_rpc_metadatos_ventas.sql en Supabase.');
-      }
 
-      // Si la RPC no existe (404) o hay error, usar fallback temporal
-      // PERO mostrar advertencia clara en consola
-      if (metadataError) {
-        const is404 = metadataError?.code === 'P0001' || 
-                     metadataError?.message?.includes('does not exist') ||
-                     metadataError?.message?.includes('function') ||
-                     String(metadataError).includes('404');
-        
-        if (is404) {
-          console.warn('⚠️ [RPC] La función get_sales_metadata_v2 no existe en la base de datos.');
-          console.warn('⚠️ [RPC] Ejecuta el script SQL: sql/12_crear_rpc_metadatos_ventas.sql en Supabase Dashboard → SQL Editor');
-          console.warn('⚠️ [RPC] Usando cálculo temporal desde página actual (datos pueden ser incorrectos)');
-          // No lanzar error, usar fallback temporal
-          metadata = null;
-        } else {
-          console.error('❌ [RPC] Error obteniendo metadatos:', metadataError);
-          // Para otros errores, usar fallback también (mejor que romper la app)
-          metadata = null;
-        }
-      }
-
-      if (metadata && metadata.error) {
-        console.warn('⚠️ [RPC] Metadatos retornaron error:', metadata.error);
-        metadata = null; // Usar fallback
-      }
-
-      // ✅ CORRECCIÓN: Removido p_category porque la función get_sales_history_v2 NO lo acepta
-      // ✅ ACTUALIZADO: p_category ahora se filtra en backend para mantener consistencia con metadatos.
-      const { data: rpcData, error: rpcError } = await (supabase as any).rpc('get_sales_history_v2', {
-        p_company_id: null, // La RPC lo deduce del usuario autenticado
+      const rpcParams = {
+        p_company_id: null,
         p_store_id: filters.storeId || null,
         p_date_from: filters.dateFrom || null,
         p_date_to: filters.dateTo || null,
         p_category: filters.category || null,
-        p_limit: pageSize,
-        p_offset: offset
-      });
+      };
+
+      const [metadataResult, salesResult] = await Promise.all([
+        (supabase as any).rpc('get_sales_metadata_v2', rpcParams),
+        (supabase as any).rpc('get_sales_history_v2', {
+          ...rpcParams,
+          p_limit: pageSize,
+          p_offset: offset,
+        }),
+      ]);
+
+      let metadata: any = metadataResult.data;
+      const metadataError = metadataResult.error;
+
+      if (metadataError) {
+        const is404 =
+          metadataError?.code === 'P0001' ||
+          metadataError?.message?.includes('does not exist') ||
+          metadataError?.message?.includes('function') ||
+          String(metadataError).includes('404');
+        if (!is404) {
+          console.error('❌ [RPC] Error obteniendo metadatos:', metadataError);
+        }
+        metadata = null;
+      }
+
+      if (metadata?.error) {
+        metadata = null;
+      }
+
+      const { data: rpcData, error: rpcError } = salesResult;
 
       if (rpcError) {
         console.error('❌ [RPC] Error en get_sales_history_v2:', rpcError);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,6 +54,8 @@ import { Label } from "@/components/ui/label";
 import { printInvoice } from "@/utils/printInvoice";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useToast } from "@/hooks/use-toast";
+import { useDebounce } from "@/hooks/useDebounce";
+import { PosProductListSkeleton } from "@/components/inventory/InventoryLoadingSkeletons";
 import { useBcv } from "@/contexts/BcvContext";
 // import { CashRegisterWidget } from "@/components/cash-register/CashRegisterWidget";
 
@@ -170,7 +172,8 @@ export default function POS() {
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const searchDebounceRef = useRef<number | null>(null);
+  const searchRequestIdRef = useRef(0);
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [scanMode, setScanMode] = useState(false); // búsqueda por texto por defecto
@@ -389,6 +392,7 @@ export default function POS() {
     if (!userProfile?.company_id) return;
     const q = term.trim();
     if (!q) return;
+    const requestId = ++searchRequestIdRef.current;
     setIsSearching(true);
     setHasSearched(true);
 
@@ -401,6 +405,8 @@ export default function POS() {
         .or(`name.ilike.%${q}%,sku.ilike.%${q}%,barcode.ilike.%${q}%`)
         .limit(100);
 
+      if (requestId !== searchRequestIdRef.current) return;
+
       if (error) {
         console.error('Error searching products:', error);
         return;
@@ -408,14 +414,30 @@ export default function POS() {
       const productsData = (data as unknown as Product[]) || [];
       setProducts(productsData);
       
-      // Load stock for all found products
       await loadProductStock(productsData);
     } catch (err) {
+      if (requestId !== searchRequestIdRef.current) return;
       console.error('Search products error:', err);
     } finally {
-      setIsSearching(false);
+      if (requestId === searchRequestIdRef.current) {
+        setIsSearching(false);
+      }
     }
   };
+
+  useEffect(() => {
+    if (scanMode) return;
+    const q = debouncedSearchTerm.trim();
+    if (!q) {
+      searchRequestIdRef.current += 1;
+      setProducts([]);
+      setHasSearched(false);
+      setIsSearching(false);
+      return;
+    }
+    searchProducts(q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchTerm, scanMode, selectedStore?.id, userProfile?.company_id]);
 
   const loadProductStock = async (productsList: Product[]) => {
     if (!userProfile?.company_id || productsList.length === 0 || !selectedStore) return;
@@ -984,20 +1006,13 @@ export default function POS() {
   const totalUSD = subtotalUSD; // Total = Subtotal (sin IVA)
   const totalBs = totalUSD * finalBcvRate; // ✅ Usar tasa final (puede ser editada)
 
-  // Debug tax rate calculation
-  console.log('POS Debug - Tax Rate Calculation:', {
-    getTaxRate: getTaxRate(),
-    taxRate: taxRate,
-    subtotalUSD: subtotalUSD,
-    taxUSD: taxUSD,
-    totalUSD: totalUSD
-  });
-
-  // When lazy loading, the products array already reflects the search result
-  const filteredProducts = products.filter(product => {
-    const matchesCategory = !categoryFilter || categoryFilter === 'all' || product.category === categoryFilter;
-    return matchesCategory;
-  });
+  const filteredProducts = useMemo(() => {
+    return products.filter((product) => {
+      const matchesCategory =
+        !categoryFilter || categoryFilter === 'all' || product.category === categoryFilter;
+      return matchesCategory;
+    });
+  }, [products, categoryFilter]);
 
   const paymentMethods: PaymentMethod[] = [
     // Primera fila: USD
@@ -2499,22 +2514,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                 type="text"
                 placeholder={scanMode ? "Escanear código de barras..." : "Buscar productos..."}
                 value={searchTerm}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setSearchTerm(val);
-                  if (!scanMode) {
-                    if (searchDebounceRef.current) window.clearTimeout(searchDebounceRef.current);
-                    searchDebounceRef.current = window.setTimeout(() => {
-                      if (val.trim().length > 0) {
-                        setHasSearched(true);
-                        searchProducts(val);
-                      } else {
-                        setProducts([]);
-                        setHasSearched(false);
-                      }
-                    }, 300);
-                  }
-                }}
+                onChange={(e) => setSearchTerm(e.target.value)}
                 ref={searchInputRef}
                 onKeyDown={async (e) => {
                   if (e.key === 'Enter' && searchTerm.trim()) {
@@ -2576,10 +2576,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
               <p className="text-muted-foreground">Escriba para buscar o escanee un código</p>
             </div>
           ) : isSearching ? (
-            <div className="col-span-full text-center py-8">
-              <ShoppingCart className="w-16 h-16 mx-auto mb-4 text-muted-foreground/30" />
-              <p className="text-muted-foreground">Buscando productos...</p>
-            </div>
+            <PosProductListSkeleton count={6} />
           ) : filteredProducts.length === 0 ? (
             <div className="col-span-full text-center py-8">
               <Search className="w-16 h-16 mx-auto mb-4 text-muted-foreground/30" />

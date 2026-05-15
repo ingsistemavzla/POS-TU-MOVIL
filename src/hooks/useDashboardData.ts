@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { readDashboardPageCache, writeDashboardPageCache } from '@/utils/dashboardPageCache';
 
 export interface DashboardData {
   // Métricas generales
@@ -223,6 +224,16 @@ const getSalesForPeriod = async (
   }
 };
 
+const emptyFinancialPeriod = (): DashboardData['financialHealth']['today'] => ({
+  receivables_usd: 0,
+  net_income_usd: 0,
+  sales_by_method_count: { cash: 0, krece: 0, cashea: 0 },
+  receivables_breakdown: { krece_usd: 0, cashea_usd: 0 },
+  avg_ticket_cash: 0,
+  avg_ticket_krece: 0,
+  avg_ticket_cashea: 0,
+});
+
 // Datos vacíos por defecto (para fallback)
 const getEmptyData = (): DashboardData => ({
   totalSales: { today: 0, yesterday: 0, thisMonth: 0, lastMonth: 0 },
@@ -237,13 +248,9 @@ const getEmptyData = (): DashboardData => ({
   storesSummary: [],
   salesByCategory: [],
   financialHealth: {
-    receivables_usd: 0,
-    net_income_usd: 0,
-    sales_by_method_count: { cash: 0, krece: 0, cashea: 0 },
-    receivables_breakdown: { krece_usd: 0, cashea_usd: 0 },
-    avg_ticket_cash: 0,
-    avg_ticket_krece: 0,
-    avg_ticket_cashea: 0,
+    today: emptyFinancialPeriod(),
+    yesterday: emptyFinancialPeriod(),
+    thisMonth: emptyFinancialPeriod(),
   },
 });
 
@@ -261,27 +268,41 @@ export function useDashboardData() {
   const userCompanyId = userProfile?.company_id;
 
   useEffect(() => {
+    let cancelled = false;
+
     const fetchData = async () => {
       // Protección: si no hay usuario o compañía, devolver datos vacíos
       if (!userProfile || !company) {
         console.log('useDashboardData: No userProfile or company, returning empty data');
-        setData(getEmptyData());
-        setLoading(false);
+        if (!cancelled) {
+          setData(getEmptyData());
+          setLoading(false);
+        }
         return;
       }
 
-      // Timeout de seguridad (30 segundos máximo)
-      const timeoutId = setTimeout(() => {
-        console.warn('useDashboardData: Timeout alcanzado, devolviendo datos vacíos');
-        setData(getEmptyData());
+      const companyId = company.id;
+      const cached = readDashboardPageCache(companyId);
+      const hasCachedData = !!cached;
+
+      if (cached && !cancelled) {
+        setData(cached);
         setLoading(false);
-      }, 30000);
+      }
+
+      // Timeout de seguridad (20 segundos máximo)
+      const timeoutId = setTimeout(() => {
+        if (cancelled) return;
+        console.warn('useDashboardData: Timeout alcanzado, devolviendo datos vacíos');
+        setData((prev) => prev ?? getEmptyData());
+        setLoading(false);
+      }, 20000);
 
       try {
-        setLoading(true);
+        if (!hasCachedData && !cancelled) {
+          setLoading(true);
+        }
         setError(null);
-
-        const companyId = company.id;
         const dates = getDateRanges();
 
         // ============================================
@@ -799,24 +820,29 @@ export function useDashboardData() {
           financialHealth, // ✅ NUEVO: Salud Financiera Real
         };
 
-        setData(dashboardData);
+        if (!cancelled) {
+          setData(dashboardData);
+          writeDashboardPageCache(companyId, dashboardData);
+        }
         clearTimeout(timeoutId);
       } catch (err) {
         console.error('Error crítico en useDashboardData:', err);
-        setError(err instanceof Error ? err.message : 'Error fetching data');
-        // NUNCA dejar la app en blanco - devolver datos vacíos
-        setData(getEmptyData());
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Error fetching data');
+          setData((prev) => prev ?? getEmptyData());
+        }
         clearTimeout(timeoutId);
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
     fetchData();
-    
-    // Cleanup
+
     return () => {
-      // El timeout se limpiará automáticamente si fetchData completa
+      cancelled = true;
     };
   }, [userProfileId, companyId, userCompanyId]); // ✅ FIX: Usar IDs estables en lugar de objetos completos
 

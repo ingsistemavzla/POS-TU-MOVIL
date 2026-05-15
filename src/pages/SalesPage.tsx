@@ -57,7 +57,7 @@ import {
   Headphones,
   Wrench
 } from "lucide-react";
-import { useSalesData, SalesFilters } from "@/hooks/useSalesData";
+import { useSalesData, SalesFilters, type Sale, type SaleItem } from "@/hooks/useSalesData";
 import { formatCurrency } from "@/utils/currency";
 import { useToast } from "@/hooks/use-toast";
 import { Separator } from "@/components/ui/separator";
@@ -941,8 +941,40 @@ export default function SalesPage() {
     setShowSaleDetail(true);
   };
 
-  // Función para cargar items de una venta (igual que en SaleDetailModal)
+  const mapRpcItemsForExpand = (items: SaleItem[]) =>
+    items.map((item) => ({
+      id: item.id,
+      product_name: item.name || item.product_name || 'Producto',
+      sku: item.sku || item.product_sku || 'N/A',
+      quantity: item.qty ?? item.quantity ?? 0,
+      unit_price_usd: item.price ?? item.unit_price_usd ?? 0,
+      total_price_usd: item.subtotal ?? item.total_price_usd ?? 0,
+      category: item.category,
+    }));
+
+  const handleToggleSaleExpand = (sale: Sale) => {
+    if (expandedSaleId === sale.id) {
+      setExpandedSaleId(null);
+      return;
+    }
+    if (sale.items && sale.items.length > 0) {
+      setExpandedSaleItems((prev) => ({
+        ...prev,
+        [sale.id]: mapRpcItemsForExpand(sale.items!),
+      }));
+    }
+    setExpandedSaleId(sale.id);
+  };
+
+  // Función para cargar items de una venta (solo si la RPC no trajo items)
   const fetchSaleItems = useCallback(async (saleId: string) => {
+    const saleFromPage = data?.sales.find((s) => s.id === saleId);
+    if (saleFromPage?.items && saleFromPage.items.length > 0) {
+      const mapped = mapRpcItemsForExpand(saleFromPage.items);
+      setExpandedSaleItems((prev) => ({ ...prev, [saleId]: mapped }));
+      loadedSaleItemsCache.current.set(saleId, { items: mapped, timestamp: Date.now() });
+      return;
+    }
     // Verificar si ya está cargando usando ref
     if (loadingItemsRef.current[saleId]) {
       console.log(`ℹ️ Ya se está cargando venta ${saleId}, omitiendo carga duplicada`);
@@ -1130,7 +1162,7 @@ export default function SalesPage() {
       loadingItemsRef.current[saleId] = false;
       setLoadingItems(prev => ({ ...prev, [saleId]: false }));
     }
-  }, [userProfile?.company_id, toast]);
+  }, [userProfile?.company_id, toast, data?.sales]);
 
   // Cargar items cuando se expande el acordeón
   useEffect(() => {
@@ -1486,8 +1518,6 @@ export default function SalesPage() {
                     <SelectItem value="10">10</SelectItem>
                     <SelectItem value="15">15</SelectItem>
                     <SelectItem value="20">20</SelectItem>
-                    <SelectItem value="50">50</SelectItem>
-                    <SelectItem value="100">100</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1749,7 +1779,7 @@ export default function SalesPage() {
         )}
 
         <CardContent>
-          {loading ? (
+          {loading && !data ? (
             <div className="rounded-sm shadow-md shadow-green-500/50 overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -1877,7 +1907,7 @@ export default function SalesPage() {
                             <TableCell>
                               <Button
                                 size="sm"
-                                onClick={() => setExpandedSaleId(isExpanded ? null : sale.id)}
+                                onClick={() => handleToggleSaleExpand(sale)}
                                 className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white font-medium shadow-md shadow-green-500/50"
                               >
                                 {isExpanded ? (
@@ -2007,54 +2037,54 @@ export default function SalesPage() {
               </div>
 
               {/* Pagination */}
-              {data && data.totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4">
+              {data && data.totalCount > 0 && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t border-white/10">
                   <div className="text-sm text-white/90">
-                    Página {data.currentPage} de {data.totalPages} ({data.totalCount} registros totales)
+                    Mostrando {(data.currentPage - 1) * pageSize + 1}–
+                    {Math.min(data.currentPage * pageSize, data.totalCount)} de {data.totalCount} registros
+                    {data.totalPages > 1 && (
+                      <span> · Página {data.currentPage} de {data.totalPages}</span>
+                    )}
                   </div>
-                  <div className="flex space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage(page - 1)}
-                      disabled={page <= 1}
-                    >
-                      <ChevronLeft className="w-4 h-4 mr-1" />
-                      Anterior
-                    </Button>
-                    
-                    {/* Page numbers */}
-                    <div className="flex space-x-1">
-                      {Array.from({ length: Math.min(5, data.totalPages) }, (_, i) => {
-                        const pageNum = Math.max(1, Math.min(
-                          data.totalPages - 4,
-                          Math.max(1, page - 2)
-                        )) + i;
-                        
-                        return (
-                          <Button
-                            key={pageNum}
-                            variant={pageNum === page ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => setPage(pageNum)}
-                            className="w-8"
-                          >
-                            {pageNum}
-                          </Button>
-                        );
-                      })}
+                  {data.totalPages > 1 && (
+                    <div className="flex space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPage(page - 1)}
+                        disabled={page <= 1}
+                      >
+                        <ChevronLeft className="w-4 h-4 mr-1" />
+                        Anterior
+                      </Button>
+                      <div className="flex space-x-1">
+                        {Array.from({ length: Math.min(5, data.totalPages) }, (_, i) => {
+                          const pageNum =
+                            Math.max(1, Math.min(data.totalPages - 4, Math.max(1, page - 2))) + i;
+                          return (
+                            <Button
+                              key={pageNum}
+                              variant={pageNum === page ? 'default' : 'outline'}
+                              size="sm"
+                              onClick={() => setPage(pageNum)}
+                              className="w-8"
+                            >
+                              {pageNum}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPage(page + 1)}
+                        disabled={page >= data.totalPages}
+                      >
+                        Siguiente
+                        <ChevronRight className="w-4 h-4 ml-1" />
+                      </Button>
                     </div>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage(page + 1)}
-                      disabled={page >= data.totalPages}
-                    >
-                      Siguiente
-                      <ChevronRight className="w-4 h-4 ml-1" />
-                    </Button>
-                  </div>
+                  )}
                 </div>
               )}
             </>

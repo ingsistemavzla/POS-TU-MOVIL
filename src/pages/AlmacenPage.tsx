@@ -44,6 +44,14 @@ import { BranchStockMatrix } from '@/components/inventory/BranchStockMatrix';
 import { InventoryDashboardHeader } from '@/components/inventory/InventoryDashboardHeader';
 import { StoreFilterBar } from '@/components/inventory/StoreFilterBar';
 import { downloadInventoryListPDF } from '@/utils/inventoryListPdfGenerator';
+import { AlmacenTableSkeleton } from '@/components/inventory/InventoryLoadingSkeletons';
+import { useClientPagination } from '@/hooks/useClientPagination';
+import { ListPaginationBar } from '@/components/ui/ListPaginationBar';
+import {
+  readInventoryPageCache,
+  writeInventoryPageCache,
+  clearInventoryPageCache,
+} from '@/utils/inventoryPageCache';
 
 interface Product {
   id: string;
@@ -78,7 +86,8 @@ export const AlmacenPage: React.FC = () => {
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [isRefetching, setIsRefetching] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   // ✅ OPTIMIZACIÓN: Debounce en búsqueda (espera 300ms después de que usuario deje de escribir)
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
@@ -106,7 +115,24 @@ export const AlmacenPage: React.FC = () => {
       if (!userProfile?.company_id) {
         setProducts([]);
         setLoading(false);
+        setIsRefetching(false);
         return;
+      }
+
+      const companyId = userProfile.company_id;
+      const sessionCached = readInventoryPageCache(companyId);
+      const hasLocalData = products.length > 0;
+
+      if (sessionCached && !hasLocalData) {
+        setProducts(sessionCached.products as Product[]);
+        setStoreInventories(sessionCached.storeInventories as Record<string, StoreInventory[]>);
+        setLoading(false);
+      }
+
+      if (!hasLocalData && !sessionCached) {
+        setLoading(true);
+      } else {
+        setIsRefetching(true);
       }
 
       // Cargar productos (sin JOIN a vista que puede no existir)
@@ -317,6 +343,7 @@ export const AlmacenPage: React.FC = () => {
 
       setProducts(productsWithStock);
       setStoreInventories(inventoriesByProduct);
+      writeInventoryPageCache(companyId, productsWithStock, inventoriesByProduct);
     } catch (error) {
       console.error('Error in fetchData:', error);
       toast({
@@ -326,6 +353,7 @@ export const AlmacenPage: React.FC = () => {
       });
     } finally {
       setLoading(false);
+      setIsRefetching(false);
     }
   };
 
@@ -607,23 +635,25 @@ export const AlmacenPage: React.FC = () => {
       
       return sortOrder === 'asc' ? comparison : -comparison;
     });
-  }, [products, debouncedSearchTerm, categoryFilter, lowStockOnly, sortBy, sortOrder, storeInventories]);
+  }, [products, debouncedSearchTerm, categoryFilter, lowStockOnly, sortBy, sortOrder]);
+
+  const isFilterPending = searchTerm !== debouncedSearchTerm;
+
+  const paginationResetKey = `${debouncedSearchTerm}|${categoryFilter}|${lowStockOnly}|${sortBy}|${sortOrder}`;
+  const {
+    paginatedItems,
+    currentPage,
+    totalPages,
+    totalCount: filteredCount,
+    rangeStart,
+    rangeEnd,
+    setPage,
+  } = useClientPagination(filteredProducts, 20, paginationResetKey);
 
   // Calcular valor total
   const getTotalValue = (product: Product) => {
     return (product.total_stock || 0) * product.sale_price_usd;
   };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-md h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Cargando almacén...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="container mx-auto p-6 space-y-6 min-h-screen">
@@ -665,7 +695,19 @@ export const AlmacenPage: React.FC = () => {
       />
 
       {/* Tabla de Productos */}
-      <Card className="glass-panel-dense">
+      {loading && products.length === 0 ? (
+        <AlmacenTableSkeleton rows={12} />
+      ) : (
+      <>
+      <ListPaginationBar
+        currentPage={currentPage}
+        totalPages={totalPages}
+        totalCount={filteredCount}
+        rangeStart={rangeStart}
+        rangeEnd={rangeEnd}
+        onPageChange={setPage}
+      />
+      <Card className={`glass-panel-dense transition-opacity duration-150 ${isFilterPending || isRefetching ? 'opacity-70' : ''}`}>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full glass-table">
@@ -684,7 +726,7 @@ export const AlmacenPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredProducts.map((product) => {
+                {paginatedItems.map((product) => {
                   const isExpanded = expandedProducts.has(product.id);
                   const inventories = storeInventories[product.id] || [];
                   const transfer = transferring[product.id];
@@ -984,7 +1026,7 @@ export const AlmacenPage: React.FC = () => {
             </table>
           </div>
 
-          {filteredProducts.length === 0 && (
+          {paginatedItems.length === 0 && filteredCount === 0 && (
             <div className="p-8 text-center text-muted-foreground">
               <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
               <p>No se encontraron productos</p>
@@ -992,6 +1034,17 @@ export const AlmacenPage: React.FC = () => {
           )}
         </CardContent>
       </Card>
+      <ListPaginationBar
+        currentPage={currentPage}
+        totalPages={totalPages}
+        totalCount={filteredCount}
+        rangeStart={rangeStart}
+        rangeEnd={rangeEnd}
+        onPageChange={setPage}
+        className="border-t border-white/10"
+      />
+      </>
+      )}
 
       {/* Dialog: Lista de Inventario */}
       <Dialog open={showInventoryListDialog} onOpenChange={setShowInventoryListDialog}>

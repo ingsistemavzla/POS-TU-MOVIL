@@ -16,6 +16,8 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { PasswordSetupGuard } from "@/components/auth/PasswordSetupGuard";
 import { ShoppingCart } from "lucide-react";
 import { LoadingScreen } from "@/components/ui/LoadingScreen";
+import { RoutePageLoader } from "@/components/ui/RoutePageLoader";
+import { DashboardPageLoader } from "@/components/ui/DashboardPageLoader";
 // Lazy load layout and auth pages
 const MainLayout = lazy(() => import("./components/layout/MainLayout"));
 const AuthPage = lazy(() => import("./pages/AuthPage"));
@@ -46,10 +48,13 @@ const HistorialPage = lazy(() => import("./pages/HistorialPage").then(m => ({ de
 
 const queryClient = new QueryClient();
 
-// Loading fallback component - Eco-Pulse
-const LoadingFallback = () => (
-  <LoadingScreen message="Cargando aplicación..." />
+/** Solo arranque en frío (sin sesión) */
+const AuthBootLoader = () => (
+  <LoadingScreen message="Iniciando sesión..." />
 );
+
+/** Navegación entre módulos: spinner liviano, sin pantalla completa */
+const RouteLoadingFallback = () => <RoutePageLoader />;
 
 // Componente de validación de sesión para rutas específicas por rol
 const RoleValidationRoute = ({ 
@@ -79,7 +84,7 @@ const RoleValidationRoute = ({
     }
   }, [user, userProfile, loading, requiredRole, redirectTo, navigate]);
 
-  return <LoadingFallback />;
+  return <RouteLoadingFallback />;
 };
 
 // Component to handle role-based redirection
@@ -114,7 +119,7 @@ const RoleBasedRedirect = () => {
   // Por defecto, dashboard
   return (
     <ProtectedRoute requiredRole="manager">
-      <Suspense fallback={<LoadingFallback />}>
+      <Suspense fallback={<RouteLoadingFallback />}>
         <Dashboard />
       </Suspense>
     </ProtectedRoute>
@@ -174,23 +179,26 @@ const AppRoutes = () => {
   // Solo bloqueamos si REALMENTE no sabemos quién es el usuario (carga inicial fría)
   // Si "loading" es true por una revalidación en segundo plano, dejamos al usuario ver la app
   if (loading && !user) {
-    // Solo bloqueamos si REALMENTE no sabemos quién es el usuario (carga inicial fría)
-    return <LoadingFallback />;
+    return <AuthBootLoader />;
   }
 
-  // ✅ Si no hay usuario O no hay perfil, mostrar login
+  // Sesión activa pero perfil aún cargando: no mostrar login por error
+  if (user && !userProfile && loading) {
+    return <RouteLoadingFallback />;
+  }
+
   if (!user || !userProfile) {
     return (
       <Routes>
         <Route path="/" element={
-          <Suspense fallback={<LoadingFallback />}>
+          <Suspense fallback={<RouteLoadingFallback />}>
             <AuthPage />
           </Suspense>
         } />
         <Route
           path="/server"
           element={
-            <Suspense fallback={<LoadingFallback />}>
+            <Suspense fallback={<RouteLoadingFallback />}>
               <ServerStatusPage />
             </Suspense>
           }
@@ -208,7 +216,7 @@ const AppRoutes = () => {
       <Route
         path="/server"
         element={
-          <Suspense fallback={<LoadingFallback />}>
+          <Suspense fallback={<RouteLoadingFallback />}>
             <ServerStatusPage />
           </Suspense>
         }
@@ -216,7 +224,7 @@ const AppRoutes = () => {
       <Route 
         path="/auth/callback" 
         element={
-          <Suspense fallback={<LoadingFallback />}>
+          <Suspense fallback={<RouteLoadingFallback />}>
             <AuthCallback />
           </Suspense>
         } 
@@ -239,7 +247,7 @@ const AppRoutes = () => {
       <Route 
         path="/cashier" 
         element={
-          <Suspense fallback={<LoadingFallback />}>
+          <Suspense fallback={<RouteLoadingFallback />}>
             <CashierValidationPage />
           </Suspense>
         } 
@@ -257,7 +265,7 @@ const AppRoutes = () => {
           path="dashboard" 
           element={
             <ProtectedRoute requiredRole="manager">
-              <Suspense fallback={<LoadingFallback />}>
+              <Suspense fallback={<DashboardPageLoader />}>
                 <Dashboard />
               </Suspense>
             </ProtectedRoute>
@@ -267,7 +275,7 @@ const AppRoutes = () => {
           path="pos" 
           element={
             <POSAccessGuard>
-              <Suspense fallback={<LoadingFallback />}>
+              <Suspense fallback={<RouteLoadingFallback />}>
                 <POS />
               </Suspense>
             </POSAccessGuard>
@@ -277,7 +285,7 @@ const AppRoutes = () => {
           path="master-audit" 
           element={
             <ProtectedRoute requiredRole="master_admin">
-              <Suspense fallback={<LoadingFallback />}>
+              <Suspense fallback={<RouteLoadingFallback />}>
                 <MasterAuditDashboardPage />
               </Suspense>
             </ProtectedRoute>
@@ -287,7 +295,7 @@ const AppRoutes = () => {
           path="store/:storeId" 
           element={
             <ProtectedRoute requiredRole="master_admin">
-              <Suspense fallback={<LoadingFallback />}>
+              <Suspense fallback={<RouteLoadingFallback />}>
                 <StoreDashboardPage />
               </Suspense>
             </ProtectedRoute>
@@ -297,7 +305,7 @@ const AppRoutes = () => {
           path="almacen" 
           element={
             <ProtectedRoute requiredRole="cashier">
-              <Suspense fallback={<LoadingFallback />}>
+              <Suspense fallback={<RouteLoadingFallback />}>
                 <AlmacenPage />
               </Suspense>
             </ProtectedRoute>
@@ -308,7 +316,7 @@ const AppRoutes = () => {
           element={
             <CashierRouteGuard>
               <ProtectedRoute requiredRole="manager">
-                <Suspense fallback={<LoadingFallback />}>
+                <Suspense fallback={<RouteLoadingFallback />}>
                   <ArticulosPage />
                 </Suspense>
               </ProtectedRoute>
@@ -319,7 +327,7 @@ const AppRoutes = () => {
           path="deleted-products" 
           element={
             <ProtectedRoute requiredRole="master_admin">
-              <Suspense fallback={<LoadingFallback />}>
+              <Suspense fallback={<RouteLoadingFallback />}>
                 <DeletedProductsPage />
               </Suspense>
             </ProtectedRoute>
@@ -330,7 +338,7 @@ const AppRoutes = () => {
           element={
             <CashierRouteGuard>
               <ProtectedRoute requiredRole="manager">
-                <Suspense fallback={<LoadingFallback />}>
+                <Suspense fallback={<RouteLoadingFallback />}>
                   <EstadisticasPage />
                 </Suspense>
               </ProtectedRoute>
@@ -342,7 +350,7 @@ const AppRoutes = () => {
           element={
             <CashierRouteGuard>
               <ProtectedRoute requiredRole="manager">
-                <Suspense fallback={<LoadingFallback />}>
+                <Suspense fallback={<RouteLoadingFallback />}>
                   <SalesPage />
                 </Suspense>
               </ProtectedRoute>
@@ -354,7 +362,7 @@ const AppRoutes = () => {
           element={
             <CashierRouteGuard>
               <ProtectedRoute requiredRole="manager">
-                <Suspense fallback={<LoadingFallback />}>
+                <Suspense fallback={<RouteLoadingFallback />}>
                   <CustomersPage />
                 </Suspense>
               </ProtectedRoute>
@@ -366,7 +374,7 @@ const AppRoutes = () => {
           element={
             <CashierRouteGuard>
               <ProtectedRoute requiredRole="admin">
-                <Suspense fallback={<LoadingFallback />}>
+                <Suspense fallback={<RouteLoadingFallback />}>
                   <StoresPage />
                 </Suspense>
               </ProtectedRoute>
@@ -378,7 +386,7 @@ const AppRoutes = () => {
           element={
             <CashierRouteGuard>
               <ProtectedRoute requiredRole="admin">
-                <Suspense fallback={<LoadingFallback />}>
+                <Suspense fallback={<RouteLoadingFallback />}>
                   <Users />
                 </Suspense>
               </ProtectedRoute>
@@ -390,7 +398,7 @@ const AppRoutes = () => {
           element={
             <CashierRouteGuard>
               <ProtectedRoute requiredRole="manager">
-                <Suspense fallback={<LoadingFallback />}>
+                <Suspense fallback={<RouteLoadingFallback />}>
                   <Reports />
                 </Suspense>
               </ProtectedRoute>
@@ -402,7 +410,7 @@ const AppRoutes = () => {
           element={
             <CashierRouteGuard>
               <ProtectedRoute requiredRole="admin">
-                <Suspense fallback={<LoadingFallback />}>
+                <Suspense fallback={<RouteLoadingFallback />}>
                   <HistorialPage />
                 </Suspense>
               </ProtectedRoute>
@@ -414,7 +422,7 @@ const AppRoutes = () => {
           element={
             <CashierRouteGuard>
               <ProtectedRoute requiredRole="admin">
-                <Suspense fallback={<LoadingFallback />}>
+                <Suspense fallback={<RouteLoadingFallback />}>
                   <SettingsPage />
                 </Suspense>
               </ProtectedRoute>
@@ -425,7 +433,7 @@ const AppRoutes = () => {
           path="gestion-web" 
           element={
             <ProtectedRoute requiredRole="admin">
-              <Suspense fallback={<LoadingFallback />}>
+              <Suspense fallback={<RouteLoadingFallback />}>
                 <GestionWebPage />
               </Suspense>
             </ProtectedRoute>
@@ -436,7 +444,7 @@ const AppRoutes = () => {
           element={
             <CashierRouteGuard>
               <ProtectedRoute requiredRole="manager">
-                <Suspense fallback={<LoadingFallback />}>
+                <Suspense fallback={<RouteLoadingFallback />}>
                   <ChatPage />
                 </Suspense>
               </ProtectedRoute>
@@ -448,7 +456,7 @@ const AppRoutes = () => {
         path="*" 
         element={
           <ProtectedRoute>
-            <Suspense fallback={<LoadingFallback />}>
+            <Suspense fallback={<RouteLoadingFallback />}>
               <NotFound />
             </Suspense>
           </ProtectedRoute>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -46,7 +46,14 @@ import { PRODUCT_CATEGORIES, getCategoryLabel } from '@/constants/categories';
 import { sanitizeInventoryData } from '@/utils/inventoryValidation';
 import { ArticlesStatsRow } from '@/components/inventory/ArticlesStatsRow';
 import { StoreFilterBar } from '@/components/inventory/StoreFilterBar';
-import { Skeleton } from '@/components/ui/skeleton';
+import { ProductCardSkeletonGrid, FilterToolbarSpinner } from '@/components/inventory/InventoryLoadingSkeletons';
+import { useClientPagination } from '@/hooks/useClientPagination';
+import { ListPaginationBar } from '@/components/ui/ListPaginationBar';
+import {
+  readInventoryPageCache,
+  writeInventoryPageCache,
+  clearInventoryPageCache,
+} from '@/utils/inventoryPageCache';
 
 interface Product {
   id: string;
@@ -77,10 +84,13 @@ export const ArticulosPage: React.FC = () => {
   const { availableStores } = useStore();
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [isRefetching, setIsRefetching] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   // ✅ OPTIMIZACIÓN: Debounce en búsqueda (espera 300ms después de que usuario deje de escribir)
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
+  const deferredSearchTerm = useDeferredValue(debouncedSearchTerm);
+  const isSearchPending = debouncedSearchTerm !== deferredSearchTerm;
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [showForm, setShowForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -110,20 +120,39 @@ export const ArticulosPage: React.FC = () => {
         return;
       }
 
-      // ✅ OPTIMIZACIÓN: Verificar cache primero (con TTL)
+      const companyId = userProfile.company_id;
+
+      const sessionCached = readInventoryPageCache(companyId);
+      if (sessionCached && products.length === 0) {
+        setProducts(sessionCached.products as Product[]);
+        setStoreInventories(sessionCached.storeInventories as Record<string, StoreInventory[]>);
+        productsCache.current = {
+          products: sessionCached.products as Product[],
+          storeInventories: sessionCached.storeInventories as Record<string, StoreInventory[]>,
+          timestamp: sessionCached.timestamp,
+        };
+        setLoading(false);
+      }
+
       const cached = productsCache.current;
-      if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
-        console.log('[ArticulosPage] ✅ Usando cache de productos e inventario');
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
         setProducts(cached.products);
         setStoreInventories(cached.storeInventories);
         setLoading(false);
+        setIsRefetching(false);
         return;
       }
 
-      // Si el cache expiró, limpiarlo
       if (cached && (Date.now() - cached.timestamp) >= CACHE_TTL) {
-        console.log('[ArticulosPage] 🔄 Cache expirado, recargando...');
         productsCache.current = null;
+      clearInventoryPageCache();
+      }
+
+      const isInitialLoad = products.length === 0 && !productsCache.current;
+      if (isInitialLoad) {
+        setLoading(true);
+      } else {
+        setIsRefetching(true);
       }
 
       // ✅ OPTIMIZACIÓN: Filtro de categoría en SQL (reduce datos transferidos en 40-60%)
@@ -329,6 +358,7 @@ export const ArticulosPage: React.FC = () => {
 
       setProducts(productsWithStock);
       setStoreInventories(inventoriesByProduct);
+      writeInventoryPageCache(companyId, productsWithStock, inventoriesByProduct);
     } catch (error) {
       console.error('Error in fetchData:', error);
       toast({
@@ -338,13 +368,15 @@ export const ArticulosPage: React.FC = () => {
       });
     } finally {
       setLoading(false);
+      setIsRefetching(false);
     }
   };
 
 
-  // ✅ OPTIMIZACIÓN: Recargar datos cuando cambie el filtro de categoría
   useEffect(() => {
     if (userProfile?.company_id) {
+      productsCache.current = null;
+      clearInventoryPageCache();
       fetchData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -357,6 +389,7 @@ export const ArticulosPage: React.FC = () => {
       if (productsCache.current && (now - productsCache.current.timestamp) > CACHE_TTL) {
         console.log('[ArticulosPage] 🧹 Cache expirado, limpiando...');
         productsCache.current = null;
+      clearInventoryPageCache();
       }
     }, 60000); // Revisar cada minuto
 
@@ -406,6 +439,7 @@ export const ArticulosPage: React.FC = () => {
 
       // ✅ OPTIMIZACIÓN: Invalidar cache antes de recargar
       productsCache.current = null;
+      clearInventoryPageCache();
       // Recargar datos desde el backend para obtener total_stock actualizado
       await fetchData();
 
@@ -477,6 +511,7 @@ export const ArticulosPage: React.FC = () => {
 
       // ✅ OPTIMIZACIÓN: Invalidar cache antes de recargar
       productsCache.current = null;
+      clearInventoryPageCache();
       // Recargar datos
       await fetchData();
     } catch (error: any) {
@@ -517,6 +552,7 @@ export const ArticulosPage: React.FC = () => {
 
       // ✅ OPTIMIZACIÓN: Invalidar cache antes de recargar
       productsCache.current = null;
+      clearInventoryPageCache();
       // Cerrar modal y recargar datos
       setDeletingProduct(null);
       await fetchData();
@@ -532,47 +568,32 @@ export const ArticulosPage: React.FC = () => {
 
   // ✅ OPTIMIZACIÓN: Memoización de filtros (solo recalcula cuando cambian las dependencias)
   const filteredProducts = useMemo(() => {
-    return products.filter(product => {
-      // ✅ Usar debouncedSearchTerm en lugar de searchTerm
-      const matchesSearch = product.name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-        product.sku.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-        (product.barcode && product.barcode.toLowerCase().includes(debouncedSearchTerm.toLowerCase()));
-      
+    const term = deferredSearchTerm.toLowerCase();
+    return products.filter((product) => {
+      const matchesSearch =
+        product.name.toLowerCase().includes(term) ||
+        product.sku.toLowerCase().includes(term) ||
+        (product.barcode && product.barcode.toLowerCase().includes(term));
       const matchesCategory = categoryFilter === 'all' || product.category === categoryFilter;
-
       return matchesSearch && matchesCategory;
     });
-  }, [products, debouncedSearchTerm, categoryFilter]);
+  }, [products, deferredSearchTerm, categoryFilter]);
+
+  const paginationResetKey = `${deferredSearchTerm}|${categoryFilter}`;
+  const {
+    paginatedItems,
+    currentPage,
+    totalPages,
+    totalCount: filteredCount,
+    rangeStart,
+    rangeEnd,
+    setPage,
+  } = useClientPagination(filteredProducts, 20, paginationResetKey);
 
   // Calcular valor total
   const getTotalValue = (product: Product) => {
     return (product.total_stock || 0) * product.sale_price_usd;
   };
-
-  // ✅ NUEVO: Componente Skeleton para cards de productos
-  const ProductCardSkeleton = () => (
-    <Card className="p-4">
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex-1">
-          <Skeleton className="h-5 w-32 mb-2" />
-          <Skeleton className="h-4 w-24 mb-1" />
-          <Skeleton className="h-4 w-16" />
-        </div>
-        <Skeleton className="h-8 w-8 rounded" />
-      </div>
-      <div className="grid grid-cols-2 gap-3 mb-3">
-        <div>
-          <Skeleton className="h-3 w-16 mb-1" />
-          <Skeleton className="h-4 w-20" />
-        </div>
-        <div>
-          <Skeleton className="h-3 w-16 mb-1" />
-          <Skeleton className="h-4 w-20" />
-        </div>
-      </div>
-      <Skeleton className="h-10 w-full rounded" />
-    </Card>
-  );
 
   return (
     <div className="container mx-auto px-4 py-6 space-y-6 min-h-screen">
@@ -613,6 +634,11 @@ export const ArticulosPage: React.FC = () => {
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10 glass-input"
                 />
+                {isSearchPending && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <FilterToolbarSpinner />
+                  </div>
+                )}
               </div>
             </div>
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
@@ -633,20 +659,25 @@ export const ArticulosPage: React.FC = () => {
       </Card>
 
       {/* Grid de Tarjetas */}
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-            <ProductCardSkeleton key={i} />
-          ))}
-        </div>
+      {loading && products.length === 0 ? (
+        <ProductCardSkeletonGrid count={8} />
       ) : filteredProducts.length === 0 ? (
         <div className="p-8 text-center text-white/90">
           <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
           <p>No se encontraron productos</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredProducts.map((product) => {
+        <>
+        <ListPaginationBar
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalCount={filteredCount}
+          rangeStart={rangeStart}
+          rangeEnd={rangeEnd}
+          onPageChange={setPage}
+        />
+        <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 transition-opacity duration-150 ${isRefetching ? 'opacity-70' : ''}`}>
+          {paginatedItems.map((product) => {
             const inventories = storeInventories[product.id] || [];
 
             return (
@@ -1016,6 +1047,16 @@ export const ArticulosPage: React.FC = () => {
             );
           })}
         </div>
+        <ListPaginationBar
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalCount={filteredCount}
+          rangeStart={rangeStart}
+          rangeEnd={rangeEnd}
+          onPageChange={setPage}
+          className="border-t border-white/10"
+        />
+        </>
       )}
 
       {/* Modal de Producto */}
@@ -1030,6 +1071,7 @@ export const ArticulosPage: React.FC = () => {
           onSuccess={() => {
             // ✅ OPTIMIZACIÓN: Invalidar cache antes de recargar
             productsCache.current = null;
+      clearInventoryPageCache();
             fetchData();
             setShowForm(false);
             setEditingProduct(null);

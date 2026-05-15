@@ -35,6 +35,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { NegativeStockAlert } from "@/components/inventory/NegativeStockAlert";
 import { useToast } from "@/hooks/use-toast";
+import { prefetchAppRoute } from "@/utils/routePrefetch";
 
 const getNavigationByRole = (role: string) => {
   const allNavigation = [
@@ -161,6 +162,14 @@ export default function MainLayout() {
       document.title = `${company.name} - POS Multitienda`;
     }
   }, [company?.name]);
+
+  // Precargar chunk del dashboard para admin/manager
+  useEffect(() => {
+    const role = userProfile?.role;
+    if (role === 'admin' || role === 'manager') {
+      prefetchAppRoute('/dashboard');
+    }
+  }, [userProfile?.role]);
 
   // Fetch stores list for master_admin
   useEffect(() => {
@@ -300,6 +309,8 @@ export default function MainLayout() {
                 <Link
                   key={item.name}
                   to={item.href}
+                  onMouseEnter={() => prefetchAppRoute(item.href)}
+                  onFocus={() => prefetchAppRoute(item.href)}
                   className={cn(
                     "flex items-center px-3 py-2 text-sm font-medium rounded-md transition-all duration-200",
                     active

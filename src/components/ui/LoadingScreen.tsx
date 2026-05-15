@@ -6,12 +6,15 @@ interface LoadingScreenProps {
   message?: string;
   fullScreen?: boolean;
   className?: string;
+  /** Muestra el badge "CONECTANDO..." (desactivar para transiciones más rápidas) */
+  showConnecting?: boolean;
 }
 
 export const LoadingScreen: React.FC<LoadingScreenProps> = ({
   message = 'CARGANDO',
   fullScreen = true,
-  className
+  className,
+  showConnecting = true,
 }) => {
   return (
     <div
@@ -77,27 +80,25 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
             {message}
           </h2>
 
-          {/* Badge con punto parpadeante y "CONECTANDO..." */}
-          <div className="inline-flex items-center gap-1.5 bg-emerald-500/20 border border-emerald-400/40 rounded-full px-3 py-1.5 shadow-lg shadow-emerald-500/30">
-            {/* Punto parpadeante */}
-            <div
-              className="w-1.5 h-1.5 rounded-full"
-              style={{
-                backgroundColor: '#00FF7F',
-                animation: 'ping-pulse 1.5s ease-in-out infinite'
-              }}
-            />
-
-            {/* Texto "CONECTANDO..." */}
-            <span
-              className="text-xs font-medium uppercase text-emerald-300"
-              style={{
-                animation: 'alive-element 2s ease-in-out infinite'
-              }}
-            >
-              CONECTANDO...
-            </span>
-          </div>
+          {showConnecting && (
+            <div className="inline-flex items-center gap-1.5 bg-emerald-500/20 border border-emerald-400/40 rounded-full px-3 py-1.5 shadow-lg shadow-emerald-500/30">
+              <div
+                className="w-1.5 h-1.5 rounded-full"
+                style={{
+                  backgroundColor: '#00FF7F',
+                  animation: 'ping-pulse 1.5s ease-in-out infinite'
+                }}
+              />
+              <span
+                className="text-xs font-medium uppercase text-emerald-300"
+                style={{
+                  animation: 'alive-element 2s ease-in-out infinite'
+                }}
+              >
+                CONECTANDO...
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Estilos de Animación Inyectados */}

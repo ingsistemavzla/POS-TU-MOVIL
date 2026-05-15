@@ -8,6 +8,7 @@ import { Loader2 } from 'lucide-react';
 import { MAINTENANCE_LOGIN_MESSAGE } from '@/config/maintenance';
 import { useMaintenanceMode } from '@/hooks/useMaintenanceMode';
 import { cn } from '@/lib/utils';
+import { LoginLordIcon } from '@/components/auth/LoginLordIcon';
 
 interface GlassLoginFormProps {
   onToggleMode: () => void;
@@ -56,12 +57,8 @@ export const GlassLoginForm: React.FC<GlassLoginFormProps> = ({ onToggleMode }) 
   return (
     <div className="w-full glass-card rounded-2xl p-8">
       <div className="space-y-4 mb-4">
-        <div className="flex justify-center mb-4">
-          <img
-            src="/logo.svg"
-            alt="Logo Tu Móvil Margarita"
-            className="h-20 w-20 object-contain"
-          />
+        <div className="flex justify-center mb-2">
+          <LoginLordIcon size={140} />
         </div>
         <h2 className="text-2xl font-bold text-white text-center">Iniciar Sesión</h2>
         <p className="text-sm text-white/70 text-center">
@@ -110,7 +107,7 @@ export const GlassLoginForm: React.FC<GlassLoginFormProps> = ({ onToggleMode }) 
               }}
               required
               disabled={loading}
-              className="bg-slate-950/50 border-emerald-500/30 !text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
+              className="bg-slate-950/60 border-white/10 !text-white placeholder:text-white/40 focus:ring-[#16c72e]/50 focus:border-[#16c72e]/60 h-10"
               style={{ color: '#ffffff !important' }}
             />
           </div>
@@ -130,7 +127,7 @@ export const GlassLoginForm: React.FC<GlassLoginFormProps> = ({ onToggleMode }) 
               }}
               required
               disabled={loading}
-              className="bg-slate-950/50 border-emerald-500/30 !text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
+              className="bg-slate-950/60 border-white/10 !text-white placeholder:text-white/40 focus:ring-[#16c72e]/50 focus:border-[#16c72e]/60 h-10"
               style={{ color: '#ffffff !important' }}
             />
           </div>
@@ -158,7 +155,7 @@ export const GlassLoginForm: React.FC<GlassLoginFormProps> = ({ onToggleMode }) 
             variant="link"
             onClick={onToggleMode}
             disabled={loading}
-            className="text-sm text-[#00FF7F] hover:text-[#00ff9d] underline-offset-4"
+            className="text-sm text-[#16c72e] hover:text-[#1ed65a] underline-offset-4"
           >
             ¿No tienes cuenta? Registrar empresa
           </Button>

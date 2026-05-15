@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   DollarSign, 
@@ -22,16 +22,15 @@ import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency } from '@/utils/currency';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { LiquidityDonutChart } from '@/components/charts/LiquidityDonutChart';
-import { LoadingScreen } from '@/components/ui/LoadingScreen';
+import { DashboardPageLoader } from '@/components/ui/DashboardPageLoader';
 import { DashboardStoreTable } from '@/components/dashboard/DashboardStoreTable';
 import { Progress } from '@/components/ui/progress';
-import { Skeleton } from '@/components/ui/skeleton';
 
 type PeriodType = 'today' | 'yesterday' | 'thisMonth';
 
 export default function Dashboard() {
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('today');
-  const { company, userProfile, loading: authLoading } = useAuth();
+  const { company, userProfile } = useAuth();
   const { data: dashboardData, loading: dashboardLoading, error } = useDashboardData();
   const { stats: kreceStats } = useKreceStats(selectedPeriod);
   const { data: paymentMethodsDataResponse } = usePaymentMethodsData(selectedPeriod);
@@ -47,25 +46,6 @@ export default function Dashboard() {
   const previousPaymentData = previousPaymentDataResponse?.data || previousPaymentDataResponse;
   
   const [refreshing, setRefreshing] = useState(false);
-  const [forceShow, setForceShow] = useState(false);
-  
-  const loading = authLoading || dashboardLoading;
-  
-  // ✅ FIX: Extraer IDs estables para evitar bucle infinito
-  const userProfileId = userProfile?.id;
-  const companyId = company?.id;
-  
-  // Timeout de seguridad
-  useEffect(() => {
-    if (loading && userProfile && company) {
-      const timeout = setTimeout(() => {
-        setForceShow(true);
-      }, 5000);
-      return () => clearTimeout(timeout);
-    } else {
-      setForceShow(false);
-    }
-  }, [loading, userProfileId, companyId]); // ✅ FIX: Usar IDs estables en lugar de objetos completos
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -166,77 +146,8 @@ export default function Dashboard() {
 
   const totalPaymentUSD = paymentData?.totalUSD || 0;
 
-  // ✅ NUEVO: Componente Skeleton para KPIs del Dashboard
-  const DashboardKPISkeleton = () => (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      {[1, 2, 3, 4].map((i) => (
-        <Card key={i} className="p-4 border-l-4 border-gray-300">
-          <div className="flex items-center space-x-2">
-            <Skeleton className="h-5 w-5 rounded" />
-            <div className="flex-1">
-              <Skeleton className="h-4 w-24 mb-2" />
-              <Skeleton className="h-8 w-32" />
-            </div>
-          </div>
-        </Card>
-      ))}
-    </div>
-  );
-
-  // ✅ NUEVO: Componente Skeleton para Cards Secundarios
-  const DashboardSecondarySkeleton = () => (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      {[1, 2, 3].map((i) => (
-        <Card key={i} className="p-6">
-          <CardHeader>
-            <Skeleton className="h-6 w-48 mb-2" />
-            <Skeleton className="h-4 w-32" />
-          </CardHeader>
-          <CardContent>
-            <Skeleton className="h-12 w-full mb-4" />
-            <Skeleton className="h-4 w-24" />
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
-
-  // ✅ NUEVO: Componente Skeleton para Gráfica
-  const DashboardChartSkeleton = () => (
-    <Card className="p-6">
-      <CardHeader>
-        <Skeleton className="h-6 w-48 mb-2" />
-        <Skeleton className="h-4 w-64" />
-      </CardHeader>
-      <CardContent>
-        <Skeleton className="h-[300px] w-full" />
-      </CardContent>
-    </Card>
-  );
-
-  // ✅ NUEVO: Componente Skeleton para Resumen Ejecutivo
-  const DashboardSummarySkeleton = () => (
-    <Card className="bg-gradient-to-r from-slate-50 to-blue-50 border-2 border-slate-200">
-      <CardHeader>
-        <Skeleton className="h-6 w-64 mb-2" />
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="p-4 glass-panel rounded-lg border">
-              <Skeleton className="h-4 w-32 mb-2" />
-              <Skeleton className="h-8 w-40 mb-2" />
-              <Skeleton className="h-3 w-24" />
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
-
-  // Loading state con Skeleton (solo si forceShow está activo, sino LoadingScreen)
-  if (loading && userProfile && company && !forceShow) {
-    return <LoadingScreen message="Cargando datos del dashboard..." />;
+  if (dashboardLoading && !dashboardData) {
+    return <DashboardPageLoader />;
   }
 
   // Error state
@@ -311,7 +222,7 @@ export default function Dashboard() {
             variant="outline"
             size="sm"
             onClick={handleRefresh}
-            disabled={loading || refreshing}
+            disabled={dashboardLoading || refreshing}
             className="ml-2"
           >
             <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
@@ -321,10 +232,7 @@ export default function Dashboard() {
       </div>
 
       {/* ✅ NUEVO: Stats Cards (Movidas desde Reports) */}
-      {loading && forceShow ? (
-        <DashboardKPISkeleton />
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="p-4 border-l-4 border-blue-500">
             <div className="flex items-center space-x-2">
               <DollarSign className="h-5 w-5 text-blue-600" />
@@ -371,13 +279,9 @@ export default function Dashboard() {
             </div>
           </Card>
         </div>
-      )}
 
       {/* KPIs Grid - Salud Financiera Real */}
-      {loading && forceShow ? (
-        <DashboardSecondarySkeleton />
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Tarjeta 1: Venta Bruta */}
         <Card className="border-l-4 border-blue-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -441,8 +345,7 @@ export default function Dashboard() {
             )}
           </CardContent>
         </Card>
-        </div>
-      )}
+      </div>
 
       {/* ✅ NUEVO: Termómetro de Liquidez (Gráfico de Dona) */}
       {(() => {
@@ -558,10 +461,7 @@ export default function Dashboard() {
       </div>
 
       {/* Gráficos Row */}
-      {loading && forceShow ? (
-        <DashboardChartSkeleton />
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Bar Chart - Resumen por Tienda */}
           <Card>
           <CardHeader>
@@ -688,14 +588,10 @@ export default function Dashboard() {
             )}
           </CardContent>
         </Card>
-        </div>
-      )}
+      </div>
 
       {/* ✅ NUEVO: Resumen de Cierre de Caja */}
-      {loading && forceShow ? (
-        <DashboardSummarySkeleton />
-      ) : (
-        <Card className="glass-panel border border-white/10">
+      <Card className="glass-panel border border-white/10">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg font-semibold text-white">
             <Wallet className="w-5 h-5 text-green-400" />
@@ -765,7 +661,6 @@ export default function Dashboard() {
           </div>
         </CardContent>
       </Card>
-      )}
 
       {/* Tablas Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
