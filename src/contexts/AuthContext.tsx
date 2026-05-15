@@ -845,8 +845,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
-    if (!MAINTENANCE_PROTOCOL_ENABLED) return;
-    if (maintenanceActive) {
+    if (MAINTENANCE_PROTOCOL_ENABLED && maintenanceActive) {
       void evictSessionForMaintenance();
       return;
     }
