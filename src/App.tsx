@@ -24,6 +24,7 @@ const AuthPage = lazy(() => import("./pages/AuthPage"));
 const AuthCallback = lazy(() => import("./pages/AuthCallback"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const ServerStatusPage = lazy(() => import("./pages/ServerStatusPage"));
+const PresupuestoServicioTecnicoPage = lazy(() => import("./pages/PresupuestoServicioTecnicoPage"));
 
 // Lazy load heavy pages for code splitting
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -161,7 +162,11 @@ const AppRoutes = () => {
     if (!user && !userProfile && !loading && !urlCleanedRef.current) {
       // Solo limpiar si NO estamos ya en la raíz
       const path = window.location.pathname;
-      const isAllowedPublicPath = path === '/' || path === '/server' || path === '/auth/callback';
+      const isAllowedPublicPath =
+        path === '/' ||
+        path === '/server' ||
+        path === '/auth/callback' ||
+        path === '/presupuesto-sistema-servicio-tecnico';
       if (!isAllowedPublicPath) {
         urlCleanedRef.current = true;
         // ✅ window.location.replace limpia la URL completamente sin dejar historial
@@ -203,6 +208,14 @@ const AppRoutes = () => {
             </Suspense>
           }
         />
+        <Route
+          path="/presupuesto-sistema-servicio-tecnico"
+          element={
+            <Suspense fallback={<RouteLoadingFallback />}>
+              <PresupuestoServicioTecnicoPage />
+            </Suspense>
+          }
+        />
         <Route path="/admin" element={<Navigate to="/" replace />} />
         <Route path="/manager" element={<Navigate to="/" replace />} />
         <Route path="/cashier" element={<Navigate to="/" replace />} />
@@ -218,6 +231,14 @@ const AppRoutes = () => {
         element={
           <Suspense fallback={<RouteLoadingFallback />}>
             <ServerStatusPage />
+          </Suspense>
+        }
+      />
+      <Route
+        path="/presupuesto-sistema-servicio-tecnico"
+        element={
+          <Suspense fallback={<RouteLoadingFallback />}>
+            <PresupuestoServicioTecnicoPage />
           </Suspense>
         }
       />
