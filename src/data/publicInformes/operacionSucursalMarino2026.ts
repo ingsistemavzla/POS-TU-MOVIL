@@ -24,6 +24,7 @@ export const informeCatalogo: PublicInforme = {
   tags: ['índice', 'operaciones', 'marino'],
   relacionados: [
     'operacion-marino-informe-completo-2026',
+    'productos-sin-categoria-inventario-2026',
     'respaldo-pre-sucursal-marino-2026',
     'inventario-estado-actual-2026-06',
     'operacion-marino-ejecuciones-2026',
@@ -47,6 +48,7 @@ export const informeCatalogo: PublicInforme = {
       headers: ['Slug', 'Categoría', 'Descripción'],
       rows: [
         { cells: ['operacion-marino-informe-completo-2026', 'Consolidado', 'TODO en 1: respaldo + SQL + validaciones + inventario final'] },
+        { cells: ['productos-sin-categoria-inventario-2026', 'Inventario', 'Identificar 3 productos uncategorized'] },
         { cells: ['respaldo-pre-sucursal-marino-2026', 'Respaldo', 'Git, dump BD, protocolo restore'] },
         { cells: ['inventario-estado-actual-2026-06', 'Inventario', 'Estado actual certificado (5 tiendas)'] },
         { cells: ['operacion-marino-ejecuciones-2026', 'Ejecución', 'Migración SQL, create_store_system, pasos'] },
@@ -59,6 +61,7 @@ export const informeCatalogo: PublicInforme = {
       title: 'Enlaces rápidos',
       items: [
         { label: 'Informe completo (TODO en 1)', href: '/informe/operacion-marino-informe-completo-2026' },
+        { label: 'Productos sin categoría', href: '/informe/productos-sin-categoria-inventario-2026' },
         { label: 'Respaldo', href: '/informe/respaldo-pre-sucursal-marino-2026' },
         { label: 'Inventario actual', href: '/informe/inventario-estado-actual-2026-06' },
         { label: 'Ejecuciones', href: '/informe/operacion-marino-ejecuciones-2026' },
@@ -359,6 +362,13 @@ export const informeInventarioActual: PublicInforme = {
         'Las 4 tiendas originales conservan los mismos totales que antes de la operación.',
       ],
     },
+    {
+      type: 'links',
+      title: 'Productos sin categoría (3 uds · USD 41)',
+      items: [
+        { label: 'Ver informe e identificación SQL', href: '/informe/productos-sin-categoria-inventario-2026' },
+      ],
+    },
   ],
 };
 
@@ -542,9 +552,112 @@ export const informeFinal: PublicInforme = {
   ],
 };
 
+export const informeProductosSinCategoria: PublicInforme = {
+  slug: 'productos-sin-categoria-inventario-2026',
+  titulo: 'Productos sin categoría (uncategorized)',
+  subtitulo: 'Identificación y corrección — 3 productos · 3 uds · USD 41,00',
+  fecha: '2026-06-02',
+  estado: 'referencia',
+  categoria: 'inventario',
+  tags: ['categoría', 'uncategorized', 'inventario'],
+  relacionados: [INFORMES_CATALOGO_SLUG, 'inventario-estado-actual-2026-06'],
+  meta: [
+    ...metaBase,
+    { label: 'SQL identificación', value: 'sql/reporte_productos_sin_categoria.sql' },
+    { label: 'Categorías válidas', value: 'phones, accessories, technical_service' },
+  ],
+  sections: [
+    { type: 'hero', badge: 'Sin categoría · uncategorized' },
+    {
+      type: 'verdict',
+      titulo: 'Requiere clasificación manual',
+      detalle:
+        'Hay 3 productos activos que no usan una categoría válida del POS. Aparecen en Estadísticas como uncategorized (USD 41,00 · 3 uds).',
+      ok: false,
+    },
+    {
+      type: 'text',
+      title: 'Qué es uncategorized',
+      paragraphs: [
+        'En Estadísticas, uncategorized agrupa productos cuyo campo products.category es NULL, está vacío, o tiene un valor distinto de phones, accessories o technical_service.',
+        'Esos productos no suman en el bloque “Resumen por Sucursal” (Teléfonos / Accesorios / Servicios), pero sí en el total global de unidades (5.300).',
+      ],
+    },
+    {
+      type: 'table',
+      title: 'Cifras del panel (referencia)',
+      headers: ['Métrica', 'Valor en Estadísticas'],
+      rows: [
+        { cells: ['Productos uncategorized', '3'] },
+        { cells: ['Unidades', '3'] },
+        { cells: ['Valor USD', '41,00'] },
+        { cells: ['% del inventario (valor)', '0%'] },
+      ],
+    },
+    {
+      type: 'table',
+      title: 'Categorías válidas en el sistema',
+      headers: ['Valor BD', 'Etiqueta panel'],
+      rows: [
+        { cells: ['phones', 'Teléfonos'] },
+        { cells: ['accessories', 'Accesorios'] },
+        { cells: ['technical_service', 'Servicio Técnico'] },
+      ],
+    },
+    {
+      type: 'steps',
+      title: 'Cómo identificar los 3 productos (Supabase)',
+      items: [
+        {
+          paso: '1',
+          accion: 'Abrir SQL Editor en Supabase',
+          resultado: 'Proyecto swsqmsbyikznalrvydny',
+        },
+        {
+          paso: '2',
+          accion: 'Ejecutar sql/reporte_productos_sin_categoria.sql',
+          resultado: 'Lista SKU, nombre, category en BD, stock por sucursal',
+        },
+        {
+          paso: '3',
+          accion: 'Verificar resumen',
+          resultado: 'Debe dar ~3 productos, ~3 uds, ~USD 41',
+        },
+      ],
+    },
+    {
+      type: 'code',
+      title: 'Criterio SQL (mismo que el panel)',
+      language: 'sql',
+      code: `-- Producto sin categoría válida:
+WHERE category IS NULL
+   OR btrim(category) = ''
+   OR category NOT IN ('phones', 'accessories', 'technical_service');`,
+    },
+    {
+      type: 'text',
+      title: 'Cómo corregir',
+      paragraphs: [
+        'Opción A: En el POS → Almacén/Artículos → editar producto → elegir Teléfonos, Accesorios o Servicio Técnico.',
+        'Opción B: UPDATE en Supabase (solo tras identificar UUID con el reporte SQL).',
+        'Después de corregir: Actualizar Estadísticas y re-ejecutar el SQL hasta resumen = 0 productos.',
+      ],
+    },
+    {
+      type: 'links',
+      title: 'Enlaces',
+      items: [
+        { label: 'Inventario actual (5 tiendas)', href: '/informe/inventario-estado-actual-2026-06' },
+        { label: 'Informe completo operación', href: '/informe/operacion-marino-informe-completo-2026' },
+      ],
+    },
+  ],
+};
+
 export const ALL_PUBLIC_INFORMES: PublicInforme[] = [
   informeCatalogo,
   informeAbsoluto,
+  informeProductosSinCategoria,
   informeRespaldo,
   informeInventarioActual,
   informeEjecuciones,

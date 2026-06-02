@@ -2,6 +2,7 @@
 
 | Fecha | Documento | Tema |
 |-------|-----------|------|
+| 2026-06-02 | [REPORTE_PRODUCTOS_SIN_CATEGORIA.md](./REPORTE_PRODUCTOS_SIN_CATEGORIA.md) | 3 productos uncategorized |
 | 2026-06-02 | **[CATALOGO_SLUGS_INFORMES_PUBLICOS.md](./CATALOGO_SLUGS_INFORMES_PUBLICOS.md)** | **URLs `/informe/<slug>` sin login** |
 | 2026-06-02 | **[INFORME_FINAL_OPERACION_SUCURSALES_2026.md](./INFORME_FINAL_OPERACION_SUCURSALES_2026.md)** | **Informe final consolidado (leer primero)** |
 | 2026-06-02 | [ACTA_COMPLETA_SUCURSAL_TU_MOVIL_MARINO.md](./ACTA_COMPLETA_SUCURSAL_TU_MOVIL_MARINO.md) | Acta técnica detallada por fases |

@@ -20,9 +20,18 @@ import {
   Zap,
   ShoppingBag,
   RefreshCw,
-  Loader2
+  Loader2,
+  Eye,
+  HelpCircle,
 } from 'lucide-react';
-import { getCategoryLabel } from '@/constants/categories';
+import { getCategoryLabel, normalizeStatsCategory } from '@/constants/categories';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { sanitizeInventoryData } from '@/utils/inventoryValidation';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import { useInventoryFinancialSummary } from '@/hooks/useInventoryFinancialSummary';
@@ -44,6 +53,16 @@ interface CategoryStats {
   uniqueProducts: number;
   totalUnits: number;
   percentage: number;
+}
+
+interface UncategorizedProductRow {
+  productId: string;
+  sku: string;
+  name: string;
+  categoryInDb: string | null;
+  totalUnits: number;
+  totalValue: number;
+  stockByStore: { storeName: string; qty: number }[];
 }
 
 interface InventorySummary {
@@ -76,6 +95,8 @@ export const EstadisticasPage: React.FC = () => {
     totalUnits: 0,
   });
   const [categoryStats, setCategoryStats] = useState<CategoryStats[]>([]);
+  const [uncategorizedProducts, setUncategorizedProducts] = useState<UncategorizedProductRow[]>([]);
+  const [uncategorizedDialogOpen, setUncategorizedDialogOpen] = useState(false);
   const [globalCategoryTotals, setGlobalCategoryTotals] = useState({
     phones: 0,
     accessories: 0,
@@ -131,7 +152,9 @@ export const EstadisticasPage: React.FC = () => {
           products!inner(
             category,
             sale_price_usd,
-            active
+            active,
+            sku,
+            name
           )
         `)
         .eq('products.active', true);  // ⚠️ Solo inventario de productos activos
@@ -521,8 +544,21 @@ export const EstadisticasPage: React.FC = () => {
         totalUnits: number;
       }>();
 
+      const uncategorizedMap = new Map<
+        string,
+        {
+          sku: string;
+          name: string;
+          categoryInDb: string | null;
+          totalUnits: number;
+          totalValue: number;
+          stockByStore: Map<string, number>;
+        }
+      >();
+
       sanitizedInventory.forEach((item: any) => {
-        const category = item.products?.category || 'uncategorized';
+        const rawCategory = item.products?.category ?? null;
+        const category = normalizeStatsCategory(rawCategory);
         const qty = Math.max(0, item.qty || 0);
         const salePrice = item.products?.sale_price_usd || 0;
         const productId = item.product_id;
@@ -539,7 +575,45 @@ export const EstadisticasPage: React.FC = () => {
         cat.totalValue += qty * salePrice;
         cat.productIds.add(productId);
         cat.totalUnits += qty;
+
+        if (category === 'uncategorized') {
+          if (!uncategorizedMap.has(productId)) {
+            uncategorizedMap.set(productId, {
+              sku: item.products?.sku || '—',
+              name: item.products?.name || 'Sin nombre',
+              categoryInDb: rawCategory,
+              totalUnits: 0,
+              totalValue: 0,
+              stockByStore: new Map(),
+            });
+          }
+          const row = uncategorizedMap.get(productId)!;
+          row.totalUnits += qty;
+          row.totalValue += qty * salePrice;
+          if (qty > 0) {
+            const storeId = item.store_id;
+            const storeName = storeMap.get(storeId) || 'Sucursal';
+            row.stockByStore.set(storeName, (row.stockByStore.get(storeName) || 0) + qty);
+          }
+        }
       });
+
+      const uncategorizedRows: UncategorizedProductRow[] = Array.from(uncategorizedMap.entries())
+        .map(([productId, row]) => ({
+          productId,
+          sku: row.sku,
+          name: row.name,
+          categoryInDb: row.categoryInDb,
+          totalUnits: row.totalUnits,
+          totalValue: Math.round(row.totalValue * 100) / 100,
+          stockByStore: Array.from(row.stockByStore.entries())
+            .map(([storeName, qty]) => ({ storeName, qty }))
+            .filter((s) => s.qty > 0)
+            .sort((a, b) => a.storeName.localeCompare(b.storeName)),
+        }))
+        .sort((a, b) => b.totalValue - a.totalValue || a.name.localeCompare(b.name));
+
+      setUncategorizedProducts(uncategorizedRows);
 
       const categoryStatsArray: CategoryStats[] = Array.from(categoryMap.entries()).map(([category, data]) => ({
         category,
@@ -701,9 +775,12 @@ export const EstadisticasPage: React.FC = () => {
 
         {/* Cards de Categorías - Formato compacto */}
         {categoryStats.map((cat) => {
+          const isUncategorized = cat.category === 'uncategorized';
+
           const getCategoryIcon = () => {
             if (cat.category === 'phones') return <Smartphone className="w-4 h-4 text-blue-400" />;
             if (cat.category === 'accessories') return <Headphones className="w-4 h-4 text-green-400" />;
+            if (isUncategorized) return <HelpCircle className="w-4 h-4 text-slate-300" />;
             return <Wrench className="w-4 h-4 text-orange-400" />;
           };
 
@@ -719,6 +796,12 @@ export const EstadisticasPage: React.FC = () => {
               shadow: 'shadow-green-500/40',
               bg: 'rgba(5, 21, 12, 0.6)',
               text: 'text-green-400'
+            };
+            if (isUncategorized) return {
+              border: 'border-slate-500/40',
+              shadow: 'shadow-slate-500/30',
+              bg: 'rgba(20, 20, 24, 0.65)',
+              text: 'text-slate-300'
             };
             return {
               border: 'border-orange-500/40',
@@ -736,11 +819,24 @@ export const EstadisticasPage: React.FC = () => {
               backdropFilter: 'blur(20px)',
               WebkitBackdropFilter: 'blur(20px)'
             }}>
-              <CardHeader className="pb-3">
+              <CardHeader className="pb-3 relative pr-12">
                 <CardTitle className={`text-sm font-medium flex items-center gap-2 ${colors.text}`}>
                   {getCategoryIcon()}
-                  {cat.label}
+                  {isUncategorized ? 'Sin categoría' : cat.label}
                 </CardTitle>
+                {isUncategorized && uncategorizedProducts.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-1 top-1 h-8 w-8 text-slate-200 hover:text-white hover:bg-white/10"
+                    title="Ver detalle de productos sin categoría"
+                    aria-label="Ver detalle de productos sin categoría"
+                    onClick={() => setUncategorizedDialogOpen(true)}
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                )}
               </CardHeader>
               <CardContent>
                 <div className={`text-xl font-bold ${colors.text}`}>
@@ -1111,6 +1207,81 @@ export const EstadisticasPage: React.FC = () => {
         </Card>
         );
       })()}
+
+      <Dialog open={uncategorizedDialogOpen} onOpenChange={setUncategorizedDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <HelpCircle className="h-5 w-5 text-slate-300" />
+              Productos sin categoría
+            </DialogTitle>
+            <DialogDescription className="text-white/70">
+              Productos activos cuya categoría no es Teléfonos, Accesorios ni Servicio Técnico. Asigne
+              categoría en Artículos para que aparezcan en el resumen por sucursal.
+            </DialogDescription>
+          </DialogHeader>
+
+          {uncategorizedProducts.length === 0 ? (
+            <p className="text-sm text-white/80 py-4">No hay productos sin categoría con stock registrado.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-white/10">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-white/5 text-left">
+                    <th className="px-3 py-2 font-semibold">SKU</th>
+                    <th className="px-3 py-2 font-semibold">Producto</th>
+                    <th className="px-3 py-2 font-semibold">Categoría en BD</th>
+                    <th className="px-3 py-2 font-semibold text-right">Uds</th>
+                    <th className="px-3 py-2 font-semibold text-right">USD</th>
+                    <th className="px-3 py-2 font-semibold">Stock por sucursal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {uncategorizedProducts.map((row) => (
+                    <tr key={row.productId} className="border-t border-white/10">
+                      <td className="px-3 py-2 font-mono text-xs">{row.sku}</td>
+                      <td className="px-3 py-2">{row.name}</td>
+                      <td className="px-3 py-2 text-white/70">
+                        {row.categoryInDb == null || row.categoryInDb.trim() === ''
+                          ? '(vacío / null)'
+                          : row.categoryInDb}
+                      </td>
+                      <td className="px-3 py-2 text-right">{row.totalUnits}</td>
+                      <td className="px-3 py-2 text-right font-mono">
+                        {row.totalValue.toLocaleString('es-VE', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-white/80">
+                        {row.stockByStore.length > 0
+                          ? row.stockByStore.map((s) => `${s.storeName}: ${s.qty}`).join(' · ')
+                          : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-white/20 bg-white/5 font-semibold">
+                    <td className="px-3 py-2" colSpan={3}>
+                      Total ({uncategorizedProducts.length} productos)
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {uncategorizedProducts.reduce((s, r) => s + r.totalUnits, 0)}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono">
+                      {uncategorizedProducts
+                        .reduce((s, r) => s + r.totalValue, 0)
+                        .toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-3 py-2" />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

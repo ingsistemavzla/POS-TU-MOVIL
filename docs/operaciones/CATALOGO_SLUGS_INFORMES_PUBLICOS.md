@@ -21,6 +21,7 @@ Presentación uniforme en la app: cabecera verde, metadatos, tablas, pasos, vere
 | **`operacion-marino-informe-completo-2026`** | **Consolidado** | **TODO en 1:** respaldo + SQL + validaciones + inventario final |
 | **`respaldo-pre-sucursal-marino-2026`** | **Respaldo** | Git, dump, protocolo, procedimiento restore |
 | `inventario-estado-actual-2026-06` | Inventario | Totales, categorías, 5 sucursales, filas BD |
+| `productos-sin-categoria-inventario-2026` | Inventario | Identificar 3 productos uncategorized |
 | `operacion-marino-ejecuciones-2026` | Ejecución | Migración, RPC, SQL, archivos repo |
 | `operacion-marino-validaciones-2026` | Validación | E2E, transferencia Centro, integridad |
 | `operacion-marino-informe-final-2026` | Consolidado | Veredicto APROBADO y comparativa |
@@ -36,6 +37,7 @@ https://<tu-dominio>/informes
 https://<tu-dominio>/informe/operacion-marino-informe-completo-2026
 https://<tu-dominio>/informe/respaldo-pre-sucursal-marino-2026
 https://<tu-dominio>/informe/inventario-estado-actual-2026-06
+https://<tu-dominio>/informe/productos-sin-categoria-inventario-2026
 https://<tu-dominio>/informe/operacion-marino-ejecuciones-2026
 https://<tu-dominio>/informe/operacion-marino-validaciones-2026
 https://<tu-dominio>/informe/operacion-marino-informe-final-2026
