@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { isMaintenanceModeActive, subscribeMaintenanceMode } from '@/config/maintenance';
 import { useMaintenanceMode } from '@/hooks/useMaintenanceMode';
+import { isPublicAppPath } from '@/lib/publicInformePaths';
 
 /**
  * Si el modo mantenimiento está ON, expulsa cualquier sesión activa
@@ -19,7 +20,7 @@ export function MaintenanceEnforcer() {
     evictingRef.current = true;
     try {
       await signOut();
-      if (window.location.pathname !== '/' && window.location.pathname !== '/server') {
+      if (!isPublicAppPath(window.location.pathname)) {
         window.location.replace('/');
       }
     } finally {

@@ -3,6 +3,7 @@ const prefetched = new Set<string>();
 const routeLoaders: Record<string, () => Promise<unknown>> = {
   '/dashboard': () => import('@/pages/Dashboard'),
   '/presupuesto-sistema-servicio-tecnico': () => import('@/pages/PresupuestoServicioTecnicoPage'),
+  '/informes': () => import('@/pages/PublicInformesCatalogPage'),
   '/pos': () => import('@/pages/POS'),
   '/almacen': () => import('@/pages/AlmacenPage').then((m) => m),
   '/articulos': () => import('@/pages/ArticulosPage').then((m) => m),

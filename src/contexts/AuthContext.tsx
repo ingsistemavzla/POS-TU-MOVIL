@@ -14,6 +14,7 @@ import {
   subscribeMaintenanceMode,
 } from '@/config/maintenance';
 import { useMaintenanceMode } from '@/hooks/useMaintenanceMode';
+import { isPublicAppPath } from '@/lib/publicInformePaths';
 
 type UserProfile = Tables<'users'>;
 
@@ -809,7 +810,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     clearBrowserAuthStorage();
     resetAuthState();
     const path = window.location.pathname;
-    if (path !== '/' && path !== '/server' && path !== '/auth/callback') {
+    if (!isPublicAppPath(path)) {
       window.location.replace('/');
     }
   };

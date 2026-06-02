@@ -18,6 +18,7 @@ import { ShoppingCart } from "lucide-react";
 import { LoadingScreen } from "@/components/ui/LoadingScreen";
 import { RoutePageLoader } from "@/components/ui/RoutePageLoader";
 import { DashboardPageLoader } from "@/components/ui/DashboardPageLoader";
+import { isPublicAppPath } from "@/lib/publicInformePaths";
 // Lazy load layout and auth pages
 const MainLayout = lazy(() => import("./components/layout/MainLayout"));
 const AuthPage = lazy(() => import("./pages/AuthPage"));
@@ -25,6 +26,8 @@ const AuthCallback = lazy(() => import("./pages/AuthCallback"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const ServerStatusPage = lazy(() => import("./pages/ServerStatusPage"));
 const PresupuestoServicioTecnicoPage = lazy(() => import("./pages/PresupuestoServicioTecnicoPage"));
+const PublicInformePage = lazy(() => import("./pages/PublicInformePage"));
+const PublicInformesCatalogPage = lazy(() => import("./pages/PublicInformesCatalogPage"));
 
 // Lazy load heavy pages for code splitting
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -162,12 +165,7 @@ const AppRoutes = () => {
     if (!user && !userProfile && !loading && !urlCleanedRef.current) {
       // Solo limpiar si NO estamos ya en la raíz
       const path = window.location.pathname;
-      const isAllowedPublicPath =
-        path === '/' ||
-        path === '/server' ||
-        path === '/auth/callback' ||
-        path === '/presupuesto-sistema-servicio-tecnico';
-      if (!isAllowedPublicPath) {
+      if (!isPublicAppPath(path)) {
         urlCleanedRef.current = true;
         // ✅ window.location.replace limpia la URL completamente sin dejar historial
         window.location.replace('/');
@@ -216,6 +214,22 @@ const AppRoutes = () => {
             </Suspense>
           }
         />
+        <Route
+          path="/informes"
+          element={
+            <Suspense fallback={<RouteLoadingFallback />}>
+              <PublicInformesCatalogPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/informe/:slug"
+          element={
+            <Suspense fallback={<RouteLoadingFallback />}>
+              <PublicInformePage />
+            </Suspense>
+          }
+        />
         <Route path="/admin" element={<Navigate to="/" replace />} />
         <Route path="/manager" element={<Navigate to="/" replace />} />
         <Route path="/cashier" element={<Navigate to="/" replace />} />
@@ -239,6 +253,22 @@ const AppRoutes = () => {
         element={
           <Suspense fallback={<RouteLoadingFallback />}>
             <PresupuestoServicioTecnicoPage />
+          </Suspense>
+        }
+      />
+      <Route
+        path="/informes"
+        element={
+          <Suspense fallback={<RouteLoadingFallback />}>
+            <PublicInformesCatalogPage />
+          </Suspense>
+        }
+      />
+      <Route
+        path="/informe/:slug"
+        element={
+          <Suspense fallback={<RouteLoadingFallback />}>
+            <PublicInformePage />
           </Suspense>
         }
       />
