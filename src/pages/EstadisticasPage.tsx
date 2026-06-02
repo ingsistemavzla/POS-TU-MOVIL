@@ -819,22 +819,23 @@ export const EstadisticasPage: React.FC = () => {
               backdropFilter: 'blur(20px)',
               WebkitBackdropFilter: 'blur(20px)'
             }}>
-              <CardHeader className="pb-3 relative pr-12">
-                <CardTitle className={`text-sm font-medium flex items-center gap-2 ${colors.text}`}>
+              <CardHeader className="pb-3 relative">
+                <CardTitle className={`text-sm font-medium flex items-center gap-2 pr-28 ${colors.text}`}>
                   {getCategoryIcon()}
                   {isUncategorized ? 'Sin categoría' : cat.label}
                 </CardTitle>
                 {isUncategorized && uncategorizedProducts.length > 0 && (
                   <Button
                     type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-1 top-1 h-8 w-8 text-slate-200 hover:text-white hover:bg-white/10"
+                    variant="outline"
+                    size="sm"
+                    className="absolute right-3 top-3 h-7 gap-1 border-slate-400/50 bg-white/10 px-2 py-0 text-[11px] font-medium leading-tight text-slate-100 rounded-xl hover:bg-white/20 hover:text-white"
                     title="Ver detalle de productos sin categoría"
-                    aria-label="Ver detalle de productos sin categoría"
+                    aria-label="Ver detalles de productos sin categoría"
                     onClick={() => setUncategorizedDialogOpen(true)}
                   >
-                    <Eye className="h-4 w-4" />
+                    <Eye className="h-4 w-4 shrink-0" />
+                    Ver detalles
                   </Button>
                 )}
               </CardHeader>
