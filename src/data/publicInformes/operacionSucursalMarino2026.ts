@@ -23,6 +23,7 @@ export const informeCatalogo: PublicInforme = {
   categoria: 'indice',
   tags: ['índice', 'operaciones', 'marino'],
   relacionados: [
+    'operacion-marino-informe-absoluto-2026',
     'respaldo-pre-sucursal-marino-2026',
     'inventario-estado-actual-2026-06',
     'operacion-marino-ejecuciones-2026',
@@ -45,6 +46,7 @@ export const informeCatalogo: PublicInforme = {
       title: 'Informes disponibles',
       headers: ['Slug', 'Categoría', 'Descripción'],
       rows: [
+        { cells: ['operacion-marino-informe-absoluto-2026', 'Consolidado', 'TODO en 1: respaldo + SQL + validaciones + inventario final'] },
         { cells: ['respaldo-pre-sucursal-marino-2026', 'Respaldo', 'Git, dump BD, protocolo restore'] },
         { cells: ['inventario-estado-actual-2026-06', 'Inventario', 'Estado actual certificado (5 tiendas)'] },
         { cells: ['operacion-marino-ejecuciones-2026', 'Ejecución', 'Migración SQL, create_store_system, pasos'] },
@@ -56,11 +58,167 @@ export const informeCatalogo: PublicInforme = {
       type: 'links',
       title: 'Enlaces rápidos',
       items: [
+        { label: 'Informe absoluto (TODO en 1)', href: '/informe/operacion-marino-informe-absoluto-2026' },
         { label: 'Respaldo', href: '/informe/respaldo-pre-sucursal-marino-2026' },
         { label: 'Inventario actual', href: '/informe/inventario-estado-actual-2026-06' },
         { label: 'Ejecuciones', href: '/informe/operacion-marino-ejecuciones-2026' },
         { label: 'Validaciones', href: '/informe/operacion-marino-validaciones-2026' },
         { label: 'Informe final', href: '/informe/operacion-marino-informe-final-2026' },
+      ],
+    },
+  ],
+};
+
+export const informeAbsoluto: PublicInforme = {
+  slug: 'operacion-marino-informe-absoluto-2026',
+  titulo: 'Informe absoluto — Operación Tu Móvil Marino (TODO en 1)',
+  subtitulo: 'Respaldo + SQL ejecutados + validaciones + pruebas + estado final del inventario (sin login)',
+  fecha: '2026-06-02',
+  estado: 'aprobado',
+  categoria: 'consolidado',
+  tags: ['absoluto', 'auditoría', 'respaldo', 'sql', 'inventario', 'validación'],
+  relacionados: [
+    INFORMES_CATALOGO_SLUG,
+    'respaldo-pre-sucursal-marino-2026',
+    'inventario-estado-actual-2026-06',
+    'operacion-marino-ejecuciones-2026',
+    'operacion-marino-validaciones-2026',
+    'operacion-marino-informe-final-2026',
+  ],
+  meta: [
+    ...metaBase,
+    { label: 'store_id Marino', value: MARINO_ID },
+    { label: 'Rama backup', value: 'backup-pre-sucursal' },
+    { label: 'Documento SQL índice', value: 'sql/INDICE_SQL_EJECUTADOS_SUCURSAL_MARINO.md' },
+    { label: 'Commit documentación', value: '2d3eb19 + d97d6d5' },
+  ],
+  sections: [
+    { type: 'hero', badge: 'Informe absoluto · 1 solo slug' },
+    {
+      type: 'verdict',
+      titulo: 'APROBADO — producción estable y sin desvío',
+      detalle:
+        '5 sucursales activas. Inventario global conserva línea base: 659 productos · 5.300 unidades · USD 155.463,51. Transferencias probadas y revertidas.',
+      ok: true,
+    },
+    {
+      type: 'text',
+      title: 'Objetivo (dueño / operación)',
+      paragraphs: [
+        'Este informe consolida TODA la operación de creación de la sucursal Tu Móvil Marino, incluyendo respaldos, SQL ejecutado en Supabase, validaciones numéricas y pruebas en el POS.',
+        'Está diseñado para auditoría: una sola URL (slug) para revisar qué se hizo, cómo se validó y cuál es el estado final certificado.',
+      ],
+    },
+    {
+      type: 'timeline',
+      title: 'Cronología',
+      items: [
+        { fecha: '2026-06-01', fase: 'Respaldo', resultado: 'Rama Git + dump BD + protocolo restore + baseline' },
+        { fecha: '2026-06-01', fase: 'Diagnóstico', resultado: 'GO: 0 huecos, 0 duplicados, totales certificados' },
+        { fecha: '2026-06-02', fase: 'Migración', resultado: 'create_store_v1_system aplicado en producción (SQL Editor)' },
+        { fecha: '2026-06-02', fase: 'Creación tienda', resultado: `Tu Móvil Marino creada → store_id ${MARINO_ID} (OK 659/659)` },
+        { fecha: '2026-06-02', fase: 'Pruebas', resultado: 'E2E + transferencia Centro y devolución → sin desvío' },
+      ],
+    },
+    {
+      type: 'table',
+      title: 'Línea base ANTES (certificada)',
+      headers: ['Métrica', 'Valor'],
+      rows: [
+        { cells: ['Tiendas activas', '4'] },
+        { cells: ['Productos activos', '659'] },
+        { cells: ['Unidades', '5.300'] },
+        { cells: ['Valor inventario USD', '155.463,51'] },
+        { cells: ['Huecos inventario', '0'] },
+        { cells: ['Duplicados', '0'] },
+      ],
+    },
+    {
+      type: 'table',
+      title: 'Estado final (certificado post-pruebas)',
+      headers: ['Métrica', 'Valor'],
+      rows: [
+        { cells: ['Tiendas activas', '5'] },
+        { cells: ['Productos activos', '659'] },
+        { cells: ['Unidades', '5.300'] },
+        { cells: ['Valor inventario USD', '155.463,51'] },
+        { cells: ['Marino (unidades dashboard)', '0'] },
+      ],
+    },
+    {
+      type: 'table',
+      title: 'Resumen por sucursal (unidades — panel)',
+      headers: ['Sucursal', 'Tel.', 'Acc.', 'Serv.', 'Total'],
+      rows: [
+        { cells: ['Tu Móvil Centro', '105', '351', '492', '948'] },
+        { cells: ['Tu Móvil La Isla', '59', '53', '0', '112'] },
+        { cells: ['Tu Móvil Marino', '0', '0', '0', '0'] },
+        { cells: ['Tu Móvil Store', '0', '8', '888', '896'] },
+        { cells: ['Zona Gamer Margarita', '368', '2.675', '298', '3.341'] },
+      ],
+    },
+    {
+      type: 'table',
+      title: 'Respaldos (pre-operación)',
+      headers: ['Elemento', 'Ubicación', 'Detalle'],
+      rows: [
+        { cells: ['Rama Git', 'backup-pre-sucursal', 'Snapshot código + scripts + dump'] },
+        { cells: ['Dump BD', 'backups/backup_pre_sucursal_20260601_2059.sql', 'Esquema public (~9,91 MB)'] },
+        { cells: ['Protocolo restore', 'backups/PROTOCOLO_RESTAURACION.md', 'Restauración paso a paso'] },
+        { cells: ['Reporte baseline', 'backups/REPORTE_SITUACION_PRE_SUCURSAL.md', 'Números pre-operación'] },
+      ],
+    },
+    {
+      type: 'steps',
+      title: 'SQL ejecutado en Supabase (orden real)',
+      items: [
+        { paso: '0', accion: 'Verificar si existía create_store_system', resultado: 'No existía → aplicar migración' },
+        { paso: '1', accion: 'Ejecutar 20260522100000_create_store_v1_system.sql', resultado: 'Success (crea RPCs + validación)' },
+        { paso: '2', accion: 'Ejecutar create_store_system (Tu Móvil Marino)', resultado: `store_id ${MARINO_ID} · OK 659/659` },
+        { paso: '3', accion: 'Conteos y validate_store_inventory(Marino)', resultado: 'OK · 4×712 + 659 filas inventario' },
+      ],
+    },
+    {
+      type: 'code',
+      title: 'SQL creación tienda (ejecutado)',
+      language: 'sql',
+      code: `SELECT public.create_store_system(
+  p_company_id := '${COMPANY_ID}'::uuid,
+  p_name := 'Tu Móvil Marino',
+  p_business_name := 'zona gamer margarita c.a',
+  p_tax_id := 'J-50283376-6',
+  p_active := true
+);`,
+    },
+    {
+      type: 'table',
+      title: 'Pruebas realizadas (producción)',
+      headers: ['Prueba', 'Qué valida', 'Resultado'],
+      rows: [
+        { cells: ['E2E producto', 'Alta producto en Marino', 'OK (luego revertido)'] },
+        { cells: ['E2E venta', 'process_sale y contabilidad inventario', 'OK'] },
+        { cells: ['E2E anulación', 'delete_sale_and_restore_inventory', 'OK repone stock'] },
+        { cells: ['Soft delete', 'delete_product', 'OK vuelve a baseline'] },
+        { cells: ['Transferencia Centro + devolución', 'Conservación inventario', 'OK: panel = baseline'] },
+      ],
+    },
+    {
+      type: 'text',
+      title: 'Conclusión',
+      paragraphs: [
+        'El sistema fue probado en producción sin generar fallas ni desvíos netos de inventario.',
+        'Marino está creada y lista para asignación de usuarios y carga de stock real.',
+      ],
+    },
+    {
+      type: 'links',
+      title: 'Evidencias y archivos',
+      items: [
+        { label: 'Índice SQL ejecutados', href: '/informe/operacion-marino-ejecuciones-2026' },
+        { label: 'Validaciones', href: '/informe/operacion-marino-validaciones-2026' },
+        { label: 'Inventario actual', href: '/informe/inventario-estado-actual-2026-06' },
+        { label: 'Respaldo', href: '/informe/respaldo-pre-sucursal-marino-2026' },
+        { label: 'Informe final (corto)', href: '/informe/operacion-marino-informe-final-2026' },
       ],
     },
   ],
@@ -385,6 +543,7 @@ export const informeFinal: PublicInforme = {
 
 export const ALL_PUBLIC_INFORMES: PublicInforme[] = [
   informeCatalogo,
+  informeAbsoluto,
   informeRespaldo,
   informeInventarioActual,
   informeEjecuciones,
