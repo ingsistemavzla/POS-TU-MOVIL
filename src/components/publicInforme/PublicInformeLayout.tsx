@@ -33,7 +33,7 @@ export function PublicInformeLayout({
 }) {
   return (
     <div className="min-h-screen w-full bg-[#F2F2F2] text-[#0D0D0D] pb-12" style={verdeVars}>
-      <div className="mx-auto w-[92%] max-w-[1100px] mt-6 md:mt-10">
+      <div className="mx-auto w-[92%] max-w-[1100px] mt-0">
         <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
           <Link
             to={informePath(INFORMES_CATALOGO_SLUG)}

@@ -18,7 +18,7 @@ Presentación uniforme en la app: cabecera verde, metadatos, tablas, pasos, vere
 | Slug | Categoría | Contenido |
 |------|-----------|-----------|
 | `catalogo-operaciones-sucursales-2026` | Índice | Tabla de todos los slugs y enlaces |
-| **`operacion-marino-informe-absoluto-2026`** | **Consolidado** | **TODO en 1:** respaldo + SQL + validaciones + inventario final |
+| **`operacion-marino-informe-completo-2026`** | **Consolidado** | **TODO en 1:** respaldo + SQL + validaciones + inventario final |
 | **`respaldo-pre-sucursal-marino-2026`** | **Respaldo** | Git, dump, protocolo, procedimiento restore |
 | `inventario-estado-actual-2026-06` | Inventario | Totales, categorías, 5 sucursales, filas BD |
 | `operacion-marino-ejecuciones-2026` | Ejecución | Migración, RPC, SQL, archivos repo |
@@ -33,7 +33,7 @@ Sustituir dominio por el desplegado del POS:
 
 ```
 https://<tu-dominio>/informes
-https://<tu-dominio>/informe/operacion-marino-informe-absoluto-2026
+https://<tu-dominio>/informe/operacion-marino-informe-completo-2026
 https://<tu-dominio>/informe/respaldo-pre-sucursal-marino-2026
 https://<tu-dominio>/informe/inventario-estado-actual-2026-06
 https://<tu-dominio>/informe/operacion-marino-ejecuciones-2026

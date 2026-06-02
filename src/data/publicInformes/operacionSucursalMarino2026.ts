@@ -23,7 +23,7 @@ export const informeCatalogo: PublicInforme = {
   categoria: 'indice',
   tags: ['índice', 'operaciones', 'marino'],
   relacionados: [
-    'operacion-marino-informe-absoluto-2026',
+    'operacion-marino-informe-completo-2026',
     'respaldo-pre-sucursal-marino-2026',
     'inventario-estado-actual-2026-06',
     'operacion-marino-ejecuciones-2026',
@@ -46,7 +46,7 @@ export const informeCatalogo: PublicInforme = {
       title: 'Informes disponibles',
       headers: ['Slug', 'Categoría', 'Descripción'],
       rows: [
-        { cells: ['operacion-marino-informe-absoluto-2026', 'Consolidado', 'TODO en 1: respaldo + SQL + validaciones + inventario final'] },
+        { cells: ['operacion-marino-informe-completo-2026', 'Consolidado', 'TODO en 1: respaldo + SQL + validaciones + inventario final'] },
         { cells: ['respaldo-pre-sucursal-marino-2026', 'Respaldo', 'Git, dump BD, protocolo restore'] },
         { cells: ['inventario-estado-actual-2026-06', 'Inventario', 'Estado actual certificado (5 tiendas)'] },
         { cells: ['operacion-marino-ejecuciones-2026', 'Ejecución', 'Migración SQL, create_store_system, pasos'] },
@@ -58,7 +58,7 @@ export const informeCatalogo: PublicInforme = {
       type: 'links',
       title: 'Enlaces rápidos',
       items: [
-        { label: 'Informe absoluto (TODO en 1)', href: '/informe/operacion-marino-informe-absoluto-2026' },
+        { label: 'Informe completo (TODO en 1)', href: '/informe/operacion-marino-informe-completo-2026' },
         { label: 'Respaldo', href: '/informe/respaldo-pre-sucursal-marino-2026' },
         { label: 'Inventario actual', href: '/informe/inventario-estado-actual-2026-06' },
         { label: 'Ejecuciones', href: '/informe/operacion-marino-ejecuciones-2026' },
@@ -70,13 +70,13 @@ export const informeCatalogo: PublicInforme = {
 };
 
 export const informeAbsoluto: PublicInforme = {
-  slug: 'operacion-marino-informe-absoluto-2026',
-  titulo: 'Informe absoluto — Operación Tu Móvil Marino (TODO en 1)',
+  slug: 'operacion-marino-informe-completo-2026',
+  titulo: 'Informe completo — Operación Tu Móvil Marino (TODO en 1)',
   subtitulo: 'Respaldo + SQL ejecutados + validaciones + pruebas + estado final del inventario (sin login)',
   fecha: '2026-06-02',
   estado: 'aprobado',
   categoria: 'consolidado',
-  tags: ['absoluto', 'auditoría', 'respaldo', 'sql', 'inventario', 'validación'],
+  tags: ['completo', 'auditoría', 'respaldo', 'sql', 'inventario', 'validación'],
   relacionados: [
     INFORMES_CATALOGO_SLUG,
     'respaldo-pre-sucursal-marino-2026',
@@ -93,7 +93,7 @@ export const informeAbsoluto: PublicInforme = {
     { label: 'Commit documentación', value: '2d3eb19 + d97d6d5' },
   ],
   sections: [
-    { type: 'hero', badge: 'Informe absoluto · 1 solo slug' },
+    { type: 'hero', badge: 'Informe completo · 1 solo slug' },
     {
       type: 'verdict',
       titulo: 'APROBADO — producción estable y sin desvío',
@@ -103,7 +103,7 @@ export const informeAbsoluto: PublicInforme = {
     },
     {
       type: 'text',
-      title: 'Objetivo (dueño / operación)',
+      title: 'Objetivo (operación)',
       paragraphs: [
         'Este informe consolida TODA la operación de creación de la sucursal Tu Móvil Marino, incluyendo respaldos, SQL ejecutado en Supabase, validaciones numéricas y pruebas en el POS.',
         'Está diseñado para auditoría: una sola URL (slug) para revisar qué se hizo, cómo se validó y cuál es el estado final certificado.',
@@ -206,7 +206,8 @@ export const informeAbsoluto: PublicInforme = {
       type: 'text',
       title: 'Conclusión',
       paragraphs: [
-        'El sistema fue probado en producción sin generar fallas ni desvíos netos de inventario.',
+        'Estado de consolidación: tras aplicar la migración create_store_v1_system y ejecutar la creación de la sucursal, el sistema quedó estable y consolidado (sin huecos ni duplicados reportados y con totales consistentes en panel y SQL).',
+        'Operatividad correcta verificada: pruebas E2E (producto/venta/anulación/soft delete) y transferencia desde Centro con devolución completadas, regresando a línea base global.',
         'Marino está creada y lista para asignación de usuarios y carga de stock real.',
       ],
     },
