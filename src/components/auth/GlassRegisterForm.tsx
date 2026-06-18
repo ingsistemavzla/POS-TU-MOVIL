@@ -117,8 +117,8 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
           )}
           
           {success && (
-            <Alert className="bg-emerald-500/20 border-emerald-500/50 text-white">
-              <CheckCircle className="h-4 w-4 text-emerald-400" />
+            <Alert className="bg-blue-500/20 border-blue-500/50 text-white">
+              <CheckCircle className="h-4 w-4 text-blue-400" />
               <AlertDescription className="text-white">
                 <div className="space-y-1">
                   <p className="font-medium text-sm">¡Registro exitoso!</p>
@@ -139,7 +139,7 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
               onChange={(e) => handleInputChange('name', e.target.value)}
               required
               disabled={formDisabled}
-              className="bg-slate-950/50 border-emerald-500/30 !text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
+              className="bg-slate-950/50 border-blue-500/30 !text-white placeholder:text-white/50 focus:ring-[#2563EB] focus:border-[#2563EB] h-10"
               style={{ color: '#ffffff !important' }}
             />
           </div>
@@ -154,7 +154,7 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
               onChange={(e) => handleInputChange('email', e.target.value)}
               required
               disabled={formDisabled}
-              className="bg-slate-950/50 border-emerald-500/30 !text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
+              className="bg-slate-950/50 border-blue-500/30 !text-white placeholder:text-white/50 focus:ring-[#2563EB] focus:border-[#2563EB] h-10"
               style={{ color: '#ffffff !important' }}
             />
           </div>
@@ -169,7 +169,7 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
               onChange={(e) => handleInputChange('password', e.target.value)}
               required
               disabled={formDisabled}
-              className="bg-slate-950/50 border-emerald-500/30 !text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
+              className="bg-slate-950/50 border-blue-500/30 !text-white placeholder:text-white/50 focus:ring-[#2563EB] focus:border-[#2563EB] h-10"
               style={{ color: '#ffffff !important' }}
             />
           </div>
@@ -184,7 +184,7 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
               onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
               required
               disabled={formDisabled}
-              className="bg-slate-950/50 border-emerald-500/30 !text-white placeholder:text-white/50 focus:ring-[#00FF7F] focus:border-[#00FF7F] h-10"
+              className="bg-slate-950/50 border-blue-500/30 !text-white placeholder:text-white/50 focus:ring-[#2563EB] focus:border-[#2563EB] h-10"
               style={{ color: '#ffffff !important' }}
             />
           </div>
@@ -220,7 +220,7 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
                 type="button" 
                 variant="link" 
                 onClick={onToggleMode}
-                className="text-sm text-[#00FF7F] hover:text-[#00ff9d] underline-offset-4"
+                className="text-sm text-[#2563EB] hover:text-[#60A5FA] underline-offset-4"
               >
                 Ir a Iniciar Sesión
               </Button>
@@ -230,7 +230,7 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
                 variant="link" 
                 onClick={onToggleMode}
                 disabled={formDisabled}
-                className="text-sm text-[#00FF7F] hover:text-[#00ff9d] underline-offset-4"
+                className="text-sm text-[#2563EB] hover:text-[#60A5FA] underline-offset-4"
               >
                 ¿Ya tienes cuenta? Iniciar sesión
               </Button>
@@ -241,16 +241,16 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
 
       {/* Modal de Confirmación de Correo */}
       <Dialog open={success} onOpenChange={setSuccess}>
-        <DialogContent className="sm:max-w-md bg-slate-900 border-emerald-500/30">
+        <DialogContent className="sm:max-w-md bg-slate-900 border-blue-500/30">
           <DialogHeader>
             <DialogTitle className="flex items-center space-x-2 text-white">
-              <CheckCircle className="h-5 w-5 text-emerald-400" />
+              <CheckCircle className="h-5 w-5 text-blue-400" />
               <span className="text-lg">¡Registro Exitoso!</span>
             </DialogTitle>
             <DialogDescription className="space-y-3 text-white/70">
               <div className="text-center space-y-3">
-                <div className="mx-auto w-12 h-12 bg-emerald-500/20 rounded-full flex items-center justify-center">
-                  <Mail className="h-6 w-6 text-emerald-400" />
+                <div className="mx-auto w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center">
+                  <Mail className="h-6 w-6 text-blue-400" />
                 </div>
                 
                 <div className="space-y-2">
@@ -260,7 +260,7 @@ export const GlassRegisterForm: React.FC<GlassRegisterFormProps> = ({ onToggleMo
                   <p className="text-xs text-white/70">
                     Tu cuenta ha sido registrada con el correo:
                   </p>
-                  <p className="text-xs font-medium text-emerald-400 bg-emerald-500/10 p-2 rounded">
+                  <p className="text-xs font-medium text-blue-400 bg-blue-500/10 p-2 rounded">
                     {userEmail}
                   </p>
                 </div>

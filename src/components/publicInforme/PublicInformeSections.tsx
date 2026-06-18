@@ -1,5 +1,6 @@
 import { CheckCircle2, XCircle } from 'lucide-react';
 import type { InformeSection } from '@/types/publicInforme';
+import { InformeCodeBlock, InformeRichText } from '@/components/publicInforme/informeRichText';
 
 function SectionBlock({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
@@ -33,17 +34,19 @@ export function PublicInformeSections({ sections }: { sections: InformeSection[]
             <div
               key={key}
               className={`rounded-xl p-5 md:p-6 flex gap-4 items-start ${
-                section.ok ? 'bg-blue-50 ring-1 ring-blue-200' : 'bg-rose-50 ring-1 ring-rose-200'
+                section.ok ? 'bg-emerald-50 ring-1 ring-emerald-200' : 'bg-rose-50 ring-1 ring-rose-200'
               }`}
             >
               {section.ok ? (
-                <CheckCircle2 className="h-8 w-8 text-blue-600 shrink-0" />
+                <CheckCircle2 className="h-8 w-8 text-emerald-600 shrink-0" />
               ) : (
                 <XCircle className="h-8 w-8 text-rose-600 shrink-0" />
               )}
               <div>
                 <p className="font-bold text-lg text-[var(--verde-oscuro)]">{section.titulo}</p>
-                <p className="text-sm mt-1 text-[#0D0D0D]/75">{section.detalle}</p>
+                <p className="text-sm mt-1 text-[#0D0D0D]/75">
+                  <InformeRichText text={section.detalle} />
+                </p>
               </div>
             </div>
           );
@@ -54,7 +57,9 @@ export function PublicInformeSections({ sections }: { sections: InformeSection[]
             <SectionBlock key={key} title={section.title}>
               <div className="space-y-3 text-sm leading-relaxed text-[#0D0D0D]/80">
                 {section.paragraphs.map((p) => (
-                  <p key={p.slice(0, 40)}>{p}</p>
+                  <p key={p.slice(0, 40)}>
+                    <InformeRichText text={p} />
+                  </p>
                 ))}
               </div>
             </SectionBlock>
@@ -65,7 +70,9 @@ export function PublicInformeSections({ sections }: { sections: InformeSection[]
           return (
             <SectionBlock key={key} title={section.title}>
               {section.description && (
-                <p className="text-sm text-[#0D0D0D]/65 mb-3">{section.description}</p>
+                <p className="text-sm text-[#0D0D0D]/65 mb-3">
+                  <InformeRichText text={section.description} />
+                </p>
               )}
               <div className="overflow-x-auto rounded-lg ring-1 ring-[#0D0D0D]/10">
                 <table className="w-full text-xs md:text-sm">
@@ -86,7 +93,7 @@ export function PublicInformeSections({ sections }: { sections: InformeSection[]
                       >
                         {row.cells.map((cell, ci) => (
                           <td key={ci} className="px-3 py-2.5 border-t border-[#0D0D0D]/5">
-                            {cell}
+                            <InformeRichText text={cell} />
                           </td>
                         ))}
                       </tr>
@@ -129,9 +136,11 @@ export function PublicInformeSections({ sections }: { sections: InformeSection[]
                     className="grid grid-cols-[auto_1fr] md:grid-cols-[3rem_1fr_1fr] gap-2 md:gap-4 text-sm rounded-lg border border-[#0D0D0D]/8 p-3"
                   >
                     <span className="font-bold text-[var(--verde-primario)]">#{s.paso}</span>
-                    <span className="font-medium">{s.accion}</span>
+                    <span className="font-medium">
+                      <InformeRichText text={s.accion} />
+                    </span>
                     <span className="text-[#0D0D0D]/70 md:col-span-1 col-span-2 md:col-start-3">
-                      → {s.resultado}
+                      → <InformeRichText text={s.resultado} />
                     </span>
                   </li>
                 ))}
@@ -174,9 +183,7 @@ export function PublicInformeSections({ sections }: { sections: InformeSection[]
         if (section.type === 'code') {
           return (
             <SectionBlock key={key} title={section.title}>
-              <pre className="overflow-x-auto rounded-lg bg-[#0D0D0D] text-[#e8e8e8] p-4 text-xs md:text-sm font-mono leading-relaxed">
-                {section.code}
-              </pre>
+              <InformeCodeBlock code={section.code} />
             </SectionBlock>
           );
         }

@@ -1,15 +1,15 @@
 import type { PublicInforme } from '@/types/publicInforme';
 import { INFORMES_CATALOGO_SLUG } from '@/types/publicInforme';
 
-const COMPANY = 'Inventory System';
+const COMPANY = 'Tu Movil Margarita';
 const COMPANY_ID = 'aa11bb22-cc33-dd44-ee55-ff6677889900';
 const MARINO_ID = '73aae6d8-a396-4443-9c24-c7b03c84d11b';
 const SUPABASE_REF = 'swsqmsbyikznalrvydny';
 
 const metaBase = [
-  { label: 'System', value: 'Inventory System' },
+  { label: 'Sistema', value: 'POS-TuMovil' },
   { label: 'Supabase', value: SUPABASE_REF },
-  { label: 'Tenant', value: COMPANY },
+  { label: 'Empresa', value: COMPANY },
   { label: 'company_id', value: COMPANY_ID },
 ];
 
@@ -24,13 +24,14 @@ export const informeCatalogo: PublicInforme = {
   tags: ['índice', 'operaciones', 'marino'],
   relacionados: [
     'operacion-marino-informe-completo-2026',
-    'auditoria-imei-variantes-128-256-2026',
     'productos-sin-categoria-inventario-2026',
     'respaldo-pre-sucursal-marino-2026',
     'inventario-estado-actual-2026-06',
     'operacion-marino-ejecuciones-2026',
     'operacion-marino-validaciones-2026',
     'operacion-marino-informe-final-2026',
+    'cierres-inventario-vs-estadisticas-2026',
+    'investigacion-cierres-estadisticas-2026',
   ],
   meta: metaBase,
   sections: [
@@ -49,13 +50,26 @@ export const informeCatalogo: PublicInforme = {
       headers: ['Slug', 'Categoría', 'Descripción'],
       rows: [
         { cells: ['operacion-marino-informe-completo-2026', 'Consolidado', 'TODO en 1: respaldo + SQL + validaciones + inventario final'] },
-        { cells: ['auditoria-imei-variantes-128-256-2026', 'Validación', 'IMEI, variantes 128/256, cruce caja/equipo, plan blindaje'] },
         { cells: ['productos-sin-categoria-inventario-2026', 'Inventario', 'Identificar 3 productos uncategorized'] },
         { cells: ['respaldo-pre-sucursal-marino-2026', 'Respaldo', 'Git, dump BD, protocolo restore'] },
         { cells: ['inventario-estado-actual-2026-06', 'Inventario', 'Estado actual certificado (5 tiendas)'] },
         { cells: ['operacion-marino-ejecuciones-2026', 'Ejecución', 'Migración SQL, create_store_system, pasos'] },
         { cells: ['operacion-marino-validaciones-2026', 'Validación', 'E2E, transferencia Centro, comprobaciones'] },
         { cells: ['operacion-marino-informe-final-2026', 'Consolidado', 'Veredicto final y comparativa'] },
+        {
+          cells: [
+            'cierres-inventario-vs-estadisticas-2026',
+            'Inventario',
+            'Por qué Cierres diarios y Estadísticas muestran USD y unidades distintos',
+          ],
+        },
+        {
+          cells: [
+            'investigacion-cierres-estadisticas-2026',
+            'Validación',
+            'Investigación técnica: fórmulas SQL/TSX, cost_usd vs sale_price_usd',
+          ],
+        },
       ],
     },
     {
@@ -63,13 +77,20 @@ export const informeCatalogo: PublicInforme = {
       title: 'Enlaces rápidos',
       items: [
         { label: 'Informe completo (TODO en 1)', href: '/informe/operacion-marino-informe-completo-2026' },
-        { label: 'Auditoría IMEI / 128 vs 256', href: '/informe/auditoria-imei-variantes-128-256-2026' },
         { label: 'Productos sin categoría', href: '/informe/productos-sin-categoria-inventario-2026' },
         { label: 'Respaldo', href: '/informe/respaldo-pre-sucursal-marino-2026' },
         { label: 'Inventario actual', href: '/informe/inventario-estado-actual-2026-06' },
         { label: 'Ejecuciones', href: '/informe/operacion-marino-ejecuciones-2026' },
         { label: 'Validaciones', href: '/informe/operacion-marino-validaciones-2026' },
         { label: 'Informe final', href: '/informe/operacion-marino-informe-final-2026' },
+        {
+          label: 'Cierres vs Estadísticas (explicación)',
+          href: '/informe/cierres-inventario-vs-estadisticas-2026',
+        },
+        {
+          label: 'Investigación técnica Cierres/Estadísticas',
+          href: '/informe/investigacion-cierres-estadisticas-2026',
+        },
       ],
     },
   ],

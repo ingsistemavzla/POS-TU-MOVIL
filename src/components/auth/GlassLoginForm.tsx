@@ -107,7 +107,7 @@ export const GlassLoginForm: React.FC<GlassLoginFormProps> = ({ onToggleMode }) 
               }}
               required
               disabled={loading}
-              className="bg-slate-950/60 border-white/10 !text-white placeholder:text-white/40 focus:ring-[#16c72e]/50 focus:border-[#16c72e]/60 h-10"
+              className="bg-slate-950/60 border-white/10 !text-white placeholder:text-white/40 focus:ring-[#2563EB]/50 focus:border-[#2563EB]/60 h-10"
               style={{ color: '#ffffff !important' }}
             />
           </div>
@@ -127,7 +127,7 @@ export const GlassLoginForm: React.FC<GlassLoginFormProps> = ({ onToggleMode }) 
               }}
               required
               disabled={loading}
-              className="bg-slate-950/60 border-white/10 !text-white placeholder:text-white/40 focus:ring-[#16c72e]/50 focus:border-[#16c72e]/60 h-10"
+              className="bg-slate-950/60 border-white/10 !text-white placeholder:text-white/40 focus:ring-[#2563EB]/50 focus:border-[#2563EB]/60 h-10"
               style={{ color: '#ffffff !important' }}
             />
           </div>
@@ -155,7 +155,7 @@ export const GlassLoginForm: React.FC<GlassLoginFormProps> = ({ onToggleMode }) 
             variant="link"
             onClick={onToggleMode}
             disabled={loading}
-            className="text-sm text-[#16c72e] hover:text-[#1ed65a] underline-offset-4"
+            className="text-sm text-[#2563EB] hover:text-[#60A5FA] underline-offset-4"
           >
             ¿No tienes cuenta? Registrar empresa
           </Button>

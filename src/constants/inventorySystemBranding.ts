@@ -8,7 +8,7 @@ export const INVENTORY_SYSTEM_META_DESCRIPTION =
 export const INVENTORY_SYSTEM_META_KEYWORDS =
   'inventory system, stock management, multistore inventory, warehouse, product catalog, inventory control';
 
-export const LOGIN_DOCUMENT_TITLE = 'Tu Móvil Margarita - Iniciar sesión';
+export const LOGIN_DOCUMENT_TITLE = `${INVENTORY_SYSTEM_NAME} · Iniciar sesión`;
 
 function setMeta(name: string, content: string, attr: 'name' | 'property' = 'name') {
   let el = document.querySelector(`meta[${attr}="${name}"]`);
@@ -33,7 +33,12 @@ export function applyInventorySystemDocumentMeta(pageTitle?: string) {
   setMeta('twitter:description', INVENTORY_SYSTEM_META_DESCRIPTION);
 }
 
-/** Pestaña del navegador en login — conserva marca Tu Móvil Margarita */
+/** Meta y título en la pantalla de login (Inventory System, sin marca de cliente) */
 export function applyLoginDocumentMeta() {
   document.title = LOGIN_DOCUMENT_TITLE;
+  setMeta('description', INVENTORY_SYSTEM_META_DESCRIPTION);
+  setMeta('keywords', INVENTORY_SYSTEM_META_KEYWORDS);
+  setMeta('og:title', LOGIN_DOCUMENT_TITLE, 'property');
+  setMeta('og:description', INVENTORY_SYSTEM_META_DESCRIPTION, 'property');
+  setMeta('og:site_name', INVENTORY_SYSTEM_NAME, 'property');
 }

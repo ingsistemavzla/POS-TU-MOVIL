@@ -49,7 +49,7 @@ export function LoginLordIcon({ size = 140, className }: LoginLordIconProps) {
         const icon = document.createElement('lord-icon');
         icon.setAttribute('src', LORDICON_SRC);
         icon.setAttribute('trigger', 'hover');
-        icon.setAttribute('colors', 'primary:#0a5c15,secondary:#16c72e');
+        icon.setAttribute('colors', 'primary:#1e40af,secondary:#2563eb');
         icon.style.width = `${size}px`;
         icon.style.height = `${size}px`;
         containerRef.current.appendChild(icon);

@@ -1,7 +1,7 @@
 import type { PublicInforme } from '@/types/publicInforme';
 import { INFORMES_CATALOGO_SLUG } from '@/types/publicInforme';
 
-const COMPANY = 'Inventory System';
+const COMPANY = 'Tu Movil Margarita';
 const FECHA_INFORME = '2026-06-18';
 
 export const informeAuditoriaImeiVariantes: PublicInforme = {
@@ -19,10 +19,10 @@ export const informeAuditoriaImeiVariantes: PublicInforme = {
     'productos-sin-categoria-inventario-2026',
   ],
   meta: [
-    { label: 'System', value: 'Inventory System' },
+    { label: 'Empresa', value: COMPANY },
     { label: 'Fecha informe', value: FECHA_INFORME },
     { label: 'SQL auditoría', value: 'sql/auditoria_integridad_ventas_inventario.sql' },
-    { label: 'Estado Fase 1 código', value: 'Deploy frontend + migración Supabase pendiente según operación' },
+    { label: 'Estado Fase 1 código', value: 'Local — sin deploy autorizado' },
     { label: 'URL pública', value: '/informe/auditoria-imei-variantes-128-256-2026' },
   ],
   sections: [

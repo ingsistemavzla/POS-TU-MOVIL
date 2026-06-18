@@ -203,6 +203,14 @@
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   }
 
+  .auth-page {
+    --gradient-diagonal: linear-gradient(135deg, #050810 0%, #0a1528 50%, #0d1a35 100%);
+    --btn-gradient: linear-gradient(135deg, #1d4ed8 0%, #2563eb 55%, #1e40af 100%);
+    --auth-accent: #2563eb;
+    --auth-accent-muted: rgba(37, 99, 235, 0.55);
+    --glass-navbar: rgba(6, 10, 22, 0.92);
+  }
+
   .auth-page .glass-card {
     background: rgba(8, 12, 10, 0.78);
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -377,20 +385,17 @@
   .auth-page .tech-overlay {
     position: fixed;
     background:
-      linear-gradient(180deg, rgba(0, 0, 0, 0.28) 0%, rgba(5, 12, 8, 0.42) 100%),
-      radial-gradient(ellipse at 50% 45%, rgba(10, 50, 28, 0.15) 0%, transparent 60%);
+      linear-gradient(180deg, rgba(0, 0, 0, 0.28) 0%, rgba(5, 10, 22, 0.42) 100%),
+      radial-gradient(ellipse at 50% 45%, rgba(37, 99, 235, 0.12) 0%, transparent 60%);
   }
 
   .auth-page .tech-overlay::after {
     content: '';
     position: absolute;
     inset: 0;
-    background-image: url('/logo.svg');
-    background-size: min(72vmin, 640px);
-    background-position: center;
-    background-repeat: no-repeat;
-    opacity: 0.055;
-    mix-blend-mode: soft-light;
+    background-image:
+      radial-gradient(circle at 50% 50%, rgba(37, 99, 235, 0.06) 0%, transparent 55%);
+    opacity: 1;
     pointer-events: none;
   }
 
@@ -438,15 +443,15 @@
   }
 
   .auth-page .circuit-line path {
-    stroke: rgba(22, 120, 60, 0.14) !important;
+    stroke: rgba(37, 99, 235, 0.14) !important;
   }
 
   .auth-page .circuit-line path:nth-child(2) {
-    stroke: rgba(18, 90, 48, 0.1) !important;
+    stroke: rgba(29, 78, 216, 0.1) !important;
   }
 
   .auth-page .circuit-line path:nth-child(3) {
-    stroke: rgba(20, 100, 55, 0.12) !important;
+    stroke: rgba(96, 165, 250, 0.12) !important;
   }
 
   /* Abstract Shapes - CAPA 4 */
@@ -477,6 +482,14 @@
     animation: float 20s infinite ease-in-out reverse;
   }
 
+  .auth-page .shape-1 {
+    background: #1e3a8a;
+  }
+
+  .auth-page .shape-2 {
+    background: #172554;
+  }
+
   .auth-page .shape-1,
   .auth-page .shape-2 {
     opacity: 0.07;
@@ -500,7 +513,7 @@
   }
 
   .auth-page #particles-container .particle {
-    box-shadow: 0 0 6px rgba(22, 120, 60, 0.25);
+    box-shadow: 0 0 6px rgba(37, 99, 235, 0.25);
   }
 
   /* Floating Particles - CAPA 5 */

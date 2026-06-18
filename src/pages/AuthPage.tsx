@@ -3,7 +3,11 @@ import { GlassLoginForm } from '@/components/auth/GlassLoginForm';
 import { GlassRegisterForm } from '@/components/auth/GlassRegisterForm';
 import { PhoneMockup3D } from '@/components/auth/PhoneMockup3D';
 import { clearAuthCache } from '@/utils/clearCache';
-import { Menu, Zap, Shield, BarChart3, LogIn, MapPin, Bolt, Server, Wifi } from 'lucide-react';
+import { INVENTORY_SYSTEM_NAME } from '@/constants/inventorySystemBranding';
+import { Menu, Zap, Shield, BarChart3, Package, Server, Wifi, Boxes } from 'lucide-react';
+
+const AUTH_ACCENT = '#2563EB';
+const AUTH_ACCENT_LIGHT = '#60A5FA';
 
 const AuthPage: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -29,7 +33,7 @@ const AuthPage: React.FC = () => {
         particle.style.left = `${Math.random() * 100}%`;
         particle.style.top = `${Math.random() * 100}%`;
         particle.style.opacity = `${Math.random() * 0.12 + 0.06}`;
-        particle.style.backgroundColor = 'rgba(22, 120, 60, 0.55)';
+        particle.style.backgroundColor = 'rgba(37, 99, 235, 0.45)';
         const duration = Math.random() * 30 + 20;
         const delay = Math.random() * 5;
         particle.style.animation = `float-particle ${duration}s linear ${delay}s infinite`;
@@ -78,25 +82,28 @@ const AuthPage: React.FC = () => {
         <div ref={particlesRef} id="particles-container" />
 
         <div className="floating-icon" style={{ top: '18%', left: '8%' }}>
-          <MapPin className="w-6 h-6 text-[#16c72e]/25" />
+          <Package className="w-6 h-6 text-[#2563EB]/25" />
         </div>
         <div className="floating-icon floating-icon-delay-1" style={{ top: '68%', left: '78%' }}>
-          <Bolt className="w-6 h-6 text-[#16c72e]/20" />
+          <Boxes className="w-6 h-6 text-[#60A5FA]/20" />
         </div>
         <div className="floating-icon floating-icon-delay-2" style={{ top: '38%', left: '88%' }}>
-          <Server className="w-6 h-6 text-[#0d8a32]/22" />
+          <Server className="w-6 h-6 text-[#1d4ed8]/22" />
         </div>
         <div className="floating-icon floating-icon-delay-3" style={{ top: '82%', left: '12%' }}>
-          <Wifi className="w-6 h-6 text-[#16c72e]/20" />
+          <Wifi className="w-6 h-6 text-[#2563EB]/20" />
         </div>
       </div>
 
       <div className="absolute top-0 left-0 right-0 z-[50] flex items-center justify-between p-6 glass-navbar border-b border-white/10">
         <div className="flex items-center space-x-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#0a5c15]/40 border border-[#16c72e]/25">
-            <LogIn className="h-5 w-5 text-[#16c72e]" strokeWidth={2.25} />
+          <div
+            className="flex h-10 w-10 items-center justify-center rounded-lg border"
+            style={{ background: 'rgba(37, 99, 235, 0.15)', borderColor: 'rgba(96, 165, 250, 0.35)' }}
+          >
+            <Package className="h-5 w-5" style={{ color: AUTH_ACCENT_LIGHT }} strokeWidth={2.25} />
           </div>
-          <span className="text-white font-semibold text-lg">Tu Móvil Margarita</span>
+          <span className="text-white font-semibold text-lg">{INVENTORY_SYSTEM_NAME}</span>
         </div>
         <Menu className="h-6 w-6 text-white/50" />
       </div>
@@ -107,7 +114,7 @@ const AuthPage: React.FC = () => {
             <h1 className="text-5xl font-bold text-white leading-tight" style={{ fontFamily: "'Poppins', sans-serif" }}>
               Gestión{' '}
               <span
-                className="text-transparent bg-clip-text bg-gradient-to-r from-[#16c72e] to-[#0d8a32]"
+                className="text-transparent bg-clip-text bg-gradient-to-r from-[#60A5FA] to-[#2563EB]"
                 style={{
                   fontFamily: "'Impact', sans-serif",
                   fontStyle: 'italic',
@@ -117,9 +124,9 @@ const AuthPage: React.FC = () => {
               >
                 INTELIGENTE
               </span>{' '}
-              de Servicios{' '}
+              de{' '}
               <span
-                className="text-transparent bg-clip-text bg-gradient-to-r from-[#16c72e] to-[#0d8a32]"
+                className="text-transparent bg-clip-text bg-gradient-to-r from-[#60A5FA] to-[#2563EB]"
                 style={{
                   fontFamily: "'Impact', sans-serif",
                   fontStyle: 'italic',
@@ -127,50 +134,28 @@ const AuthPage: React.FC = () => {
                   letterSpacing: '0.05em',
                 }}
               >
-                TÉCNICOS
+                INVENTARIO
               </span>
             </h1>
             <p className="text-lg text-white/60 leading-relaxed" style={{ fontFamily: "'Poppins', sans-serif" }}>
-              Optimiza tu negocio con nuestro sistema de punto de venta multitienda. Control total, reportes en
-              tiempo real y gestión de inventario inteligente.
+              Control de stock multitienda, catálogo de productos, transferencias entre almacenes y reportes
+              operativos en tiempo real.
             </p>
           </div>
 
           <div className="flex flex-col space-y-4">
             <div className="flex items-center space-x-3 text-white/70">
-              <Zap className="h-5 w-5 text-[#16c72e]/80" />
-              <span style={{ fontFamily: "'Poppins', sans-serif" }}>Procesamiento rápido y eficiente</span>
+              <Zap className="h-5 w-5" style={{ color: `${AUTH_ACCENT}cc` }} />
+              <span style={{ fontFamily: "'Poppins', sans-serif" }}>Actualización de stock en tiempo real</span>
             </div>
             <div className="flex items-center space-x-3 text-white/70">
-              <Shield className="h-5 w-5 text-[#16c72e]/80" />
-              <span style={{ fontFamily: "'Poppins', sans-serif" }}>Seguridad de nivel empresarial</span>
+              <Shield className="h-5 w-5" style={{ color: `${AUTH_ACCENT}cc` }} />
+              <span style={{ fontFamily: "'Poppins', sans-serif" }}>Acceso seguro por roles y sucursales</span>
             </div>
             <div className="flex items-center space-x-3 text-white/70">
-              <BarChart3 className="h-5 w-5 text-[#16c72e]/80" />
-              <span style={{ fontFamily: "'Poppins', sans-serif" }}>Reportes y análisis en tiempo real</span>
+              <BarChart3 className="h-5 w-5" style={{ color: `${AUTH_ACCENT}cc` }} />
+              <span style={{ fontFamily: "'Poppins', sans-serif" }}>Reportes de inventario y movimientos</span>
             </div>
-          </div>
-
-          <div className="flex space-x-4 pt-4">
-            <button
-              type="button"
-              className="px-6 py-3 text-white font-semibold rounded-lg transition-all duration-300 shadow-lg shadow-black/30"
-              style={{ background: 'var(--btn-gradient)' }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.filter = 'brightness(1.08)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.filter = 'brightness(1)';
-              }}
-            >
-              Características
-            </button>
-            <button
-              type="button"
-              className="px-6 py-3 bg-transparent border border-[#16c72e]/35 hover:border-[#16c72e]/60 text-[#16c72e]/90 font-semibold rounded-lg transition-all duration-300"
-            >
-              Ver Demo
-            </button>
           </div>
         </div>
       </div>
