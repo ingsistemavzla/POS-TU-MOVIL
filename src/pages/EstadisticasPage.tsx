@@ -50,9 +50,11 @@ interface CategoryStats {
   category: string;
   label: string;
   totalValue: number;
+  totalCostValue: number;
   uniqueProducts: number;
   totalUnits: number;
   percentage: number;
+  costPercentage: number;
 }
 
 interface UncategorizedProductRow {
@@ -67,6 +69,7 @@ interface UncategorizedProductRow {
 
 interface InventorySummary {
   totalValue: number;
+  totalCostValue: number;
   uniqueProducts: number;
   totalStores: number;
   outOfStock: number;
@@ -86,6 +89,7 @@ export const EstadisticasPage: React.FC = () => {
   const [storeStats, setStoreStats] = useState<Record<string, StoreStats>>({});
   const [inventorySummary, setInventorySummary] = useState<InventorySummary>({
     totalValue: 0,
+    totalCostValue: 0,
     uniqueProducts: 0,
     totalStores: 0,
     outOfStock: 0,
@@ -102,6 +106,8 @@ export const EstadisticasPage: React.FC = () => {
     accessories: 0,
     technical_service: 0,
   });
+  /** false = precio venta (sale_price_usd); true = costo (cost_usd), alineado con Cierres diarios */
+  const [showCostValue, setShowCostValue] = useState(false);
 
   const fetchStatistics = async () => {
     try {
@@ -152,6 +158,7 @@ export const EstadisticasPage: React.FC = () => {
           products!inner(
             category,
             sale_price_usd,
+            cost_usd,
             active,
             sku,
             name
@@ -516,18 +523,22 @@ export const EstadisticasPage: React.FC = () => {
       const lowStock = Array.from(productMap.values()).filter(p => p.hasLowStock && !p.hasCriticalStock).length;
       const criticalStock = Array.from(productMap.values()).filter(p => p.hasCriticalStock).length;
 
-      // Calcular valor total
+      // Calcular valor total (venta y costo — mismo criterio que Cierres diarios)
       let totalValue = 0;
+      let totalCostValue = 0;
       let totalUnits = 0;
       sanitizedInventory.forEach((item: any) => {
         const qty = Math.max(0, item.qty || 0);
         const salePrice = item.products?.sale_price_usd || 0;
+        const costUsd = item.products?.cost_usd || 0;
         totalValue += qty * salePrice;
+        totalCostValue += qty * costUsd;
         totalUnits += qty;
       });
 
       setInventorySummary({
         totalValue: Math.round(totalValue * 100) / 100,
+        totalCostValue: Math.round(totalCostValue * 100) / 100,
         uniqueProducts,
         totalStores: stores.length,
         outOfStock,
@@ -540,6 +551,7 @@ export const EstadisticasPage: React.FC = () => {
       // 5. Calcular estadísticas por categoría
       const categoryMap = new Map<string, {
         totalValue: number;
+        totalCostValue: number;
         productIds: Set<string>;
         totalUnits: number;
       }>();
@@ -561,11 +573,13 @@ export const EstadisticasPage: React.FC = () => {
         const category = normalizeStatsCategory(rawCategory);
         const qty = Math.max(0, item.qty || 0);
         const salePrice = item.products?.sale_price_usd || 0;
+        const costUsd = item.products?.cost_usd || 0;
         const productId = item.product_id;
 
         if (!categoryMap.has(category)) {
           categoryMap.set(category, {
             totalValue: 0,
+            totalCostValue: 0,
             productIds: new Set(),
             totalUnits: 0,
           });
@@ -573,6 +587,7 @@ export const EstadisticasPage: React.FC = () => {
 
         const cat = categoryMap.get(category)!;
         cat.totalValue += qty * salePrice;
+        cat.totalCostValue += qty * costUsd;
         cat.productIds.add(productId);
         cat.totalUnits += qty;
 
@@ -619,9 +634,11 @@ export const EstadisticasPage: React.FC = () => {
         category,
         label: getCategoryLabel(category),
         totalValue: Math.round(data.totalValue * 100) / 100,
+        totalCostValue: Math.round(data.totalCostValue * 100) / 100,
         uniqueProducts: data.productIds.size,
         totalUnits: data.totalUnits,
         percentage: totalValue > 0 ? Math.round((data.totalValue / totalValue) * 100 * 10) / 10 : 0,
+        costPercentage: totalCostValue > 0 ? Math.round((data.totalCostValue / totalCostValue) * 100 * 10) / 10 : 0,
       })).sort((a, b) => b.totalValue - a.totalValue);
 
       setCategoryStats(categoryStatsArray);
@@ -632,6 +649,7 @@ export const EstadisticasPage: React.FC = () => {
         itemsInventario: sanitizedInventory.length,
         productosUnicos: uniqueProducts,
         valorTotal: totalValue.toFixed(2),
+        valorCosto: totalCostValue.toFixed(2),
         financialSummaryDisponible: !!financialSummary,
         totalServicioTecnico: finalGlobalTotals.technical_service
       });
@@ -719,48 +737,93 @@ export const EstadisticasPage: React.FC = () => {
           </div>
           <p className="text-white/70">Resumen completo del inventario y productos</p>
         </div>
-        <Button 
-          onClick={fetchStatistics} 
-          variant="outline"
-          disabled={loading}
-          className="flex items-center gap-2"
-        >
-          {loading ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Actualizando...
-            </>
-          ) : (
-            <>
-              <RefreshCw className="h-4 w-4" />
-              Actualizar
-            </>
-          )}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant={showCostValue ? 'default' : 'outline'}
+            onClick={() => setShowCostValue((v) => !v)}
+            className={`flex items-center gap-2 ${
+              showCostValue
+                ? 'bg-amber-600/90 hover:bg-amber-600 text-white border-amber-500/50'
+                : 'border-white/20 text-white/90 hover:bg-white/10'
+            }`}
+            title={
+              showCostValue
+                ? 'Mostrar valores a precio de venta (Precio Venta USD)'
+                : 'Mostrar valores a costo de entrada (Costo USD) — alineado con Cierres diarios'
+            }
+          >
+            <Wallet className="h-4 w-4" />
+            {showCostValue ? 'Ver valor de venta' : 'Ver valor de costo'}
+          </Button>
+          <Button 
+            onClick={fetchStatistics} 
+            variant="outline"
+            disabled={loading}
+            className="flex items-center gap-2"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Actualizando...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-4 w-4" />
+                Actualizar
+              </>
+            )}
+          </Button>
+        </div>
       </div>
+
+      {showCostValue && (
+        <p className="text-sm text-amber-200/90 bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-2">
+          Mostrando <strong>Costo (USD)</strong> — mismo criterio que Historial → Cierres diarios. Pulsa «Ver valor de venta» para volver al precio al público.
+        </p>
+      )}
 
       {/* Resumen del Inventario */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="shadow-md shadow-purple-500/40 border border-purple-500/30" style={{
-          background: 'rgba(9, 9, 9, 0.9)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)'
-        }}>
+        <Card
+          className={`shadow-md border ${
+            showCostValue
+              ? 'shadow-amber-500/40 border-amber-500/30'
+              : 'shadow-purple-500/40 border-purple-500/30'
+          }`}
+          style={{
+            background: 'rgba(9, 9, 9, 0.9)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+          }}
+        >
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2 text-purple-400">
-              <DollarSign className="w-4 h-4 text-purple-400" />
-              Valor Total del Inventario
+            <CardTitle
+              className={`text-sm font-medium flex items-center gap-2 ${
+                showCostValue ? 'text-amber-400' : 'text-purple-400'
+              }`}
+            >
+              <DollarSign className={`w-4 h-4 ${showCostValue ? 'text-amber-400' : 'text-purple-400'}`} />
+              {showCostValue ? 'Valor Total a Costo' : 'Valor Total del Inventario'}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold" style={{
-              color: '#a855f7'
-            }}>
-              USD {inventorySummary.totalValue.toLocaleString('es-VE', { 
-                minimumFractionDigits: 2, 
-                maximumFractionDigits: 2 
-              })}
+            <div
+              className="text-2xl font-bold"
+              style={{ color: showCostValue ? '#f59e0b' : '#a855f7' }}
+            >
+              USD{' '}
+              {(showCostValue ? inventorySummary.totalCostValue : inventorySummary.totalValue).toLocaleString(
+                'es-VE',
+                {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                }
+              )}
             </div>
+            <p className="text-xs text-white/55 mt-1">
+              {showCostValue ? 'Costo (USD) · entrada de mercancía' : 'Precio Venta (USD) · precio al público'}
+            </p>
             <p className="text-sm text-white/90 mt-2">
               {inventorySummary.uniqueProducts} productos registrados en total
             </p>
@@ -840,12 +903,16 @@ export const EstadisticasPage: React.FC = () => {
                 )}
               </CardHeader>
               <CardContent>
-                <div className={`text-xl font-bold ${colors.text}`}>
-                  USD {cat.totalValue.toLocaleString('es-VE', { 
-                    minimumFractionDigits: 2, 
-                    maximumFractionDigits: 2 
+                <div className={`text-xl font-bold ${showCostValue ? 'text-amber-400' : colors.text}`}>
+                  USD{' '}
+                  {(showCostValue ? cat.totalCostValue : cat.totalValue).toLocaleString('es-VE', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
                   })}
                 </div>
+                <p className="text-xs text-white/55 mt-1">
+                  {showCostValue ? 'Costo (USD)' : 'Precio Venta (USD)'}
+                </p>
                 <p className="text-sm text-white/90 mt-2">
                   {cat.uniqueProducts} productos agregados
                 </p>
@@ -853,10 +920,10 @@ export const EstadisticasPage: React.FC = () => {
                   Total unidades: {cat.totalUnits.toLocaleString()}
                 </p>
                 <p className="text-sm text-white/60 mt-1">
-                  % del total: {cat.percentage}%
+                  % del total: {showCostValue ? cat.costPercentage : cat.percentage}%
                 </p>
                 <Badge variant="outline" className="mt-2 text-xs border-white/20">
-                  Stock normal
+                  {showCostValue ? 'A costo · Cierres' : 'Stock normal'}
                 </Badge>
               </CardContent>
             </Card>
