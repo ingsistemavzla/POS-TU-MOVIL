@@ -33,7 +33,7 @@ export default function PublicInformesCatalogPage() {
             Informes operativos públicos
           </h1>
           <p className="mt-2 text-sm text-[#0D0D0D]/65">
-            Operación sucursal Tu Móvil Marino · Sin login · Slug en URL
+            Inventory System · Public reports · No login · Slug in URL
           </p>
           <p className="mt-1 font-mono text-xs text-[#0D0D0D]/45">/informes · /informe/&lt;slug&gt;</p>
         </div>

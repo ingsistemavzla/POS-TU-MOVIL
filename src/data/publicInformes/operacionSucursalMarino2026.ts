@@ -1,15 +1,15 @@
 import type { PublicInforme } from '@/types/publicInforme';
 import { INFORMES_CATALOGO_SLUG } from '@/types/publicInforme';
 
-const COMPANY = 'Tu Movil Margarita';
+const COMPANY = 'Inventory System';
 const COMPANY_ID = 'aa11bb22-cc33-dd44-ee55-ff6677889900';
 const MARINO_ID = '73aae6d8-a396-4443-9c24-c7b03c84d11b';
 const SUPABASE_REF = 'swsqmsbyikznalrvydny';
 
 const metaBase = [
-  { label: 'Sistema', value: 'POS-TuMovil' },
+  { label: 'System', value: 'Inventory System' },
   { label: 'Supabase', value: SUPABASE_REF },
-  { label: 'Empresa', value: COMPANY },
+  { label: 'Tenant', value: COMPANY },
   { label: 'company_id', value: COMPANY_ID },
 ];
 

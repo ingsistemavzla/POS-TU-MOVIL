@@ -19,6 +19,7 @@ import {
   DollarSign,
   Clock,
 } from 'lucide-react';
+import { INVENTORY_SYSTEM_NAME } from '@/constants/inventorySystemBranding';
 import {
   ARQUITECTURA_CONTEXTO,
   ARQUITECTURA_TECNICA_PILARES,
@@ -134,7 +135,7 @@ function MirrorSyncDiagram() {
       <div className="flex flex-col md:flex-row items-stretch justify-center gap-4 md:gap-2 min-w-[280px]">
         <div className="flex-1 rounded-lg bg-[#F2F2F2] p-4 border-t-4 border-[var(--verde-oscuro)] text-center">
           <Database className="h-6 w-6 md:h-8 md:w-8 mx-auto text-[var(--verde-oscuro)] mb-1.5 md:mb-2" />
-          <h4 className="font-bold text-sm text-[var(--verde-oscuro)]">Tu Móvil POS</h4>
+          <h4 className="font-bold text-sm text-[var(--verde-oscuro)]">{INVENTORY_SYSTEM_NAME}</h4>
           <p className="text-xs text-[#0D0D0D]/70 mt-1">Núcleo comercial · producción intacta</p>
         </div>
         <div className="flex md:flex-col items-center justify-center gap-1 text-[var(--verde-primario)] py-2">
@@ -204,7 +205,7 @@ export default function PresupuestoServicioTecnicoPage() {
           <div className="relative z-[2] mx-auto max-w-[920px]">
             <div className="mx-auto mb-4 md:mb-6 flex justify-center">
               <div className="h-[72px] w-[72px] sm:h-[96px] sm:w-[96px] md:h-[120px] md:w-[120px] rounded-full border-2 md:border-4 border-white/90 bg-white/15 shadow-lg flex items-center justify-center ring-2 ring-white/40">
-                <img src="/logo.svg" alt="Tu Movil" className="h-12 w-12 sm:h-16 sm:w-16 md:h-20 md:w-20 object-contain" />
+                <img src="/logo.svg" alt={INVENTORY_SYSTEM_NAME} className="h-12 w-12 sm:h-16 sm:w-16 md:h-20 md:w-20 object-contain" />
               </div>
             </div>
             <h1 className="font-black text-xl sm:text-2xl md:text-[3rem] leading-tight px-1">
@@ -432,7 +433,7 @@ export default function PresupuestoServicioTecnicoPage() {
             <div className={`rounded-[10px] md:rounded-[12px] bg-white ${cardPad} shadow-sm border-t-4 border-[var(--verde-oscuro)]`}>
               <h4 className="text-sm md:text-base font-bold text-[var(--verde-oscuro)] mb-1 flex items-center gap-2">
                 <ArrowRight className="h-4 w-4" />
-                7.1 Leer desde Tu Móvil POS
+                7.1 Leer desde {INVENTORY_SYSTEM_NAME}
               </h4>
               <p className="text-xs text-[#0D0D0D]/65 mb-3">Información estratégica</p>
               <ul className={`space-y-1 ${bodyText}`}>
@@ -447,7 +448,7 @@ export default function PresupuestoServicioTecnicoPage() {
             <div className={`rounded-[10px] md:rounded-[12px] bg-white ${cardPad} shadow-sm border-t-4 border-[var(--verde-primario)]`}>
               <h4 className="text-sm md:text-base font-bold text-[var(--verde-oscuro)] mb-1 flex items-center gap-2">
                 <ArrowDown className="h-4 w-4 rotate-[-90deg]" />
-                7.2 Escribir hacia Tu Móvil POS
+                7.2 Escribir hacia {INVENTORY_SYSTEM_NAME}
               </h4>
               <p className="text-xs text-[#0D0D0D]/65 mb-3">Información operativa controlada</p>
               <ul className={`space-y-1 ${bodyText}`}>

@@ -95,7 +95,7 @@ export function PublicInformeLayout({
         </div>
 
         <p className="mt-6 text-center text-xs text-[#0D0D0D]/45">
-          Informe público · Sin autenticación · POS TuMóvil Margarita
+          Public operational report · No authentication · Inventory System
         </p>
       </div>
     </div>

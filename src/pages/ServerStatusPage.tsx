@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { INVENTORY_SYSTEM_NAME } from '@/constants/inventorySystemBranding';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -86,7 +87,7 @@ export default function ServerStatusPage() {
   const [storage, setStorage] = useState<HealthState>('unknown');
 
   const incidentDate = '7–8 de mayo 2026';
-  const systemName = 'POS TuMovil';
+  const systemName = INVENTORY_SYSTEM_NAME;
   const transferFeeUsd = 25;
   const proMonthlyUsd = 35;
   const advancedMonthlyUsd = 45;
@@ -138,24 +139,24 @@ export default function ServerStatusPage() {
             {/* Logo circular */}
             <div className="mx-auto mb-8 flex justify-center">
               <div className="h-[120px] w-[120px] rounded-full border-4 border-white/90 bg-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.12)] backdrop-blur-sm flex items-center justify-center ring-2 ring-white/40">
-                <img src="/logo.svg" alt="Logo TuMovil" className="h-20 w-20 object-contain" />
+                <img src="/logo.svg" alt={INVENTORY_SYSTEM_NAME} className="h-20 w-20 object-contain" />
               </div>
             </div>
 
             {/* Título principal (legible sobre verde, sin degradado a negro) */}
             <div className="font-black text-4xl md:text-[3.5rem] leading-tight text-white [text-shadow:0_2px_8px_rgba(2,38,1,0.35)]">
-              TU MOVIL MGTA
+              {INVENTORY_SYSTEM_NAME}
             </div>
 
             <div className="mt-6 font-black text-3xl md:text-5xl uppercase [text-shadow:0_2px_4px_rgba(0,0,0,0.3)]">
-              SISTEMA WEB{' '}
+              WEB{' '}
               <span className="inline-block rounded-[30px] bg-white px-4 py-2 italic font-bold text-[var(--verde-oscuro)] shadow-[0_4px_8px_rgba(0,0,0,0.2)] [transform:rotate(-2deg)]">
-                PROGRESIVO
+                INVENTORY
               </span>
             </div>
 
             <p className="mt-4 text-xl md:text-[1.6rem] opacity-90">
-              Digitalización del Inventario, Facturación y Venta de Equipos Telefónicos
+              Multi-store stock control, catalog and operational inventory reports
             </p>
             <p className="mt-3 text-xl md:text-[1.6rem] opacity-90">
               <span className="inline-block rounded-[15px] bg-white px-3 py-1 font-semibold text-[var(--verde-oscuro)]">
@@ -173,7 +174,7 @@ export default function ServerStatusPage() {
                 <Server className="h-4 w-4" /> Control de inventario en tiempo real
               </span>
               <span className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/20 px-6 py-3 text-base font-semibold backdrop-blur">
-                <BarChart3 className="h-4 w-4" /> Facturación digital automática
+                <BarChart3 className="h-4 w-4" /> Inventory analytics
               </span>
               <span className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/20 px-6 py-3 text-base font-semibold backdrop-blur">
                 <ShieldCheck className="h-4 w-4" /> Escaneo QR para actualización
@@ -206,9 +207,9 @@ export default function ServerStatusPage() {
         {/* Copiar datos del proyecto */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="inline-flex items-center gap-3">
-            <img src="/logo.svg" alt="TuMovil-POS" className="h-10 w-10" />
+            <img src="/logo.svg" alt={INVENTORY_SYSTEM_NAME} className="h-10 w-10" />
             <div>
-              <div className="text-lg font-bold text-[var(--verde-oscuro)]">Proyecto: POS TuMovil</div>
+              <div className="text-lg font-bold text-[var(--verde-oscuro)]">Project: {INVENTORY_SYSTEM_NAME}</div>
               <div className="text-sm text-[#0D0D0D]/65">
                 Página interna: <span className="font-mono text-[var(--verde-oscuro)]">/server</span>
               </div>

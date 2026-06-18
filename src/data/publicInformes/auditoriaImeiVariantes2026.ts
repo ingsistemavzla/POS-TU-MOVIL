@@ -1,7 +1,7 @@
 import type { PublicInforme } from '@/types/publicInforme';
 import { INFORMES_CATALOGO_SLUG } from '@/types/publicInforme';
 
-const COMPANY = 'Tu Movil Margarita';
+const COMPANY = 'Inventory System';
 const FECHA_INFORME = '2026-06-18';
 
 export const informeAuditoriaImeiVariantes: PublicInforme = {
@@ -19,10 +19,10 @@ export const informeAuditoriaImeiVariantes: PublicInforme = {
     'productos-sin-categoria-inventario-2026',
   ],
   meta: [
-    { label: 'Empresa', value: COMPANY },
+    { label: 'System', value: 'Inventory System' },
     { label: 'Fecha informe', value: FECHA_INFORME },
     { label: 'SQL auditoría', value: 'sql/auditoria_integridad_ventas_inventario.sql' },
-    { label: 'Estado Fase 1 código', value: 'Local — sin deploy autorizado' },
+    { label: 'Estado Fase 1 código', value: 'Deploy frontend + migración Supabase pendiente según operación' },
     { label: 'URL pública', value: '/informe/auditoria-imei-variantes-128-256-2026' },
   ],
   sections: [
@@ -125,7 +125,7 @@ export const informeAuditoriaImeiVariantes: PublicInforme = {
       type: 'table',
       title: 'Candidatos por similitud IMEI (histórico)',
       description: 'Coincidencia por 4 primeros / 4 últimos dígitos o typo cercano. Revisar en piso antes de corregir stock.',
-      headers: ['IMEI buscado', 'Factura', 'Fecha (VE)', 'Tienda', 'Producto facturado', 'IMEI en venta', 'Cliente'],
+      headers: ['IMEI buscado', 'N° venta', 'Fecha (VE)', 'Tienda', 'Producto registrado', 'IMEI en venta', 'Cliente'],
       rows: [
         {
           cells: [
@@ -199,7 +199,7 @@ export const informeAuditoriaImeiVariantes: PublicInforme = {
       type: 'table',
       title: 'Ventas teléfono 2026-06-18 (referencia del día)',
       description: 'Ninguna fila contenía los IMEI exactos del caso; lista para cruce manual.',
-      headers: ['Factura', 'Hora (VE)', 'Tienda', 'SKU', 'Producto', 'IMEI', 'Cliente'],
+      headers: ['N° venta', 'Hora (VE)', 'Tienda', 'SKU', 'Producto', 'IMEI', 'Cliente'],
       rows: [
         {
           cells: [
@@ -336,7 +336,7 @@ WHERE btrim(si.imei) = '869009083237546';  -- reemplazar IMEI`,
         { label: 'Inventario actual (5 tiendas)', href: '/informe/inventario-estado-actual-2026-06' },
         {
           label: 'POS producción',
-          href: 'https://pos-tu-movil.onrender.com/',
+          href: 'https://pos-tu-movil.onrender.com/informes',
           external: true,
         },
       ],

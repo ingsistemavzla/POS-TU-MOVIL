@@ -19,6 +19,7 @@ import { LoadingScreen } from "@/components/ui/LoadingScreen";
 import { RoutePageLoader } from "@/components/ui/RoutePageLoader";
 import { DashboardPageLoader } from "@/components/ui/DashboardPageLoader";
 import { isPublicAppPath } from "@/lib/publicInformePaths";
+import { InventorySystemDocumentMeta } from "@/components/layout/InventorySystemDocumentMeta";
 // Lazy load layout and auth pages
 const MainLayout = lazy(() => import("./components/layout/MainLayout"));
 const AuthPage = lazy(() => import("./pages/AuthPage"));
@@ -548,6 +549,7 @@ const App = () => (
             <Toaster />
             <Sonner />
             <BrowserRouter>
+              <InventorySystemDocumentMeta />
               <AppRoutes />
             </BrowserRouter>
           </TooltipProvider>
