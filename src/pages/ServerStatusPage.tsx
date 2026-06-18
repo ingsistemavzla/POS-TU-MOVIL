@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { INVENTORY_SYSTEM_NAME } from '@/constants/inventorySystemBranding';
+import { PUBLIC_INVENTORY_THEME_VARS, PUBLIC_PAGE_BG } from '@/constants/publicInventoryTheme';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -69,11 +70,11 @@ function CopyButton({ value, label }: { value: string; label: string }) {
     <button
       type="button"
       onClick={onCopy}
-      className="inline-flex items-center gap-2 rounded-lg border border-white/70 bg-white/80 px-3 py-2 text-xs text-[#022601] shadow-sm ring-1 ring-[rgba(48,217,107,0.2)] backdrop-blur-sm hover:bg-white hover:ring-[rgba(48,217,107,0.35)]"
+      className="inline-flex items-center gap-2 rounded-lg border border-white/70 bg-white/80 px-3 py-2 text-xs text-[var(--verde-oscuro)] shadow-sm ring-1 ring-blue-200 backdrop-blur-sm hover:bg-white hover:ring-blue-300"
       aria-label={label}
       title={label}
     >
-      <Copy className="h-4 w-4 text-[#30D96B]" />
+      <Copy className="h-4 w-4 text-[var(--verde-primario)]" />
       <span className="font-mono">{value}</span>
       <span className="text-[#0D0D0D]/45">{copied ? 'Copiado' : ''}</span>
     </button>
@@ -95,18 +96,8 @@ export default function ServerStatusPage() {
 
   return (
     <div
-      className="min-h-screen w-full bg-[#F2F2F2] text-[#0D0D0D] pb-10"
-      style={
-        {
-          // Variables de color (alineadas al HTML de referencia)
-          // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-          ['--verde-primario' as any]: '#30D96B',
-          ['--verde-oscuro' as any]: '#022601',
-          ['--verde-secundario' as any]: '#64F23D',
-          ['--negro' as any]: '#0D0D0D',
-          ['--blanco' as any]: '#ffffff',
-        } as React.CSSProperties
-      }
+      className="min-h-screen w-full text-[#0D0D0D] pb-10"
+      style={{ ...PUBLIC_INVENTORY_THEME_VARS, backgroundColor: PUBLIC_PAGE_BG }}
     >
       <div className="mx-auto w-[90%] max-w-[1200px] mt-10 overflow-hidden rounded-[12px] bg-white shadow-[0_8px_24px_rgba(0,0,0,0.15)]">
         {/* Header impacto (estructura del HTML original, adaptada a Tailwind) */}

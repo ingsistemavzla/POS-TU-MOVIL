@@ -20,6 +20,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { INVENTORY_SYSTEM_NAME } from '@/constants/inventorySystemBranding';
+import { PUBLIC_INVENTORY_THEME_VARS, PUBLIC_PAGE_BG } from '@/constants/publicInventoryTheme';
 import {
   ARQUITECTURA_CONTEXTO,
   ARQUITECTURA_TECNICA_PILARES,
@@ -51,11 +52,7 @@ import {
   SECCIONES_NAV,
 } from '@/data/presupuestoServicioTecnico';
 
-const verdeVars = {
-  ['--verde-primario' as string]: '#30D96B',
-  ['--verde-oscuro' as string]: '#022601',
-  ['--verde-secundario' as string]: '#64F23D',
-} as React.CSSProperties;
+const verdeVars = PUBLIC_INVENTORY_THEME_VARS;
 
 /** Espaciado y tipografía más compactos en móvil */
 const sectionClass = 'px-4 sm:px-6 md:px-12 py-8 md:py-14 scroll-mt-4';
@@ -152,7 +149,7 @@ function MirrorSyncDiagram() {
             </span>
           </div>
         </div>
-        <div className="flex-1 rounded-lg bg-[rgba(48,217,107,0.12)] p-4 border-t-4 border-[var(--verde-primario)] text-center">
+        <div className="flex-1 rounded-lg bg-blue-50 p-4 border-t-4 border-[var(--verde-primario)] text-center">
           <Wrench className="h-6 w-6 md:h-8 md:w-8 mx-auto text-[var(--verde-oscuro)] mb-1.5 md:mb-2" />
           <h4 className="font-bold text-sm text-[var(--verde-oscuro)]">Sistema técnico</h4>
           <p className="text-xs text-[#0D0D0D]/70 mt-1">BD propia · órdenes · evidencias</p>
@@ -171,7 +168,7 @@ function EstadosPipeline({ estados }: { estados: string[] }) {
       {estados.map((e, i) => (
         <span
           key={e}
-          className="inline-flex items-center gap-1 rounded-full bg-[rgba(48,217,107,0.15)] px-2 py-0.5 text-[10px] sm:text-xs font-medium text-[var(--verde-oscuro)]"
+          className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] sm:text-xs font-medium text-[var(--verde-oscuro)]"
         >
           {i > 0 && <span className="text-[var(--verde-primario)] opacity-60">→</span>}
           {e}
@@ -183,7 +180,7 @@ function EstadosPipeline({ estados }: { estados: string[] }) {
 
 export default function PresupuestoServicioTecnicoPage() {
   return (
-    <div className="min-h-screen w-full bg-[#F2F2F2] text-[#0D0D0D] pb-6 md:pb-10 font-sans text-sm md:text-base" style={verdeVars}>
+    <div className="min-h-screen w-full text-[#0D0D0D] pb-6 md:pb-10 font-sans text-sm md:text-base" style={{ ...verdeVars, backgroundColor: PUBLIC_PAGE_BG }}>
       <div className="mx-auto w-[94%] sm:w-[90%] max-w-[1200px] mt-4 sm:mt-6 md:mt-10 overflow-hidden rounded-[10px] md:rounded-[12px] bg-white shadow-[0_8px_24px_rgba(0,0,0,0.15)]">
         {/* Header */}
         <header className="relative overflow-hidden bg-[linear-gradient(135deg,var(--verde-primario)_0%,var(--verde-oscuro)_100%)] px-4 sm:px-6 py-10 md:py-20 text-center text-white">
@@ -218,7 +215,7 @@ export default function PresupuestoServicioTecnicoPage() {
               {PROPUESTA_META.subtitulo}
             </p>
             <p className="mt-2 md:mt-4 text-xs sm:text-sm md:text-lg opacity-90 max-w-2xl mx-auto px-1 leading-snug">
-              Arquitectura híbrida paralela · sistema independiente del POS · sincronización controlada
+              Arquitectura híbrida paralela · módulo independiente · sincronización con {INVENTORY_SYSTEM_NAME}
             </p>
             <div className="mt-4 md:mt-6 flex flex-wrap justify-center gap-1.5 md:gap-2 max-h-[72px] md:max-h-[120px] overflow-y-auto">
               {SECCIONES_NAV.map((s) => (
@@ -239,7 +236,7 @@ export default function PresupuestoServicioTecnicoPage() {
         <section id="objetivo" className={sectionClass}>
           <SectionTitle
             icon={<Target className="text-[var(--verde-primario)]" />}
-            sub="Sistema paralelo, formal y validado por el cliente — sin alterar producción del POS"
+            sub="Sistema paralelo, formal y validado — sin alterar producción del inventario"
           >
             1. Objetivo general
           </SectionTitle>
@@ -281,7 +278,7 @@ export default function PresupuestoServicioTecnicoPage() {
         <section id="arquitectura" className={sectionClass}>
           <SectionTitle
             icon={<GitBranch className="text-[var(--verde-primario)]" />}
-            sub="Por qué NO integrar el taller dentro del POS comercial"
+            sub="Por qué NO integrar el taller dentro del sistema comercial de inventario"
           >
             3. Arquitectura híbrida paralela
           </SectionTitle>
@@ -290,7 +287,7 @@ export default function PresupuestoServicioTecnicoPage() {
             <div className={`rounded-[10px] md:rounded-[12px] border border-rose-200 bg-rose-50/80 ${cardPad}`}>
               <h3 className="text-sm md:text-base font-bold text-rose-950 mb-3 md:mb-4 flex items-center gap-2">
                 <XCircle className="h-4 w-4 md:h-5 md:w-5 shrink-0" />
-                Riesgos de incorporar el técnico dentro del POS
+                Riesgos de incorporar el técnico dentro del sistema comercial
               </h3>
               <ul className="space-y-2">
                 {RIESGOS_INTEGRAR_EN_POS.map((r) => (
@@ -301,7 +298,7 @@ export default function PresupuestoServicioTecnicoPage() {
                 ))}
               </ul>
             </div>
-            <div className={`rounded-[10px] md:rounded-[12px] border border-[var(--verde-primario)]/40 bg-[rgba(48,217,107,0.1)] ${cardPad} flex flex-col justify-center`}>
+            <div className={`rounded-[10px] md:rounded-[12px] border border-[var(--verde-primario)]/40 bg-blue-50 ${cardPad} flex flex-col justify-center`}>
               <h3 className="text-sm md:text-base font-bold text-[var(--verde-oscuro)] mb-2 md:mb-3 flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 md:h-5 md:w-5 text-[var(--verde-primario)] shrink-0" />
                 Enfoque correcto
@@ -400,7 +397,7 @@ export default function PresupuestoServicioTecnicoPage() {
             <div className={`rounded-lg bg-amber-50 border border-amber-200 ${cardPad}`}>
               <h3 className="text-sm md:text-base font-bold text-amber-950 mb-2 md:mb-3 flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 md:h-5 md:w-5 shrink-0" />
-                6.2 Principio de no alteración del POS
+                6.2 Principio de no alteración del núcleo de inventario
               </h3>
               <p className="text-xs text-amber-900/80 mb-3">Bajo ningún concepto el nuevo sistema deberá:</p>
               <ul className="space-y-1.5 mb-4">
@@ -569,7 +566,7 @@ export default function PresupuestoServicioTecnicoPage() {
                 <div className="p-4 md:p-6 space-y-3 md:space-y-4">
                   {fase.critica && (
                     <p className={`${bodyText} text-amber-900 bg-amber-50 rounded-lg px-3 py-2 md:px-4 border border-amber-200`}>
-                      <strong>Hito crítico:</strong> conectar ecosistemas sin afectar producción del POS.
+                      <strong>Hito crítico:</strong> conectar ecosistemas sin afectar producción del inventario.
                     </p>
                   )}
                   <div>

@@ -36,7 +36,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { NegativeStockAlert } from "@/components/inventory/NegativeStockAlert";
 import { useToast } from "@/hooks/use-toast";
 import { prefetchAppRoute } from "@/utils/routePrefetch";
-import { INVENTORY_SYSTEM_NAME, applyInventorySystemDocumentMeta } from "@/constants/inventorySystemBranding";
 
 const getNavigationByRole = (role: string) => {
   const allNavigation = [
@@ -157,10 +156,12 @@ export default function MainLayout() {
     return path !== '/' && path !== '/dashboard' && location.pathname.startsWith(path);
   };
 
-  // Título de pestaña: Inventory System (sin marca comercial en app autenticada)
+  // Título con nombre de empresa (panel autenticado — sin cambios de marca)
   useEffect(() => {
-    applyInventorySystemDocumentMeta();
-  }, [location.pathname]);
+    if (company?.name) {
+      document.title = `${company.name} - POS Multitienda`;
+    }
+  }, [company?.name]);
 
   // Precargar chunk del dashboard para admin/manager
   useEffect(() => {
@@ -392,11 +393,9 @@ export default function MainLayout() {
         }}>
           <div className="flex h-full items-center justify-between px-3 xs:px-6">
             <div className="min-w-0 flex-1 flex items-center space-x-2">
-              <Link to="/dashboard" className="flex items-center space-x-2 min-w-0">
-                <img src="/logo.png" alt={INVENTORY_SYSTEM_NAME} className="w-6 h-6 xs:w-8 xs:h-8 object-contain max-w-none" style={{ objectFit: 'contain' }} />
-                <span className="hidden sm:inline text-sm xs:text-base font-semibold text-white/95 truncate">
-                  {INVENTORY_SYSTEM_NAME}
-                </span>
+              <Link to="/dashboard" className="flex items-center space-x-2">
+                <img src="/logo.png" alt="Logo" className="w-6 h-6 xs:w-8 xs:h-8 object-contain max-w-none" style={{ objectFit: 'contain' }} />
+                <img src="/logotipo.png" alt="Logotipo" className="h-4 xs:h-6 object-contain" />
               </Link>
               <GlobalBcvBadge />
             </div>

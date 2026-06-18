@@ -6,7 +6,7 @@ import {
 } from '@/constants/inventorySystemBranding';
 import { isPublicAppPath } from '@/lib/publicInformePaths';
 
-/** Sincroniza title/meta según ruta; login mantiene título Tu Móvil Margarita */
+/** Meta/título solo en rutas públicas; login y panel autenticado sin cambios */
 export function InventorySystemDocumentMeta() {
   const { pathname } = useLocation();
 
@@ -16,27 +16,17 @@ export function InventorySystemDocumentMeta() {
       return;
     }
 
-    if (pathname.startsWith('/informe/') || pathname === '/informes') {
-      applyInventorySystemDocumentMeta('Operational reports');
-      return;
-    }
-
-    if (pathname === '/server') {
-      applyInventorySystemDocumentMeta('System status');
-      return;
-    }
-
-    if (pathname === '/presupuesto-sistema-servicio-tecnico') {
-      applyInventorySystemDocumentMeta('Technical service');
-      return;
-    }
-
     if (isPublicAppPath(pathname)) {
-      applyInventorySystemDocumentMeta();
-      return;
+      if (pathname.startsWith('/informe/') || pathname === '/informes') {
+        applyInventorySystemDocumentMeta('Operational reports');
+      } else if (pathname === '/server') {
+        applyInventorySystemDocumentMeta('System status');
+      } else if (pathname === '/presupuesto-sistema-servicio-tecnico') {
+        applyInventorySystemDocumentMeta('Technical service');
+      } else {
+        applyInventorySystemDocumentMeta();
+      }
     }
-
-    applyInventorySystemDocumentMeta();
   }, [pathname]);
 
   return null;

@@ -33,11 +33,11 @@ export function PublicInformeSections({ sections }: { sections: InformeSection[]
             <div
               key={key}
               className={`rounded-xl p-5 md:p-6 flex gap-4 items-start ${
-                section.ok ? 'bg-emerald-50 ring-1 ring-emerald-200' : 'bg-rose-50 ring-1 ring-rose-200'
+                section.ok ? 'bg-blue-50 ring-1 ring-blue-200' : 'bg-rose-50 ring-1 ring-rose-200'
               }`}
             >
               {section.ok ? (
-                <CheckCircle2 className="h-8 w-8 text-emerald-600 shrink-0" />
+                <CheckCircle2 className="h-8 w-8 text-blue-600 shrink-0" />
               ) : (
                 <XCircle className="h-8 w-8 text-rose-600 shrink-0" />
               )}

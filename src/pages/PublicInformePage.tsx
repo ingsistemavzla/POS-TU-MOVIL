@@ -3,6 +3,8 @@ import { PublicInformeLayout } from '@/components/publicInforme/PublicInformeLay
 import { PublicInformeSections } from '@/components/publicInforme/PublicInformeSections';
 import { getPublicInforme } from '@/data/publicInformes/registry';
 import { informePath, INFORMES_CATALOGO_SLUG } from '@/types/publicInforme';
+import { INVENTORY_SYSTEM_NAME } from '@/constants/inventorySystemBranding';
+import { PUBLIC_INVENTORY_THEME_VARS, PUBLIC_PAGE_BG } from '@/constants/publicInventoryTheme';
 
 export default function PublicInformePage() {
   const { slug } = useParams<{ slug: string }>();
@@ -10,14 +12,17 @@ export default function PublicInformePage() {
 
   if (!informe) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#F2F2F2] px-4">
-        <h1 className="text-xl font-bold text-[#022601] mb-2">Informe no encontrado</h1>
+      <div
+        className="min-h-screen flex flex-col items-center justify-center px-4"
+        style={{ ...PUBLIC_INVENTORY_THEME_VARS, backgroundColor: PUBLIC_PAGE_BG }}
+      >
+        <h1 className="text-xl font-bold text-[var(--verde-oscuro)] mb-2">Report not found</h1>
         <p className="text-sm text-[#0D0D0D]/60 mb-6 font-mono">/informe/{slug ?? '—'}</p>
         <Link
           to={informePath(INFORMES_CATALOGO_SLUG)}
-          className="rounded-lg bg-[#30D96B] px-4 py-2 text-sm font-semibold text-[#022601]"
+          className="rounded-lg bg-[var(--verde-primario)] px-4 py-2 text-sm font-semibold text-white"
         >
-          Ver catálogo de informes
+          {INVENTORY_SYSTEM_NAME} · View catalog
         </Link>
       </div>
     );

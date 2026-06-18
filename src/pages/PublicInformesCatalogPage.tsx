@@ -2,6 +2,8 @@ import { Link } from 'react-router-dom';
 import { Database, FileCheck, FileText, FolderArchive, ListChecks, ShieldCheck } from 'lucide-react';
 import { listPublicInformesExceptCatalog } from '@/data/publicInformes/registry';
 import { informePath, INFORMES_CATALOGO_SLUG } from '@/types/publicInforme';
+import { INVENTORY_SYSTEM_NAME } from '@/constants/inventorySystemBranding';
+import { PUBLIC_INVENTORY_THEME_VARS, PUBLIC_PAGE_BG } from '@/constants/publicInventoryTheme';
 
 const iconByCategoria: Record<string, React.ReactNode> = {
   respaldo: <FolderArchive className="h-6 w-6" />,
@@ -16,13 +18,8 @@ export default function PublicInformesCatalogPage() {
 
   return (
     <div
-      className="min-h-screen bg-[#F2F2F2] text-[#0D0D0D] py-10 px-4"
-      style={
-        {
-          ['--verde-primario' as string]: '#30D96B',
-          ['--verde-oscuro' as string]: '#022601',
-        } as React.CSSProperties
-      }
+      className="min-h-screen text-[#0D0D0D] py-10 px-4"
+      style={{ ...PUBLIC_INVENTORY_THEME_VARS, backgroundColor: PUBLIC_PAGE_BG }}
     >
       <div className="mx-auto max-w-3xl">
         <div className="text-center mb-10">
@@ -30,10 +27,10 @@ export default function PublicInformesCatalogPage() {
             <FileCheck className="h-7 w-7 text-[var(--verde-primario)]" />
           </div>
           <h1 className="text-2xl md:text-3xl font-bold text-[var(--verde-oscuro)]">
-            Informes operativos públicos
+            {INVENTORY_SYSTEM_NAME}
           </h1>
           <p className="mt-2 text-sm text-[#0D0D0D]/65">
-            Inventory System · Public reports · No login · Slug in URL
+            Public inventory reports · No login · URL slug
           </p>
           <p className="mt-1 font-mono text-xs text-[#0D0D0D]/45">/informes · /informe/&lt;slug&gt;</p>
         </div>
@@ -66,7 +63,7 @@ export default function PublicInformesCatalogPage() {
             to={informePath(INFORMES_CATALOGO_SLUG)}
             className="text-sm text-[var(--verde-oscuro)] underline"
           >
-            Vista índice detallada (catálogo)
+            Detailed index (catalog)
           </Link>
         </p>
       </div>
