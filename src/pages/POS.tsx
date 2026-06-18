@@ -57,6 +57,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDebounce } from "@/hooks/useDebounce";
 import { PosProductListSkeleton } from "@/components/inventory/InventoryLoadingSkeletons";
 import { useBcv } from "@/contexts/BcvContext";
+import { getCartPhoneImeiValidation, isValidImeiValue } from "@/utils/phoneImeiValidation";
 // import { CashRegisterWidget } from "@/components/cash-register/CashRegisterWidget";
 
 interface CartItem {
@@ -1006,6 +1007,11 @@ export default function POS() {
   const totalUSD = subtotalUSD; // Total = Subtotal (sin IVA)
   const totalBs = totalUSD * finalBcvRate; // ✅ Usar tasa final (puede ser editada)
 
+  const cartPhoneImeiValidation = useMemo(
+    () => getCartPhoneImeiValidation(cart),
+    [cart]
+  );
+
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
       const matchesCategory =
@@ -1490,6 +1496,15 @@ export default function POS() {
       return;
     }
 
+    if (!cartPhoneImeiValidation.ok) {
+      toast({
+        title: "IMEI requerido",
+        description: cartPhoneImeiValidation.message ?? "Complete los IMEI de todos los teléfonos antes de vender.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // ✅ OPTIMIZACIÓN: Eliminadas validaciones previas redundantes
     // - Validación de stock: La RPC process_sale ya valida el stock de forma segura y atómica
     // - Verificación de duplicados: Consulta adicional innecesaria que agrega latencia
@@ -1637,10 +1652,13 @@ export default function POS() {
           
           // Si es un teléfono con múltiples IMEIs, crear un item por cada IMEI
           if (item.category === 'phones' && item.imeis && item.imeis.length > 0) {
-            return item.imeis.map(imei => ({
+            return item.imeis
+              .map((imei) => String(imei).trim())
+              .filter((imei) => isValidImeiValue(imei))
+              .map((imei) => ({
               ...finalItem,
               qty: 1,
-              imei: String(imei).trim()
+              imei,
             }));
           } else {
             return [finalItem];
@@ -3504,6 +3522,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                 ) ||
                 (isMixedPayment && mixedPayments.length === 0) ||
                 (isMixedPayment && mixedPayments.some(p => p.amount <= 0)) ||
+                !cartPhoneImeiValidation.ok ||
                 (
                   isMixedPayment && 
                   (() => {
@@ -3521,7 +3540,8 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                   })()
                 )
               } 
-              className="w-full bg-primary-dark glow-primary disabled:opacity-50" 
+              className="w-full bg-primary-dark glow-primary disabled:opacity-50"
+              title={!cartPhoneImeiValidation.ok ? cartPhoneImeiValidation.message : undefined}
               size="lg"
             >
               Continuar a Resumen
@@ -3742,9 +3762,21 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
               </Button>
               <Button
                 onClick={() => setShowPreValidationModal(true)}
-                disabled={cart.length === 0 || isProcessingSale || isSaleConfirmedAndCompleted || !hasValidStore}
+                disabled={
+                  cart.length === 0 ||
+                  isProcessingSale ||
+                  isSaleConfirmedAndCompleted ||
+                  !hasValidStore ||
+                  !cartPhoneImeiValidation.ok
+                }
                 className="glow-primary px-8"
-                title={!hasValidStore ? "Debes seleccionar una sucursal específica para realizar ventas" : undefined}
+                title={
+                  !hasValidStore
+                    ? "Debes seleccionar una sucursal específica para realizar ventas"
+                    : !cartPhoneImeiValidation.ok
+                      ? cartPhoneImeiValidation.message
+                      : undefined
+                }
               >
                 {isSaleConfirmedAndCompleted ? (
                   <>
@@ -3977,8 +4009,14 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
                 await processSale();
               }}
               className="bg-primary-dark glow-primary"
-              disabled={isProcessingSale || !hasValidStore}
-              title={!hasValidStore ? "Debes seleccionar una sucursal específica para realizar ventas" : undefined}
+              disabled={isProcessingSale || !hasValidStore || !cartPhoneImeiValidation.ok}
+              title={
+                !hasValidStore
+                  ? "Debes seleccionar una sucursal específica para realizar ventas"
+                  : !cartPhoneImeiValidation.ok
+                    ? cartPhoneImeiValidation.message
+                    : undefined
+              }
             >
               {isProcessingSale ? (
                 <>

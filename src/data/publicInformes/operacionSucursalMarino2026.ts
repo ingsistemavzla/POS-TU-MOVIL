@@ -24,6 +24,7 @@ export const informeCatalogo: PublicInforme = {
   tags: ['índice', 'operaciones', 'marino'],
   relacionados: [
     'operacion-marino-informe-completo-2026',
+    'auditoria-imei-variantes-128-256-2026',
     'productos-sin-categoria-inventario-2026',
     'respaldo-pre-sucursal-marino-2026',
     'inventario-estado-actual-2026-06',
@@ -48,6 +49,7 @@ export const informeCatalogo: PublicInforme = {
       headers: ['Slug', 'Categoría', 'Descripción'],
       rows: [
         { cells: ['operacion-marino-informe-completo-2026', 'Consolidado', 'TODO en 1: respaldo + SQL + validaciones + inventario final'] },
+        { cells: ['auditoria-imei-variantes-128-256-2026', 'Validación', 'IMEI, variantes 128/256, cruce caja/equipo, plan blindaje'] },
         { cells: ['productos-sin-categoria-inventario-2026', 'Inventario', 'Identificar 3 productos uncategorized'] },
         { cells: ['respaldo-pre-sucursal-marino-2026', 'Respaldo', 'Git, dump BD, protocolo restore'] },
         { cells: ['inventario-estado-actual-2026-06', 'Inventario', 'Estado actual certificado (5 tiendas)'] },
@@ -61,6 +63,7 @@ export const informeCatalogo: PublicInforme = {
       title: 'Enlaces rápidos',
       items: [
         { label: 'Informe completo (TODO en 1)', href: '/informe/operacion-marino-informe-completo-2026' },
+        { label: 'Auditoría IMEI / 128 vs 256', href: '/informe/auditoria-imei-variantes-128-256-2026' },
         { label: 'Productos sin categoría', href: '/informe/productos-sin-categoria-inventario-2026' },
         { label: 'Respaldo', href: '/informe/respaldo-pre-sucursal-marino-2026' },
         { label: 'Inventario actual', href: '/informe/inventario-estado-actual-2026-06' },
