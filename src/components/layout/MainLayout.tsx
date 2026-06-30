@@ -34,6 +34,8 @@ import { VenezuelaNavClock } from "@/components/layout/VenezuelaNavClock";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { NegativeStockAlert } from "@/components/inventory/NegativeStockAlert";
+import { StockNotificationProvider } from "@/contexts/StockNotificationContext";
+import { StockNotificationBell } from "@/components/layout/StockNotificationBell";
 import { useToast } from "@/hooks/use-toast";
 import { prefetchAppRoute } from "@/utils/routePrefetch";
 
@@ -256,6 +258,7 @@ export default function MainLayout() {
   }, [isSlowNetwork, retryProfileFetch, toast]);
 
   return (
+    <StockNotificationProvider>
     <div className="min-h-screen relative text-white font-sans w-full">
       {/* Fondo gradiente global */}
       <div className="bg-app-gradient" />
@@ -401,6 +404,7 @@ export default function MainLayout() {
             </div>
             
             <div className="flex items-center space-x-2 xs:space-x-4 shrink-0">
+              <StockNotificationBell />
               <VenezuelaNavClock />
               {/* Store Indicator - Mobile First */}
               <div className="flex items-center space-x-1 xs:space-x-2 px-2 xs:px-3 py-1 rounded-md bg-white/20">
@@ -427,5 +431,6 @@ export default function MainLayout() {
         </main>
       </div>
     </div>
+    </StockNotificationProvider>
   );
 }

@@ -24,6 +24,10 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { LiquidityDonutChart } from '@/components/charts/LiquidityDonutChart';
 import { DashboardPageLoader } from '@/components/ui/DashboardPageLoader';
 import { DashboardStoreTable } from '@/components/dashboard/DashboardStoreTable';
+import { LowStockAlertPanel } from '@/components/dashboard/LowStockAlertPanel';
+import { OutOfStockAlertPanel } from '@/components/dashboard/OutOfStockAlertPanel';
+import { CriticalStockAlertPanel } from '@/components/dashboard/CriticalStockAlertPanel';
+import { TopProductsPanel } from '@/components/dashboard/TopProductsPanel';
 import { Progress } from '@/components/ui/progress';
 
 type PeriodType = 'today' | 'yesterday' | 'thisMonth';
@@ -662,97 +666,18 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* Tablas Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top Productos */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg font-semibold text-white flex items-center gap-2">
-              <Package className="w-5 h-5" />
-              Top Productos Vendidos
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {dashboardData.topProducts.length > 0 ? (
-              <div className="space-y-3">
-                {dashboardData.topProducts
-                  .slice(0, 10)
-                  .filter((product, index, self) => 
-                    index === self.findIndex((p) => p.id === product.id)
-                  )
-                  .map((product, index) => (
-                  <div
-                    key={`top-product-${product.id}-${index}`}
-                    className="flex items-center justify-between p-4 glass-panel rounded-lg hover:bg-white/10 transition-colors"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 rounded-full bg-brand-primary/10 flex items-center justify-center text-sm font-medium text-brand-primary">
-                        {index + 1}
-                      </div>
-                      <div>
-                        <p className="font-medium text-white text-sm">{product.name}</p>
-                        <p className="text-xs text-white/90">{product.storeName}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-white text-sm">
-                        {formatCurrency(product.revenueUSD)}
-                      </p>
-                      <p className="text-xs text-white/90">{product.quantity} unidades</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-white/90">
-                <p>No hay productos vendidos</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      <LowStockAlertPanel />
 
-        {/* Stock Crítico */}
-        {dashboardData.criticalStock.length > 0 && (
-          <Card className="border-t-4 border-red-500">
-            <CardHeader>
-              <CardTitle className="text-lg font-semibold text-red-600 flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5" />
-                Stock Crítico - {dashboardData.criticalStock.length} productos
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {dashboardData.criticalStock
-                  .slice(0, 10)
-                  .filter((product, index, self) => 
-                    index === self.findIndex((p) => p.id === product.id)
-                  )
-                  .map((product, index) => (
-                  <div
-                    key={`critical-stock-${product.id}-${index}`}
-                    className="flex items-center justify-between p-4 glass-panel rounded-lg border border-red-500/30"
-                  >
-                    <div className="flex-1">
-                      <p className="font-medium text-white text-sm">{product.name}</p>
-                      <p className="text-xs text-white/90">SKU: {product.sku} • {product.storeName}</p>
-                      <p className="text-xs text-red-600 mt-1">
-                        Stock: {product.currentStock} / Mín: {product.minStock}
-                      </p>
-                    </div>
-                    <div className="ml-4">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded text-xs font-medium bg-red-500/20 text-red-600 border border-red-500/50">
-                        {product.currentStock === 0 ? 'Sin Stock' : 'Bajo Stock'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+      {/* Sin Stock + Stock Crítico */}
+      <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-2">
+        <OutOfStockAlertPanel />
+        <CriticalStockAlertPanel />
       </div>
 
-      {/* Tabla de Rendimiento por Sucursal (Legacy Migration) */}
+      {/* Top Productos — encima de Rendimiento por Sucursal */}
+      <TopProductsPanel products={dashboardData.topProducts} />
+
+      {/* Tabla de Rendimiento por Sucursal */}
       <div className="mt-8">
         <DashboardStoreTable selectedPeriod={selectedPeriod} />
       </div>
