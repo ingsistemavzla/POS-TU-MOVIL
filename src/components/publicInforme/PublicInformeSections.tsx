@@ -30,23 +30,34 @@ export function PublicInformeSections({ sections }: { sections: InformeSection[]
         }
 
         if (section.type === 'verdict') {
+          const paragraphs = section.detalle
+            .split(/\n\n+/)
+            .map((p) => p.trim())
+            .filter(Boolean);
+
           return (
             <div
               key={key}
               className={`rounded-xl p-5 md:p-6 flex gap-4 items-start ${
-                section.ok ? 'bg-emerald-50 ring-1 ring-emerald-200' : 'bg-rose-50 ring-1 ring-rose-200'
+                section.ok
+                  ? 'bg-emerald-50 ring-1 ring-emerald-200'
+                  : 'bg-amber-50 ring-1 ring-amber-300'
               }`}
             >
               {section.ok ? (
                 <CheckCircle2 className="h-8 w-8 text-emerald-600 shrink-0" />
               ) : (
-                <XCircle className="h-8 w-8 text-rose-600 shrink-0" />
+                <XCircle className="h-8 w-8 text-amber-600 shrink-0" />
               )}
-              <div>
+              <div className="min-w-0 flex-1">
                 <p className="font-bold text-lg text-[var(--verde-oscuro)]">{section.titulo}</p>
-                <p className="text-sm mt-1 text-[#0D0D0D]/75">
-                  <InformeRichText text={section.detalle} />
-                </p>
+                <div className="mt-2 space-y-2.5 text-sm leading-relaxed text-[#0D0D0D]/80">
+                  {paragraphs.map((p) => (
+                    <p key={p.slice(0, 48)}>
+                      <InformeRichText text={p} />
+                    </p>
+                  ))}
+                </div>
               </div>
             </div>
           );
