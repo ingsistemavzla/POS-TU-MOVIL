@@ -1,4 +1,4 @@
-import type { PublicInforme } from '@/types/publicInforme';
+import type { InformeSection, PublicInforme } from '@/types/publicInforme';
 import { INFORMES_CATALOGO_SLUG } from '@/types/publicInforme';
 
 const COMPANY = 'Tu Movil Margarita';
@@ -13,6 +13,86 @@ export const SLUG_A16_PARTE_3 = 'auditoria-galaxy-a16-parte-3-conclusion-2026-07
 export const SLUG_A16_LEGACY = 'auditoria-stock-galaxy-a16-rf8ya0dk6zf-2026-07';
 
 const SERIE = [SLUG_A16_PARTE_1, SLUG_A16_PARTE_2, SLUG_A16_PARTE_3] as const;
+
+function navInicioParte1(): InformeSection {
+  return {
+    type: 'links',
+    title: 'Estás en la Parte 1 de 3 — Detección',
+    items: [
+      {
+        label: '→ Continuar a la Parte 2: Análisis SQL',
+        href: `/informe/${SLUG_A16_PARTE_2}`,
+      },
+    ],
+  };
+}
+
+function navFinParte1(): InformeSection {
+  return {
+    type: 'links',
+    title: 'Fin de la Parte 1 — Continúa la investigación',
+    items: [
+      {
+        label: '→ Continuar a la Parte 2: Análisis SQL',
+        href: `/informe/${SLUG_A16_PARTE_2}`,
+      },
+      { label: 'Parte 3: Conclusión y solución', href: `/informe/${SLUG_A16_PARTE_3}` },
+      { label: 'Catálogo de informes', href: '/informes' },
+    ],
+  };
+}
+
+function navInicioParte2(): InformeSection {
+  return {
+    type: 'links',
+    title: 'Estás en la Parte 2 de 3 — Análisis SQL',
+    items: [
+      {
+        label: '→ Continuar a la Parte 3: Conclusión y solución',
+        href: `/informe/${SLUG_A16_PARTE_3}`,
+      },
+      { label: '← Volver a la Parte 1: Detección', href: `/informe/${SLUG_A16_PARTE_1}` },
+    ],
+  };
+}
+
+function navFinParte2(): InformeSection {
+  return {
+    type: 'links',
+    title: 'Fin de la Parte 2 — Continúa hacia la conclusión',
+    items: [
+      {
+        label: '→ Continuar a la Parte 3: Conclusión y solución',
+        href: `/informe/${SLUG_A16_PARTE_3}`,
+      },
+      { label: '← Volver a la Parte 1: Detección', href: `/informe/${SLUG_A16_PARTE_1}` },
+      { label: 'Catálogo de informes', href: '/informes' },
+    ],
+  };
+}
+
+function navInicioParte3(): InformeSection {
+  return {
+    type: 'links',
+    title: 'Estás en la Parte 3 de 3 — Conclusión y solución',
+    items: [
+      { label: '← Volver a la Parte 2: Análisis SQL', href: `/informe/${SLUG_A16_PARTE_2}` },
+      { label: '← Ir a la Parte 1: Detección', href: `/informe/${SLUG_A16_PARTE_1}` },
+    ],
+  };
+}
+
+function navFinParte3(): InformeSection {
+  return {
+    type: 'links',
+    title: 'Fin de la serie — Releer o volver al catálogo',
+    items: [
+      { label: '← Volver a la Parte 2: Análisis SQL', href: `/informe/${SLUG_A16_PARTE_2}` },
+      { label: '← Ir a la Parte 1: Detección', href: `/informe/${SLUG_A16_PARTE_1}` },
+      { label: 'Catálogo de informes', href: '/informes' },
+    ],
+  };
+}
 
 export const informeGalaxyA16Parte1: PublicInforme = {
   slug: SLUG_A16_PARTE_1,
@@ -34,6 +114,7 @@ export const informeGalaxyA16Parte1: PublicInforme = {
   ],
   sections: [
     { type: 'hero', badge: 'Serie forense · Parte 1/3 · Detección' },
+    navInicioParte1(),
     {
       type: 'verdict',
       titulo: 'Parte 1 — Se confirma un desfase de +1 en el sistema',
@@ -91,15 +172,7 @@ export const informeGalaxyA16Parte1: PublicInforme = {
         },
       ],
     },
-    {
-      type: 'links',
-      title: 'Continuar la serie',
-      items: [
-        { label: '→ Parte 2: Análisis SQL (cómo se rastreó)', href: `/informe/${SLUG_A16_PARTE_2}` },
-        { label: 'Parte 3: Conclusión y solución', href: `/informe/${SLUG_A16_PARTE_3}` },
-        { label: 'Catálogo de informes', href: '/informes' },
-      ],
-    },
+    navFinParte1(),
   ],
 };
 
@@ -123,6 +196,7 @@ export const informeGalaxyA16Parte2: PublicInforme = {
   ],
   sections: [
     { type: 'hero', badge: 'Serie forense · Parte 2/3 · Análisis SQL' },
+    navInicioParte2(),
     {
       type: 'verdict',
       titulo: 'Parte 2 — La contabilidad de ventas cuadra; la pista está en una cancelación',
@@ -248,15 +322,7 @@ LEFT JOIN public.stores st ON st.id = im.store_to_id
 WHERE p.sku = 'RF8YA0DK6ZF'
   AND im.reason ILIKE '%04485%';`,
     },
-    {
-      type: 'links',
-      title: 'Continuar la serie',
-      items: [
-        { label: '← Parte 1: Detección', href: `/informe/${SLUG_A16_PARTE_1}` },
-        { label: '→ Parte 3: Conclusión y solución', href: `/informe/${SLUG_A16_PARTE_3}` },
-        { label: 'Catálogo de informes', href: '/informes' },
-      ],
-    },
+    navFinParte2(),
   ],
 };
 
@@ -281,6 +347,7 @@ export const informeGalaxyA16Parte3: PublicInforme = {
   ],
   sections: [
     { type: 'hero', badge: 'Serie forense · Parte 3/3 · Conclusión' },
+    navInicioParte3(),
     {
       type: 'verdict',
       titulo: 'Causa más probable identificada — no es venta sin factura',
@@ -380,15 +447,7 @@ export const informeGalaxyA16Parte3: PublicInforme = {
         { cells: ['TOTAL', '5', '', ''] },
       ],
     },
-    {
-      type: 'links',
-      title: 'Navegación de la serie',
-      items: [
-        { label: '← Parte 1: Detección', href: `/informe/${SLUG_A16_PARTE_1}` },
-        { label: '← Parte 2: Análisis SQL', href: `/informe/${SLUG_A16_PARTE_2}` },
-        { label: 'Catálogo de informes', href: '/informes' },
-      ],
-    },
+    navFinParte3(),
   ],
 };
 

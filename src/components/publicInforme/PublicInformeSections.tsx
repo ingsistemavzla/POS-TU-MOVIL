@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { CheckCircle2, XCircle } from 'lucide-react';
 import type { InformeSection } from '@/types/publicInforme';
 import { InformeCodeBlock, InformeRichText } from '@/components/publicInforme/informeRichText';
@@ -202,20 +203,40 @@ export function PublicInformeSections({ sections }: { sections: InformeSection[]
         if (section.type === 'links') {
           return (
             <SectionBlock key={key} title={section.title}>
-              <ul className="flex flex-wrap gap-2">
-                {section.items.map((link) => (
-                  <li key={link.href}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                {section.items.map((link) => {
+                  const isPrimary =
+                    link.label.includes('Continuar') ||
+                    link.label.includes('Parte 2') ||
+                    link.label.includes('Parte 3') ||
+                    link.label.startsWith('→');
+                  const isInternal = link.href.startsWith('/');
+
+                  const className = isPrimary
+                    ? 'inline-flex w-full sm:w-auto items-center justify-center rounded-xl bg-[var(--verde-primario)] px-5 py-3 text-sm font-bold text-[var(--verde-oscuro)] shadow-md hover:brightness-95'
+                    : 'inline-flex w-full sm:w-auto items-center justify-center rounded-xl border-2 border-[var(--verde-oscuro)]/20 bg-white px-5 py-3 text-sm font-semibold text-[var(--verde-oscuro)] hover:bg-[var(--verde-primario)]/10';
+
+                  if (isInternal && !link.external) {
+                    return (
+                      <Link key={link.href} to={link.href} className={className}>
+                        {link.label}
+                      </Link>
+                    );
+                  }
+
+                  return (
                     <a
+                      key={link.href}
                       href={link.href}
                       target={link.external ? '_blank' : undefined}
                       rel={link.external ? 'noopener noreferrer' : undefined}
-                      className="inline-block rounded-lg bg-[var(--verde-primario)]/15 px-4 py-2 text-sm font-medium text-[var(--verde-oscuro)] hover:bg-[var(--verde-primario)]/30"
+                      className={className}
                     >
                       {link.label}
                     </a>
-                  </li>
-                ))}
-              </ul>
+                  );
+                })}
+              </div>
             </SectionBlock>
           );
         }
