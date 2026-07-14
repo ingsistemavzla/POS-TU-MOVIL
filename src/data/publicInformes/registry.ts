@@ -1,5 +1,6 @@
 import type { PublicInforme } from '@/types/publicInforme';
 import { ALL_AUDITORIA_IMEI_INFORMES } from './auditoriaImeiVariantes2026';
+import { ALL_AUDITORIA_STOCK_A16_INFORMES } from './auditoriaStockGalaxyA16Rf8ya0dk6zf2026';
 import { ALL_CIERRES_ESTADISTICAS_INFORMES } from './cierresVsEstadisticas2026';
 import { ALL_INVESTIGACION_CIERRES_INFORMES } from './investigacionCierresEstadisticas2026';
 import { ALL_PUBLIC_INFORMES as MARINO_INFORMES } from './operacionSucursalMarino2026';
@@ -7,6 +8,7 @@ import { ALL_PUBLIC_INFORMES as MARINO_INFORMES } from './operacionSucursalMarin
 const ALL_PUBLIC_INFORMES: PublicInforme[] = [
   ...MARINO_INFORMES,
   ...ALL_AUDITORIA_IMEI_INFORMES,
+  ...ALL_AUDITORIA_STOCK_A16_INFORMES,
   ...ALL_CIERRES_ESTADISTICAS_INFORMES,
   ...ALL_INVESTIGACION_CIERRES_INFORMES,
 ];
