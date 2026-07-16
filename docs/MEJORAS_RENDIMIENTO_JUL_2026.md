@@ -14,8 +14,9 @@ Fecha de cierre de esta tanda: **2026-07-15**
 | Bajo (frontend) | Hecho y en `main` | `648a6ba` |
 | Medio — polling + PDF | Hecho y en `main` | `348babd` |
 | Medio — índices SQL | Script en repo + **aplicado en Supabase** | `d027493` + ejecución manual |
-| Alto — alertas de stock unificadas | Hecho y en `main` (consulta única + debounce Realtime) | (ver commit reciente) |
-| Alto (`process_sale`, Almacén, Historial UI) | **Pendiente** | — |
+| Alto — alertas de stock unificadas | Hecho + fix límite 1000 | `31c5992`, `2cbcd12` |
+| Alto — Historial por día (server) | Hecho: fechas livianas + load por día | (ver commit reciente) |
+| Alto (`process_sale`, Almacén UI) | **Pendiente** | — |
 
 ---
 

@@ -104,15 +104,66 @@ const getMovementCategory = (m: MovementRow): MovementCategory => {
   return 'VENTAS'; // fallback
 };
 
-const MOVEMENTS_LIMIT = 1000;
+/** Solo timestamps para armar el listado de días (payload liviano). */
+const DATE_KEYS_SCAN_LIMIT = 3000;
 type MovementTypeFilter = 'ALL' | 'VENTAS' | 'AUMENTOS' | 'DISMINUCIONES' | 'TRANSFERENCIAS';
+
+const MOVEMENT_SELECT = `
+  id,
+  product_id,
+  type,
+  qty,
+  old_qty,
+  new_qty,
+  store_from_id,
+  store_to_id,
+  reason,
+  user_id,
+  created_at,
+  products!inner(name, sku),
+  stores_from:stores!inventory_movements_store_from_id_fkey(id, name),
+  stores_to:stores!inventory_movements_store_to_id_fkey(id, name),
+  users(name)
+`;
+
+function mapMovementRow(m: any): MovementRow {
+  const storeToName = m.stores_to?.name ?? null;
+  const storeFromName = m.stores_from?.name ?? null;
+  const storeName = storeToName || storeFromName || '—';
+  return {
+    id: m.id,
+    product_id: m.product_id,
+    product_name: m.products?.name ?? 'N/A',
+    product_sku: m.products?.sku ?? 'N/A',
+    type: m.type,
+    qty: m.qty,
+    old_qty: m.old_qty ?? null,
+    new_qty: m.new_qty ?? null,
+    store_name: storeName,
+    store_from_id: m.store_from_id ?? null,
+    store_to_id: m.store_to_id ?? null,
+    store_from_name: storeFromName,
+    store_to_name: storeToName,
+    user_name: m.users?.name ?? 'N/A',
+    reason: m.reason,
+    created_at: m.created_at,
+  };
+}
+
+function nextUtcDayKey(dateKey: string): string {
+  const d = new Date(`${dateKey}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
 
 export const HistorialPage: React.FC = () => {
   const { userProfile } = useAuth();
   const { toast } = useToast();
   const [movements, setMovements] = useState<MovementRow[]>([]);
+  const [datesList, setDatesList] = useState<string[]>([]);
   const [snapshots, setSnapshots] = useState<SnapshotRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [datesLoading, setDatesLoading] = useState(true);
   const [snapshotsLoading, setSnapshotsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearch = useDebounce(searchTerm, 300);
@@ -124,63 +175,68 @@ export const HistorialPage: React.FC = () => {
   const [snapshotCapturing, setSnapshotCapturing] = useState(false);
   const [expandedCierreDay, setExpandedCierreDay] = useState<string | null>(null);
 
-  const fetchMovements = async () => {
+  /** Fechas con movimientos: solo created_at (usa índice company+fecha). */
+  const fetchDateKeys = async () => {
     if (!userProfile?.company_id) {
+      setDatesList([]);
+      setDatesLoading(false);
+      return;
+    }
+    setDatesLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('inventory_movements')
+        .select('created_at')
+        .eq('company_id', userProfile.company_id)
+        .order('created_at', { ascending: false })
+        .limit(DATE_KEYS_SCAN_LIMIT);
+
+      if (error) throw error;
+
+      const set = new Set<string>();
+      (data ?? []).forEach((row: { created_at: string }) => {
+        if (row.created_at) set.add(row.created_at.slice(0, 10));
+      });
+      const list = Array.from(set).sort((a, b) => b.localeCompare(a));
+      setDatesList(list);
+      setSelectedDateIndex((i) => (list.length === 0 ? 0 : Math.min(i, list.length - 1)));
+    } catch (err: any) {
+      console.error('Error fetching historial dates:', err);
+      toast({
+        title: 'Error',
+        description: err.message ?? 'No se pudieron cargar las fechas del historial',
+        variant: 'destructive',
+      });
+      setDatesList([]);
+    } finally {
+      setDatesLoading(false);
+    }
+  };
+
+  /** Movimientos de UN día (mucho menos peso que 1000 filas globales). */
+  const fetchMovementsForDay = async (dateKey: string) => {
+    if (!userProfile?.company_id || !dateKey) {
+      setMovements([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
+      const dayStart = `${dateKey}T00:00:00.000Z`;
+      const dayEnd = `${nextUtcDayKey(dateKey)}T00:00:00.000Z`;
+
       const { data, error } = await supabase
         .from('inventory_movements')
-        .select(`
-          id,
-          product_id,
-          type,
-          qty,
-          old_qty,
-          new_qty,
-          store_from_id,
-          store_to_id,
-          reason,
-          user_id,
-          created_at,
-          products!inner(name, sku),
-          stores_from:stores!inventory_movements_store_from_id_fkey(id, name),
-          stores_to:stores!inventory_movements_store_to_id_fkey(id, name),
-          users(name)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(MOVEMENTS_LIMIT);
+        .select(MOVEMENT_SELECT)
+        .eq('company_id', userProfile.company_id)
+        .gte('created_at', dayStart)
+        .lt('created_at', dayEnd)
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
-
-      const rows: MovementRow[] = (data || []).map((m: any) => {
-        const storeToName = m.stores_to?.name ?? null;
-        const storeFromName = m.stores_from?.name ?? null;
-        const storeName = storeToName || storeFromName || '—';
-        return {
-          id: m.id,
-          product_id: m.product_id,
-          product_name: m.products?.name ?? 'N/A',
-          product_sku: m.products?.sku ?? 'N/A',
-          type: m.type,
-          qty: m.qty,
-          old_qty: m.old_qty ?? null,
-          new_qty: m.new_qty ?? null,
-          store_name: storeName,
-          store_from_id: m.store_from_id ?? null,
-          store_to_id: m.store_to_id ?? null,
-          store_from_name: storeFromName,
-          store_to_name: storeToName,
-          user_name: m.users?.name ?? 'N/A',
-          reason: m.reason,
-          created_at: m.created_at,
-        };
-      });
-      setMovements(rows);
+      setMovements((data || []).map(mapMovementRow));
     } catch (err: any) {
-      console.error('Error fetching historial:', err);
+      console.error('Error fetching historial day:', err);
       toast({
         title: 'Error',
         description: err.message ?? 'No se pudieron cargar los movimientos',
@@ -271,8 +327,19 @@ export const HistorialPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchMovements();
+    void fetchDateKeys();
   }, [userProfile?.company_id]);
+
+  const currentDateKey = datesList[selectedDateIndex] ?? null;
+
+  useEffect(() => {
+    if (!currentDateKey) {
+      setMovements([]);
+      setLoading(false);
+      return;
+    }
+    void fetchMovementsForDay(currentDateKey);
+  }, [userProfile?.company_id, currentDateKey]);
 
   useEffect(() => {
     fetchSnapshots();
@@ -292,19 +359,9 @@ export const HistorialPage: React.FC = () => {
     fetchStores();
   }, [userProfile?.company_id]);
 
-  // Fechas únicas con movimientos (más reciente primero) para paginación por día
-  const datesList = useMemo(() => {
-    const set = new Set<string>();
-    movements.forEach((m) => set.add(m.created_at.slice(0, 10)));
-    return Array.from(set).sort((a, b) => b.localeCompare(a));
-  }, [movements]);
-
-  const currentDateKey = datesList[selectedDateIndex] ?? null;
-
-  // Movimientos del día seleccionado, filtrados por categoría, sucursal y búsqueda
+  // Movimientos del día (ya vienen filtrados por fecha en servidor), + categoría/sucursal/búsqueda en cliente
   const movementsForCurrentDay = useMemo(() => {
-    if (!currentDateKey) return [];
-    let list = movements.filter((m) => m.created_at.slice(0, 10) === currentDateKey);
+    let list = movements;
     if (movementTypeFilter !== 'ALL') {
       list = list.filter((m) => getMovementCategory(m) === movementTypeFilter);
     }
@@ -323,13 +380,11 @@ export const HistorialPage: React.FC = () => {
       );
     }
     return list;
-  }, [movements, currentDateKey, movementTypeFilter, storeFilter, debouncedSearch]);
+  }, [movements, movementTypeFilter, storeFilter, debouncedSearch]);
 
-  // Totales del día por categoría (Ventas, Aumentos, Disminuciones, Transferencias)
+  // Totales del día por categoría (sobre todos los del día, sin filtro de pestaña)
   const dailyTotalsByCategory = useMemo(() => {
-    if (!currentDateKey) return { VENTAS: 0, AUMENTOS: 0, DISMINUCIONES: 0, TRANSFERENCIAS: 0 };
-    const dayMovements = movements.filter((m) => m.created_at.slice(0, 10) === currentDateKey);
-    return dayMovements.reduce(
+    return movements.reduce(
       (acc, m) => {
         const cat = getMovementCategory(m);
         acc[cat] = (acc[cat] ?? 0) + m.qty;
@@ -337,7 +392,7 @@ export const HistorialPage: React.FC = () => {
       },
       { VENTAS: 0, AUMENTOS: 0, DISMINUCIONES: 0, TRANSFERENCIAS: 0 } as Record<MovementCategory, number>
     );
-  }, [movements, currentDateKey]);
+  }, [movements]);
 
   const formatFecha = (iso: string) => {
     try {
@@ -579,7 +634,7 @@ export const HistorialPage: React.FC = () => {
                   <Card className="glass-panel-dense">
                     <CardContent className="p-0">
                       <div className="overflow-x-auto">
-                        {loading ? (
+                        {loading || datesLoading ? (
                           <div className="flex items-center justify-center py-12">
                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
                           </div>
