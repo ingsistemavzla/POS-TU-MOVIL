@@ -277,7 +277,7 @@ export const MasterAuditDashboardPage: React.FC = () => {
       // Intentar query simple primero (sin JOINs complejos)
       let query = supabase
         .from('inventory_transfers')
-        .select('*')
+        .select('id, product_id, from_store_id, to_store_id, quantity, transferred_by, company_id, status, created_at')
         .order('created_at', { ascending: false })
         .limit(pageSize)
         .range((transfersPage - 1) * pageSize, transfersPage * pageSize - 1);

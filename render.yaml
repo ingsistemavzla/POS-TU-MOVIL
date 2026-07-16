@@ -2,7 +2,8 @@ services:
   - type: web
     name: todo-bcv-pos
     env: static
-    buildCommand: npm install && npm run build
+    # npm ci: build reproducible (no cambia funcionalidad)
+    buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
     headers:
       - path: /*
@@ -11,6 +12,14 @@ services:
       - path: /*
         name: X-Frame-Options
         value: DENY
+      # Assets con hash de Vite: cache largo (solo rendimiento de red)
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      # Shell SPA: no cachear index para siempre recibir el deploy nuevo
+      - path: /index.html
+        name: Cache-Control
+        value: no-cache
     routes:
       - type: rewrite
         source: /*

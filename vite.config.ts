@@ -59,6 +59,8 @@ export default defineConfig(({ mode }) => ({
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
           'ui-vendor': ['@tanstack/react-query'],
           'chart-vendor': ['recharts'],
+          // PDF solo cuando se importa (no cambia lógica de export)
+          'pdf-vendor': ['jspdf', 'jspdf-autotable'],
           // Heavy pages
           'dashboard': ['./src/pages/Dashboard'],
           'pos': ['./src/pages/POS'],

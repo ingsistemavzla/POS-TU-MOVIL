@@ -1474,6 +1474,10 @@ export const GestionWebPage: React.FC = () => {
                               key={product.web_image_url}
                               src={`${product.web_image_url}${product.web_image_url.includes('?') ? '&' : '?'}t=${new Date(product.updated_at).getTime()}`}
                               alt={product.name}
+                              width={48}
+                              height={48}
+                              loading="lazy"
+                              decoding="async"
                               className="w-full h-full object-cover"
                               onError={(e) => {
                                 console.error('❌ Error al cargar imagen en miniatura:', product.web_image_url);
@@ -1722,6 +1726,8 @@ export const GestionWebPage: React.FC = () => {
                         <img
                           src={editingProduct.temp_image_url}
                           alt="Preview"
+                          loading="eager"
+                          decoding="async"
                           className="w-full h-full object-cover"
                           onLoad={() => {
                             console.log('✅ Imagen cargada exitosamente en vista previa:', editingProduct.temp_image_url);
