@@ -16,7 +16,7 @@ Fecha de cierre de esta tanda: **2026-07-15**
 | Medio — índices SQL | Script en repo + **aplicado en Supabase** | `d027493` + ejecución manual |
 | Alto — alertas de stock unificadas | Hecho + fix límite 1000 | `31c5992`, `2cbcd12` |
 | Alto — Historial por día (server) | Hecho: fechas livianas + load por día | `3755394` |
-| Alto — Historial día/rango + calendario | Hecho: selector día, rango ≤31d, agrupado por día | (commit reciente) |
+| Alto — Historial día/rango + calendario | Hecho: selector día, rango ≤31d, agrupado por día | `591145a` |
 | Alto (`process_sale`, Almacén UI) | **Pendiente** | — |
 
 ---
@@ -124,7 +124,7 @@ Abrir **Historial** y **Master Audit** y sentir si carga más fluido con volumen
 
 ---
 
-## 6) Nivel alto — Historial día / rango + calendario — (commit reciente)
+## 6) Nivel alto — Historial día / rango + calendario — `591145a`
 
 Archivo: `src/pages/HistorialPage.tsx`
 
