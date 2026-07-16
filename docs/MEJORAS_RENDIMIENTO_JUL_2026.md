@@ -17,7 +17,7 @@ Fecha de cierre de esta tanda: **2026-07-15**
 | Alto — alertas de stock unificadas | Hecho + fix límite 1000 | `31c5992`, `2cbcd12` |
 | Alto — Historial por día (server) | Hecho: fechas livianas + load por día | `3755394` |
 | Alto — Historial día/rango + calendario | Hecho: selector día, rango ≤31d, agrupado por día | `591145a` |
-| Alto — Almacén/Artículos catálogo | Hecho: productos paginados + inventario por IDs | (este commit) |
+| Alto — Almacén/Artículos catálogo | Hecho: productos paginados + inventario por IDs | `2439e6c` |
 | Alto (`process_sale`) | **Pendiente** | — |
 
 ---
@@ -146,9 +146,12 @@ Archivo: `src/pages/HistorialPage.tsx`
 
 ---
 
-## 7) Nivel alto — Almacén / Artículos (catálogo)
+## 7) Nivel alto — Almacén / Artículos (catálogo) — `2439e6c`
 
-Archivos:
+**Commit:** `2439e6c`  
+**Padre (revertir a):** `41f96da`
+
+**Archivos:**
 - `src/utils/inventoryCatalogFetch.ts` (**nuevo**)
 - `src/utils/inventoryPageCache.ts` (scope por categoría, key `v2`)
 - `src/pages/AlmacenPage.tsx`
@@ -179,7 +182,7 @@ Archivos:
 
 Opción A — revertir el commit (recomendado, deja historial claro):
 ```bash
-git revert <HASH_DE_ESTE_COMMIT> --no-edit
+git revert 2439e6c --no-edit
 git push origin main
 ```
 
