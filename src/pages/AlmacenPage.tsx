@@ -39,7 +39,6 @@ import {
 import { ProductForm } from '../components/pos/ProductForm';
 import { useToast } from '@/hooks/use-toast';
 import { PRODUCT_CATEGORIES, getCategoryLabel } from '@/constants/categories';
-import { sanitizeInventoryData } from '@/utils/inventoryValidation';
 import { BranchStockMatrix } from '@/components/inventory/BranchStockMatrix';
 import { InventoryDashboardHeader } from '@/components/inventory/InventoryDashboardHeader';
 import { StoreFilterBar } from '@/components/inventory/StoreFilterBar';
@@ -52,6 +51,11 @@ import {
   writeInventoryPageCache,
   clearInventoryPageCache,
 } from '@/utils/inventoryPageCache';
+import {
+  fetchAllActiveProducts,
+  fetchInventoriesForProductIds,
+  buildCatalogWithStock,
+} from '@/utils/inventoryCatalogFetch';
 
 interface Product {
   id: string;
@@ -109,7 +113,7 @@ export const AlmacenPage: React.FC = () => {
   // 🛡️ Privacidad: solo admin y master_admin pueden ver costo/utilidad
   const canSeeCosts = userProfile?.role === 'admin' || userProfile?.role === 'master_admin';
 
-  // Cargar productos e inventario
+  // Cargar productos e inventario (productos paginados + inventario solo de esos IDs)
   const fetchData = async () => {
     try {
       if (!userProfile?.company_id) {
@@ -120,7 +124,7 @@ export const AlmacenPage: React.FC = () => {
       }
 
       const companyId = userProfile.company_id;
-      const sessionCached = readInventoryPageCache(companyId);
+      const sessionCached = readInventoryPageCache(companyId, categoryFilter);
       const hasLocalData = products.length > 0;
 
       if (sessionCached && !hasLocalData) {
@@ -135,46 +139,18 @@ export const AlmacenPage: React.FC = () => {
         setIsRefetching(true);
       }
 
-      // Cargar productos (sin JOIN a vista que puede no existir)
-      // ⚠️ FILTRO CRÍTICO: Solo productos activos para evitar contar stock de productos eliminados
-      // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
-      const { data: productsData, error: productsError } = await (supabase.from('products') as any)
-        .select('id, sku, barcode, name, category, cost_usd, sale_price_usd, tax_rate, active, created_at')
-        // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
-        .eq('active', true)  // ⚠️ Solo productos activos
-        .order('created_at', { ascending: false });
-
-      if (productsError) {
-        console.error('Error fetching products:', productsError);
-        console.error('Error details:', {
-          message: productsError.message,
-          code: productsError.code,
-          details: productsError.details,
-          hint: productsError.hint
-        });
-        toast({
-          title: "Error",
-          description: `No se pudieron cargar los productos: ${productsError.message || 'Error desconocido'}`,
-          variant: "destructive",
-        });
-        setProducts([]);
-        setLoading(false);
-        return;
-      }
+      const productsData = await fetchAllActiveProducts({
+        category: categoryFilter !== 'all' ? categoryFilter : null,
+      });
 
       if (!productsData) {
-        console.warn('No se recibieron datos de productos');
         setProducts([]);
         setLoading(false);
         return;
       }
 
-      // 🛡️ SEGURIDAD: RLS maneja el filtrado automáticamente
-      // El backend solo retorna stores que el usuario tiene permiso de ver
-      // Cargar tiendas
       const storesQuery = (supabase.from('stores') as any)
         .select('id, name')
-        // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
         .eq('active', true)
         .order('name');
 
@@ -182,174 +158,41 @@ export const AlmacenPage: React.FC = () => {
 
       if (storesError) {
         console.error('Error fetching stores:', storesError);
-        console.error('Stores error details:', {
-          message: storesError.message,
-          code: storesError.code,
-          details: storesError.details,
-          hint: storesError.hint
-        });
         toast({
-          title: "Advertencia",
-          description: "No se pudieron cargar las tiendas",
-          variant: "warning",
+          title: 'Advertencia',
+          description: 'No se pudieron cargar las tiendas',
+          variant: 'warning',
         });
         setStores([]);
       } else {
         setStores(storesData || []);
       }
 
-      // Cargar inventario
-      // ⚠️ FILTRO CRÍTICO: JOIN con products para filtrar solo productos activos
-      // 🛡️ SEGURIDAD: RLS maneja el filtrado automáticamente por store_id y company_id
-      let inventoryQuery = (supabase.from('inventories') as any)
-        .select('product_id, store_id, qty, products!inner(active)')
-        // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
-        .eq('products.active', true);  // ⚠️ Solo inventario de productos activos
-
-      // ✅ PAGINACIÓN: Obtener todos los registros (Supabase limita a 1000 por defecto)
-      // Esto asegura consistencia con el panel Artículos
-      const fetchAllInventory = async () => {
-        const allData: any[] = [];
-        const pageSize = 1000;
-        let from = 0;
-        let hasMore = true;
-
-        while (hasMore) {
-          const pageQuery = inventoryQuery.range(from, from + pageSize - 1);
-          const { data, error } = await pageQuery;
-          
-          if (error) {
-            console.error('Error fetching inventory page:', error);
-            break;
-          }
-
-          if (data && data.length > 0) {
-            allData.push(...data);
-            from += pageSize;
-            hasMore = data.length === pageSize; // Si devolvió menos de pageSize, no hay más
-          } else {
-            hasMore = false;
-          }
-        }
-
-        console.log(`[AlmacenPage] Inventario obtenido: ${allData.length} registros (en ${Math.ceil(from / pageSize)} páginas)`);
-        
-        // 🔍 DEBUG: Verificar datos del producto específico
-        const productData = allData.filter((item: any) => 
-          item.product_id && (item.products?.sku === 'R5CY71TZ3JM' || item.products?.name?.toLowerCase().includes('samsung galaxy a26'))
-        );
-        if (productData.length > 0) {
-          console.log(`[AlmacenPage] Datos RAW del inventario para producto R5CY71TZ3JM:`, productData);
-        }
-        
-        return { data: allData, error: null };
-      };
-
-      const { data: inventoryData, error: inventoryError } = await fetchAllInventory();
-
-      if (inventoryError) {
+      const productIds = productsData.map((p) => p.id);
+      let inventoryData: Array<{ product_id: string; store_id: string; qty: number }> = [];
+      try {
+        inventoryData = await fetchInventoriesForProductIds(productIds);
+      } catch (inventoryError: any) {
         console.error('Error fetching inventory:', inventoryError);
-        console.error('Inventory error details:', {
-          message: inventoryError.message,
-          code: inventoryError.code,
-          details: inventoryError.details,
-          hint: inventoryError.hint
-        });
         toast({
-          title: "Advertencia",
-          description: "No se pudo cargar el inventario completo",
-          variant: "warning",
+          title: 'Advertencia',
+          description: 'No se pudo cargar el inventario completo',
+          variant: 'warning',
         });
       }
 
-      // Procesar inventario (solo para stock por tienda, NO para total)
-      const stockByProductStore = new Map<string, Record<string, number>>();
-      const inventoriesByProduct: Record<string, StoreInventory[]> = {};
+      const { products: productsWithStock, storeInventories: inventoriesByProduct } =
+        buildCatalogWithStock(productsData, inventoryData, (storesData || []) as Store[]);
 
-      if (inventoryData && inventoryData.length > 0) {
-        const sanitized = sanitizeInventoryData(inventoryData);
-        
-        sanitized.forEach((item: any) => {
-          const productId = item.product_id;
-          const storeId = item.store_id;
-          const qty = Math.max(0, item.qty || 0);
-
-          // Stock por tienda (solo para visualización, no para cálculo de total)
-          if (!stockByProductStore.has(productId)) {
-            stockByProductStore.set(productId, {});
-          }
-          stockByProductStore.get(productId)![storeId] = qty;
-
-          // Inventarios por producto
-          if (!inventoriesByProduct[productId]) {
-            inventoriesByProduct[productId] = [];
-          }
-          const store = storesData?.find((s: Store) => s.id === storeId);
-          inventoriesByProduct[productId].push({
-            store_id: storeId,
-            store_name: store?.name || 'Tienda Desconocida',
-            qty: qty,
-          });
-        });
-      }
-
-      // Asegurar que todos los productos tengan inventario para todas las tiendas
-      productsData?.forEach((product: Product) => {
-        if (!inventoriesByProduct[product.id]) {
-          inventoriesByProduct[product.id] = [];
-        }
-        storesData?.forEach((store: Store) => {
-          const exists = inventoriesByProduct[product.id].some(
-            inv => inv.store_id === store.id
-          );
-          if (!exists) {
-            inventoriesByProduct[product.id].push({
-              store_id: store.id,
-              store_name: store.name,
-              qty: 0,
-            });
-          }
-        });
-        inventoriesByProduct[product.id].sort((a, b) => 
-          a.store_name.localeCompare(b.store_name)
-        );
-      });
-
-      // Combinar datos - total_stock calculado sumando todas las tiendas
-        // 🛡️ SEGURIDAD: RLS ya filtró el inventario por store_id
-        // Calculamos total_stock sumando todas las tiendas visibles (ya filtradas por RLS)
-        const productsWithStock = (productsData || []).map((product: any) => {
-          const stockByStore = stockByProductStore.get(product.id) || {};
-          
-          // Sumar todas las tiendas visibles (RLS ya filtró por store_id)
-          const totalStock = Object.values(stockByStore).reduce((sum, qty) => sum + (qty || 0), 0);
-          
-          // 🔍 DEBUG: Log para verificar cálculo de stock
-          if (product.sku === 'R5CY71TZ3JM' || product.name.toLowerCase().includes('samsung galaxy a26')) {
-            console.log(`[AlmacenPage] Producto ${product.sku} (${product.name}):`, {
-              stockByStore,
-              totalStock,
-              inventoryCount: inventoriesByProduct[product.id]?.length || 0,
-              inventories: inventoriesByProduct[product.id]?.map(inv => ({ store: inv.store_name, qty: inv.qty }))
-            });
-          }
-          
-          return {
-            ...product,
-            total_stock: totalStock,
-            stockByStore: stockByStore,
-          };
-        });
-
-      setProducts(productsWithStock);
-      setStoreInventories(inventoriesByProduct);
-      writeInventoryPageCache(companyId, productsWithStock, inventoriesByProduct);
+      setProducts(productsWithStock as Product[]);
+      setStoreInventories(inventoriesByProduct as Record<string, StoreInventory[]>);
+      writeInventoryPageCache(companyId, productsWithStock, inventoriesByProduct, categoryFilter);
     } catch (error) {
       console.error('Error in fetchData:', error);
       toast({
-        title: "Error",
-        description: "Error al cargar los datos",
-        variant: "destructive",
+        title: 'Error',
+        description: 'Error al cargar los datos',
+        variant: 'destructive',
       });
     } finally {
       setLoading(false);
@@ -359,10 +202,11 @@ export const AlmacenPage: React.FC = () => {
 
   useEffect(() => {
     if (userProfile?.company_id) {
+      clearInventoryPageCache();
       fetchData();
     }
-  }, [userProfile?.company_id]);
-
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userProfile?.company_id, categoryFilter]);
   // Toggle expandir producto
   const toggleExpand = (productId: string) => {
     setExpandedProducts(prev => {

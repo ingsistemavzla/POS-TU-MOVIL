@@ -167,13 +167,14 @@ const fetchKreceStatsData = async (companyId: string, selectedPeriod: PeriodType
       try {
         const { data: financingData, error: financingError } = await (supabase as any)
           .from('krece_financing')
-          .select('id, initial_amount_usd, financed_amount_usd, status')
+          .select('id, status')
           .eq('company_id', companyId)
           .eq('status', 'active')
           .limit(50);
 
         if (financingError) {
-          console.warn('Warning: Could not fetch Krece financing:', financingError);
+          // Columnas legacy (initial_amount_usd) pueden no existir; silenciar ruido
+          console.warn('Krece financing query skipped:', financingError.message || financingError);
           return null;
         }
         console.log('Active financing found:', financingData?.length || 0);

@@ -37,7 +37,6 @@ interface KreceAccount {
   };
   krece_financing: {
     total_amount_usd: number;
-    initial_amount_usd: number;
     financed_amount_usd: number;
     initial_percentage: number;
     due_date: string | null;
@@ -69,7 +68,6 @@ export function KreceAccountsTable() {
           customer:customers(name, id_number),
           krece_financing:krece_financing(
             total_amount_usd,
-            initial_amount_usd,
             financed_amount_usd,
             initial_percentage,
             due_date
@@ -250,7 +248,14 @@ export function KreceAccountsTable() {
                         {account.krece_financing.initial_percentage.toFixed(1)}%
                       </div>
                       <div className="text-xs text-glass-secondary">
-                        {formatCurrency(account.krece_financing.initial_amount_usd, 'USD')}
+                        {formatCurrency(
+                          Math.max(
+                            0,
+                            (account.krece_financing.total_amount_usd || 0) -
+                              (account.krece_financing.financed_amount_usd || 0)
+                          ),
+                          'USD'
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

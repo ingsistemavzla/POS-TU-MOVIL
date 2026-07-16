@@ -57,7 +57,11 @@ export const fetchBcvRateFromDatabase = async (): Promise<number | null> => {
       .single();
     
     if (error) {
-      console.error('Error fetching BCV rate from database:', error);
+      // Tabla ausente / RLS / no desplegada: no spamear consola en cada poll
+      const code = (error as { code?: string }).code;
+      if (code !== 'PGRST116' && code !== '42P01' && !String(error.message || '').includes('does not exist')) {
+        console.warn('BCV rate DB lookup skipped:', error.message || error);
+      }
       return null;
     }
     
@@ -87,7 +91,10 @@ export const saveBcvRateToDatabase = async (rate: number): Promise<boolean> => {
       });
     
     if (error) {
-      console.error('Error saving BCV rate to database:', error);
+      const code = (error as { code?: string }).code;
+      if (code !== '42P01' && !String(error.message || '').includes('does not exist')) {
+        console.warn('BCV rate DB save skipped:', error.message || error);
+      }
       return false;
     }
     

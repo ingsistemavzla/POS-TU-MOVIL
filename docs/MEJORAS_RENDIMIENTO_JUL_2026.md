@@ -17,7 +17,8 @@ Fecha de cierre de esta tanda: **2026-07-15**
 | Alto — alertas de stock unificadas | Hecho + fix límite 1000 | `31c5992`, `2cbcd12` |
 | Alto — Historial por día (server) | Hecho: fechas livianas + load por día | `3755394` |
 | Alto — Historial día/rango + calendario | Hecho: selector día, rango ≤31d, agrupado por día | `591145a` |
-| Alto (`process_sale`, Almacén UI) | **Pendiente** | — |
+| Alto — Almacén/Artículos catálogo | Hecho: productos paginados + inventario por IDs | (este commit) |
+| Alto (`process_sale`) | **Pendiente** | — |
 
 ---
 
@@ -99,6 +100,8 @@ Abrir **Historial** y **Master Audit** y sentir si carga más fluido con volumen
 - [ ] App abre y POS vende normal
 - [ ] Historial carga sin error (modo un día)
 - [ ] Historial: rango de días agrupa por día y respeta máx. 31
+- [ ] Almacén y Artículos cargan stock por tienda correctamente
+- [ ] Con filtro de categoría: menos datos / lista coherente
 - [ ] Alertas de stock en navbar funcionan
 - [ ] Los 6 índices siguen listados en Supabase
 - [ ] No hay quejas de “desapareció una función”
@@ -143,14 +146,70 @@ Archivo: `src/pages/HistorialPage.tsx`
 
 ---
 
+## 7) Nivel alto — Almacén / Artículos (catálogo)
+
+Archivos:
+- `src/utils/inventoryCatalogFetch.ts` (**nuevo**)
+- `src/utils/inventoryPageCache.ts` (scope por categoría, key `v2`)
+- `src/pages/AlmacenPage.tsx`
+- `src/pages/ArticulosPage.tsx`
+- Extra consola: `src/utils/bcvRate.ts`, `src/hooks/useKreceStats.ts`, `src/components/dashboard/KreceAccountsTable.tsx`
+
+**Qué:**
+- Productos activos con **paginación por rango** (ya no se truncan en ~1000)
+- Categoría filtrada en servidor (Almacén y Artículos)
+- Inventario: solo filas de esos `product_id` (sin JOIN pesado a `products`)
+- Misma UX: búsqueda/orden/bajo stock en cliente, matriz por sucursal, editar/transferir
+- Cache de sesión con scope de categoría (evita mezclar “todas” con una categoría)
+
+**Extra (ruido consola):**
+- `bcv_rates` ausente: warning silencioso
+- Krece: no pide columnas `initial_amount_usd` inexistentes; inicial mostrado = total − financiado
+
+**Cómo verificar:**
+- Abrir Almacén y Artículos: lista y stock por tienda correctos
+- Cambiar categoría: recarga y muestra solo esa categoría
+- Editar stock / transferir: sigue funcionando
+- Con >1000 productos: aparecen todos (antes podían cortarse)
+
+### Reversión (si hace falta deshacer solo este cambio)
+
+**Estado bueno anterior (antes de este commit):** `41f96da`  
+(`docs: registrar commit 591145a en bitacora historial dia/rango`)
+
+Opción A — revertir el commit (recomendado, deja historial claro):
+```bash
+git revert <HASH_DE_ESTE_COMMIT> --no-edit
+git push origin main
+```
+
+Opción B — restaurar solo los archivos de Almacén/Artículos al estado de `41f96da`:
+```bash
+git checkout 41f96da -- \
+  src/pages/AlmacenPage.tsx \
+  src/pages/ArticulosPage.tsx \
+  src/utils/inventoryPageCache.ts \
+  src/utils/bcvRate.ts \
+  src/hooks/useKreceStats.ts \
+  src/components/dashboard/KreceAccountsTable.tsx \
+  docs/MEJORAS_RENDIMIENTO_JUL_2026.md
+git rm -f src/utils/inventoryCatalogFetch.ts
+git commit -m "revert: restaurar carga Almacen/Articulos previa a catalogo paginado"
+git push origin main
+```
+
+Tras el push, Render vuelve a desplegar solo. No hay migración SQL en este cambio (solo frontend).
+
+---
+
 ## Próximo (cuando se decida — nivel alto restante)
 
 Solo con medición y cuidado (sí pueden tocar lógica si se hacen mal):
 
 1. `process_sale` set-based + auditoría única  
-2. Almacén / Artículos: no bajar inventario completo al cliente  
+2. (Opcional) paginación de página visible 20 en servidor + RPC de totales  
 
-Regla sugerida: medir p50/p95 y Web Vitals antes de tocar alto.
+Regla sugerida: medir p50/p95 y Web Vitals antes de tocar `process_sale`.
 
 ---
 

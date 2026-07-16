@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'pos_inventory_page_cache_v1';
+const STORAGE_KEY = 'pos_inventory_page_cache_v2';
 const TTL_MS = 5 * 60 * 1000;
 
 export interface InventoryPageCachePayload {
@@ -6,15 +6,25 @@ export interface InventoryPageCachePayload {
   storeInventories: Record<string, unknown[]>;
   timestamp: number;
   companyId: string;
+  /** Filtro de categoría usado al cargar (`all` = sin filtro). */
+  categoryScope: string;
 }
 
-export function readInventoryPageCache(companyId: string): InventoryPageCachePayload | null {
+function scopeKey(category?: string | null): string {
+  return category && category !== 'all' ? category : 'all';
+}
+
+export function readInventoryPageCache(
+  companyId: string,
+  category?: string | null
+): InventoryPageCachePayload | null {
   if (typeof window === 'undefined' || !companyId) return null;
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as InventoryPageCachePayload;
     if (parsed.companyId !== companyId) return null;
+    if ((parsed.categoryScope ?? 'all') !== scopeKey(category)) return null;
     if (Date.now() - parsed.timestamp > TTL_MS) return null;
     return parsed;
   } catch {
@@ -25,7 +35,8 @@ export function readInventoryPageCache(companyId: string): InventoryPageCachePay
 export function writeInventoryPageCache(
   companyId: string,
   products: unknown[],
-  storeInventories: Record<string, unknown[]>
+  storeInventories: Record<string, unknown[]>,
+  category?: string | null
 ): void {
   if (typeof window === 'undefined' || !companyId) return;
   try {
@@ -34,6 +45,7 @@ export function writeInventoryPageCache(
       storeInventories,
       timestamp: Date.now(),
       companyId,
+      categoryScope: scopeKey(category),
     };
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   } catch {

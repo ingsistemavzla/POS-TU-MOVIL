@@ -43,7 +43,6 @@ import {
 import { ProductForm } from '../components/pos/ProductForm';
 import { useToast } from '@/hooks/use-toast';
 import { PRODUCT_CATEGORIES, getCategoryLabel } from '@/constants/categories';
-import { sanitizeInventoryData } from '@/utils/inventoryValidation';
 import { ArticlesStatsRow } from '@/components/inventory/ArticlesStatsRow';
 import { StoreFilterBar } from '@/components/inventory/StoreFilterBar';
 import { ProductCardSkeletonGrid, FilterToolbarSpinner } from '@/components/inventory/InventoryLoadingSkeletons';
@@ -54,6 +53,11 @@ import {
   writeInventoryPageCache,
   clearInventoryPageCache,
 } from '@/utils/inventoryPageCache';
+import {
+  fetchAllActiveProducts,
+  fetchInventoriesForProductIds,
+  buildCatalogWithStock,
+} from '@/utils/inventoryCatalogFetch';
 
 interface Product {
   id: string;
@@ -106,15 +110,14 @@ export const ArticulosPage: React.FC = () => {
     products: Product[];
     storeInventories: Record<string, StoreInventory[]>;
     timestamp: number;
+    categoryScope: string;
   } | null>(null);
   const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 
-  // Cargar productos e inventario - REUTILIZA LA MISMA LÓGICA DE AlmacenPage
+  // Cargar productos e inventario - misma estrategia que Almacén (paginado + inventario por IDs)
   const fetchData = async () => {
     try {
-      console.log('[ArticulosPage] fetchData iniciado');
       if (!userProfile?.company_id) {
-        console.log('[ArticulosPage] No hay company_id, saliendo');
         setProducts([]);
         setLoading(false);
         return;
@@ -122,7 +125,7 @@ export const ArticulosPage: React.FC = () => {
 
       const companyId = userProfile.company_id;
 
-      const sessionCached = readInventoryPageCache(companyId);
+      const sessionCached = readInventoryPageCache(companyId, categoryFilter);
       if (sessionCached && products.length === 0) {
         setProducts(sessionCached.products as Product[]);
         setStoreInventories(sessionCached.storeInventories as Record<string, StoreInventory[]>);
@@ -130,12 +133,17 @@ export const ArticulosPage: React.FC = () => {
           products: sessionCached.products as Product[],
           storeInventories: sessionCached.storeInventories as Record<string, StoreInventory[]>,
           timestamp: sessionCached.timestamp,
+          categoryScope: categoryFilter,
         };
         setLoading(false);
       }
 
       const cached = productsCache.current;
-      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      if (
+        cached &&
+        cached.categoryScope === categoryFilter &&
+        Date.now() - cached.timestamp < CACHE_TTL
+      ) {
         setProducts(cached.products);
         setStoreInventories(cached.storeInventories);
         setLoading(false);
@@ -145,7 +153,7 @@ export const ArticulosPage: React.FC = () => {
 
       if (cached && (Date.now() - cached.timestamp) >= CACHE_TTL) {
         productsCache.current = null;
-      clearInventoryPageCache();
+        clearInventoryPageCache();
       }
 
       const isInitialLoad = products.length === 0 && !productsCache.current;
@@ -155,216 +163,58 @@ export const ArticulosPage: React.FC = () => {
         setIsRefetching(true);
       }
 
-      // ✅ OPTIMIZACIÓN: Filtro de categoría en SQL (reduce datos transferidos en 40-60%)
-      // Cargar productos (sin JOIN a vista que puede no existir)
-      // ⚠️ FILTRO CRÍTICO: Solo productos activos para evitar contar stock de productos eliminados
-      let productsQuery = (supabase.from('products') as any)
-        .select('id, sku, barcode, name, category, cost_usd, sale_price_usd, tax_rate, active, created_at')
-        // ✅ SINCRONIZADO CON ALMACÉN: RLS handles company_id automatically
-        // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
-        .eq('active', true);  // ⚠️ Solo productos activos
-
-      // ✅ OPTIMIZACIÓN: Filtrar por categoría en SQL si hay filtro activo
-      // Esto reduce significativamente los datos transferidos (40-60% si filtra por una categoría)
-      if (categoryFilter && categoryFilter !== 'all') {
-        productsQuery = productsQuery.eq('category', categoryFilter);
-        console.log(`[ArticulosPage] Filtrando productos por categoría en SQL: ${categoryFilter}`);
-      }
-
-      const { data: productsData, error: productsError } = await productsQuery
-        .order('created_at', { ascending: false });
-
-      if (productsError) {
-        console.error('Error fetching products:', productsError);
-        console.error('Error details:', {
-          message: productsError.message,
-          code: productsError.code,
-          details: productsError.details,
-          hint: productsError.hint
-        });
-        toast({
-          title: "Error",
-          description: `No se pudieron cargar los productos: ${productsError.message || 'Error desconocido'}`,
-          variant: "destructive",
-        });
-        setProducts([]);
-        setLoading(false);
-        return;
-      }
+      const productsData = await fetchAllActiveProducts({
+        category: categoryFilter !== 'all' ? categoryFilter : null,
+      });
 
       if (!productsData) {
-        console.warn('No se recibieron datos de productos');
         setProducts([]);
         setLoading(false);
         return;
       }
 
-      // Usar availableStores del StoreContext en lugar de cargar localmente
       const storesData = availableStores;
 
-      // ✅ OPTIMIZACIÓN: Cargar inventario solo de productos filtrados
-      // Si hay filtro de categoría, solo cargar inventario de esos productos
-      // Esto reduce significativamente los datos transferidos (40-60% si filtra por una categoría)
-      let inventoryQuery = (supabase.from('inventories') as any)
-        .select('product_id, store_id, qty, products!inner(active, category)')
-        // ✅ SINCRONIZADO CON ALMACÉN: RLS handles company_id automatically
-        // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
-        .eq('products.active', true);  // ⚠️ Solo inventario de productos activos
-
-      // ✅ OPTIMIZACIÓN: Filtrar inventario por categoría en SQL si hay filtro activo
-      if (categoryFilter && categoryFilter !== 'all') {
-        inventoryQuery = inventoryQuery.eq('products.category', categoryFilter);
-        console.log(`[ArticulosPage] Filtrando inventario por categoría en SQL: ${categoryFilter}`);
-      }
-
-      // 🔥 NO APLICAR FILTRO DE SUCURSAL EN SQL: Cargar todos los datos
-      // El filtrado se hará en memoria para otras categorías, pero Servicio Técnico necesita todos los datos
-
-      // 🔥 PAGINACIÓN: Obtener todos los registros (Supabase limita a 1000 por defecto)
-      const fetchAllInventory = async () => {
-        const allData: any[] = [];
-        const pageSize = 1000;
-        let from = 0;
-        let hasMore = true;
-
-        while (hasMore) {
-          const pageQuery = inventoryQuery.range(from, from + pageSize - 1);
-          const { data, error } = await pageQuery;
-          
-          if (error) {
-            console.error('Error fetching inventory page:', error);
-            break;
-          }
-
-          if (data && data.length > 0) {
-            allData.push(...data);
-            from += pageSize;
-            hasMore = data.length === pageSize; // Si devolvió menos de pageSize, no hay más
-          } else {
-            hasMore = false;
-          }
-        }
-
-        console.log(`[ArticulosPage] Inventario obtenido: ${allData.length} registros (en ${Math.ceil(from / pageSize)} páginas)`);
-        return { data: allData, error: null };
-      };
-
-      const { data: inventoryData, error: inventoryError } = await fetchAllInventory();
-
-      if (inventoryError) {
+      let inventoryData: Array<{ product_id: string; store_id: string; qty: number }> = [];
+      try {
+        inventoryData = await fetchInventoriesForProductIds(productsData.map((p) => p.id));
+      } catch (inventoryError: any) {
         console.error('Error fetching inventory:', inventoryError);
-        console.error('Inventory error details:', {
-          message: inventoryError.message,
-          code: inventoryError.code,
-          details: inventoryError.details,
-          hint: inventoryError.hint
-        });
         toast({
-          title: "Advertencia",
-          description: "No se pudo cargar el inventario completo",
-          variant: "warning",
+          title: 'Advertencia',
+          description: 'No se pudo cargar el inventario completo',
+          variant: 'warning',
         });
       }
 
-      // Procesar inventario (solo para stock por tienda, NO para total)
-      const stockByProductStore = new Map<string, Record<string, number>>();
-      const inventoriesByProduct: Record<string, StoreInventory[]> = {};
-
-      if (inventoryData && inventoryData.length > 0) {
-        const sanitized = sanitizeInventoryData(inventoryData);
-        
-        sanitized.forEach((item: any) => {
-          const productId = item.product_id;
-          const storeId = item.store_id;
-          const qty = Math.max(0, item.qty || 0);
-
-          // Stock por tienda (solo para visualización, no para cálculo de total)
-          if (!stockByProductStore.has(productId)) {
-            stockByProductStore.set(productId, {});
-          }
-          stockByProductStore.get(productId)![storeId] = qty;
-
-          // Inventarios por producto
-          if (!inventoriesByProduct[productId]) {
-            inventoriesByProduct[productId] = [];
-          }
-          const store = storesData?.find((s: Store) => s.id === storeId);
-          inventoriesByProduct[productId].push({
-            store_id: storeId,
-            store_name: store?.name || 'Tienda Desconocida',
-            qty: qty,
-          });
-        });
-      }
-
-      // Filtro global de sucursal (StoreFilterBar) solo alimenta KPIs vía useInventoryFinancialSummary.
-      // Aquí siempre mostramos todos los productos con desglose por cada sucursal visible (RLS).
-      productsData?.forEach((product: Product) => {
-        if (!inventoriesByProduct[product.id]) {
-          inventoriesByProduct[product.id] = [];
-        }
-        storesData?.forEach((store: Store) => {
-          const exists = inventoriesByProduct[product.id].some(
-            inv => inv.store_id === store.id
-          );
-          if (!exists) {
-            inventoriesByProduct[product.id].push({
-              store_id: store.id,
-              store_name: store.name,
-              qty: 0,
-            });
-          }
-        });
-        inventoriesByProduct[product.id].sort((a, b) =>
-          a.store_name.localeCompare(b.store_name)
+      const { products: productsWithStock, storeInventories: inventoriesByProduct } =
+        buildCatalogWithStock(
+          productsData,
+          inventoryData,
+          (storesData || []).map((s) => ({ id: s.id, name: s.name }))
         );
-      });
 
-      // total_stock: suma global por tienda (igual que Almacén)
-      const productsWithStock = (productsData || []).map((product: any) => {
-        const stockByStore = stockByProductStore.get(product.id) || {};
-        const totalStock = Object.values(stockByStore).reduce((sum, qty) => sum + (qty || 0), 0);
-
-        if (product.sku === 'R5CY71TZ3JM' || product.name.toLowerCase().includes('samsung galaxy a26')) {
-          console.log(`[ArticulosPage] Producto ${product.sku} (${product.name}):`, {
-            stockByStore,
-            totalStock,
-            inventoryCount: inventoriesByProduct[product.id]?.length || 0,
-            inventories: inventoriesByProduct[product.id]?.map(inv => ({ store: inv.store_name, qty: inv.qty }))
-          });
-        }
-
-        return {
-          ...product,
-          total_stock: totalStock,
-          stockByStore: stockByStore,
-        };
-      });
-
-      console.log('[ArticulosPage] Productos procesados:', {
-        total: productsWithStock.length,
-        technical_service: productsWithStock.filter(p => p.category === 'technical_service').length,
-        technical_service_total_stock: productsWithStock
-          .filter(p => p.category === 'technical_service')
-          .reduce((sum, p) => sum + (p.total_stock || 0), 0)
-      });
-
-      // ✅ OPTIMIZACIÓN: Guardar en cache con timestamp
       productsCache.current = {
-        products: productsWithStock,
-        storeInventories: inventoriesByProduct,
-        timestamp: Date.now()
+        products: productsWithStock as Product[],
+        storeInventories: inventoriesByProduct as Record<string, StoreInventory[]>,
+        timestamp: Date.now(),
+        categoryScope: categoryFilter,
       };
 
-      setProducts(productsWithStock);
-      setStoreInventories(inventoriesByProduct);
-      writeInventoryPageCache(companyId, productsWithStock, inventoriesByProduct);
-    } catch (error) {
+      setProducts(productsWithStock as Product[]);
+      setStoreInventories(inventoriesByProduct as Record<string, StoreInventory[]>);
+      writeInventoryPageCache(
+        companyId,
+        productsWithStock,
+        inventoriesByProduct,
+        categoryFilter
+      );
+    } catch (error: any) {
       console.error('Error in fetchData:', error);
       toast({
-        title: "Error",
-        description: "Error al cargar los datos",
-        variant: "destructive",
+        title: 'Error',
+        description: error?.message || 'Error al cargar los datos',
+        variant: 'destructive',
       });
     } finally {
       setLoading(false);
