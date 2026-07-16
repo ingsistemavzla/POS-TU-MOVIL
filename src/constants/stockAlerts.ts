@@ -1,10 +1,26 @@
-export {
-  STOCK_OUT_OF_STOCK_QTY,
-  STOCK_CRITICAL_MIN_QTY,
-  STOCK_CRITICAL_MAX_QTY,
-  STOCK_WARNING_MIN_QTY,
-  STOCK_WARNING_MAX_QTY,
-} from '@/hooks/useDashboardStockAlerts';
+/** Sin stock: 0 unidades */
+export const STOCK_OUT_OF_STOCK_QTY = 0;
+
+/** Stock crítico (naranja): 1 a 3 unidades */
+export const STOCK_CRITICAL_MIN_QTY = 1;
+export const STOCK_CRITICAL_MAX_QTY = 3;
+
+/** Stock bajo (amarillo): 3 a 9 unidades */
+export const STOCK_WARNING_MIN_QTY = 3;
+export const STOCK_WARNING_MAX_QTY = 10;
+
+export type StockAlertMode = 'out_of_stock' | 'critical' | 'warning';
+
+export interface DashboardStockAlertItem {
+  key: string;
+  productId: string;
+  name: string;
+  sku: string;
+  category: string;
+  currentStock: number;
+  storeId: string;
+  storeName: string;
+}
 
 export const STOCK_ALERT_ROW_HEIGHT_PX = 68;
 export const STOCK_ALERT_ROW_GAP_PX = 8;

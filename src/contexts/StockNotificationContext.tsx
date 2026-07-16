@@ -10,19 +10,23 @@ import {
 } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { DashboardStockAlertItem } from '@/constants/stockAlerts';
 import {
-  DashboardStockAlertItem,
-  STOCK_WARNING_MAX_QTY,
-  STOCK_WARNING_MIN_QTY,
-  StockAlertMode,
-} from '@/hooks/useDashboardStockAlerts';
-import {
-  buildStockAlertItemKey,
   loadAcknowledgedKeys,
   saveAcknowledgedKeys,
 } from '@/utils/stockAlertKeys';
+import {
+  fetchAllStockAlertRows,
+  filterStockAlertItems,
+  type StockAlertInventoryRow,
+} from '@/utils/stockAlertsQuery';
+
+const REALTIME_DEBOUNCE_MS = 1500;
+const POLL_INTERVAL_MS = 60_000;
 
 interface StockNotificationContextValue {
+  /** Filas compartidas qty 0–9 (fuente única navbar + dashboard). */
+  alertRows: StockAlertInventoryRow[];
   totalWarningCount: number;
   unreviewedCount: number;
   hasAlerts: boolean;
@@ -37,54 +41,25 @@ interface StockNotificationContextValue {
 
 const StockNotificationContext = createContext<StockNotificationContextValue | null>(null);
 
-function mapInventoryRows(data: unknown[], mode: StockAlertMode): DashboardStockAlertItem[] {
-  return (data ?? [])
-    .filter((row: any) => row.products && row.stores)
-    .map((row: any) => {
-      const productId = row.products.id as string;
-      const storeId = row.store_id as string;
-      return {
-        key: buildStockAlertItemKey(productId, storeId, mode),
-        productId,
-        name: row.products.name as string,
-        sku: row.products.sku as string,
-        category: row.products.category as string,
-        currentStock: Math.max(0, row.qty ?? 0),
-        storeId,
-        storeName: row.stores.name as string,
-      };
-    });
-}
-
-async function fetchWarningItemsAllCategories(): Promise<DashboardStockAlertItem[]> {
-  const { data, error } = await supabase
-    .from('inventories')
-    .select('qty, product_id, store_id, products!inner(id, name, sku, category, active), stores(id, name)')
-    .eq('products.active', true)
-    .gte('qty', STOCK_WARNING_MIN_QTY)
-    .lt('qty', STOCK_WARNING_MAX_QTY)
-    .order('qty', { ascending: true });
-
-  if (error) throw error;
-  return mapInventoryRows(data ?? [], 'warning');
-}
-
 const STOCK_NOTIFICATION_ROLES = new Set(['admin', 'manager', 'master_admin']);
 
 export function StockNotificationProvider({ children }: { children: ReactNode }) {
   const { userProfile } = useAuth();
-  const [warningItems, setWarningItems] = useState<DashboardStockAlertItem[]>([]);
+  const [alertRows, setAlertRows] = useState<StockAlertInventoryRow[]>([]);
   const [acknowledgedKeys, setAcknowledgedKeys] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [hasNewLowStock, setHasNewLowStock] = useState(false);
   const refreshInFlight = useRef(false);
   const previousWarningKeysRef = useRef<Set<string>>(new Set());
+  const debounceTimerRef = useRef<number | null>(null);
 
   const enabled =
     !!userProfile?.company_id &&
     !!userProfile?.id &&
     STOCK_NOTIFICATION_ROLES.has(userProfile.role ?? '');
+
+  const companyId = userProfile?.company_id;
 
   const loadAckState = useCallback(() => {
     if (!userProfile?.company_id || !userProfile?.id) return;
@@ -92,14 +67,15 @@ export function StockNotificationProvider({ children }: { children: ReactNode })
   }, [userProfile?.company_id, userProfile?.id]);
 
   const refresh = useCallback(async () => {
-    if (!enabled || refreshInFlight.current) return;
+    if (!enabled || !companyId || refreshInFlight.current) return;
     refreshInFlight.current = true;
     try {
-      const items = await fetchWarningItemsAllCategories();
-      const currentKeys = new Set(items.map((item) => item.key));
+      const rows = await fetchAllStockAlertRows(companyId);
+      const warningItems = filterStockAlertItems(rows, 'warning', null, 'notification');
+      const currentKeys = new Set(warningItems.map((item) => item.key));
       const ack = loadAcknowledgedKeys(userProfile!.company_id, userProfile!.id);
 
-      const newlyAppeared = items.filter(
+      const newlyAppeared = warningItems.filter(
         (item) => !previousWarningKeysRef.current.has(item.key) && !ack.has(item.key)
       );
       if (newlyAppeared.length > 0) {
@@ -107,22 +83,32 @@ export function StockNotificationProvider({ children }: { children: ReactNode })
       }
 
       previousWarningKeysRef.current = currentKeys;
-      setWarningItems(items);
+      setAlertRows(rows);
     } catch (err) {
       console.error('Error refreshing stock notifications:', err);
     } finally {
       setLoading(false);
       refreshInFlight.current = false;
     }
-  }, [enabled, userProfile?.company_id, userProfile?.id]);
+  }, [enabled, companyId, userProfile?.company_id, userProfile?.id]);
+
+  const scheduleRefresh = useCallback(() => {
+    if (debounceTimerRef.current != null) {
+      window.clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = window.setTimeout(() => {
+      debounceTimerRef.current = null;
+      void refresh();
+    }, REALTIME_DEBOUNCE_MS);
+  }, [refresh]);
 
   useEffect(() => {
     loadAckState();
   }, [loadAckState]);
 
   useEffect(() => {
-    if (!enabled) {
-      setWarningItems([]);
+    if (!enabled || !companyId) {
+      setAlertRows([]);
       setLoading(false);
       return;
     }
@@ -132,15 +118,20 @@ export function StockNotificationProvider({ children }: { children: ReactNode })
     const interval = window.setInterval(() => {
       if (document.visibilityState !== 'visible') return;
       void refresh();
-    }, 45_000);
+    }, POLL_INTERVAL_MS);
 
     const channel = supabase
-      .channel(`stock-notifications-${userProfile.company_id}`)
+      .channel(`stock-notifications-${companyId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'inventories' },
+        {
+          event: '*',
+          schema: 'public',
+          table: 'inventories',
+          filter: `company_id=eq.${companyId}`,
+        },
         () => {
-          void refresh();
+          scheduleRefresh();
         }
       )
       .subscribe();
@@ -153,9 +144,17 @@ export function StockNotificationProvider({ children }: { children: ReactNode })
     return () => {
       window.clearInterval(interval);
       window.removeEventListener('focus', onFocus);
+      if (debounceTimerRef.current != null) {
+        window.clearTimeout(debounceTimerRef.current);
+      }
       void supabase.removeChannel(channel);
     };
-  }, [enabled, refresh, userProfile?.company_id]);
+  }, [enabled, companyId, refresh, scheduleRefresh]);
+
+  const warningItems = useMemo(
+    () => filterStockAlertItems(alertRows, 'warning', null, 'notification'),
+    [alertRows]
+  );
 
   const unreviewedCount = useMemo(
     () => warningItems.filter((item) => !acknowledgedKeys.has(item.key)).length,
@@ -168,7 +167,7 @@ export function StockNotificationProvider({ children }: { children: ReactNode })
   const acknowledgeCurrentWarnings = useCallback(() => {
     if (!userProfile?.company_id || !userProfile?.id) return;
     const merged = new Set(acknowledgedKeys);
-    warningItems.forEach((item) => merged.add(item.key));
+    warningItems.forEach((item: DashboardStockAlertItem) => merged.add(item.key));
     setAcknowledgedKeys(merged);
     setHasNewLowStock(false);
     saveAcknowledgedKeys(userProfile.company_id, userProfile.id, merged);
@@ -183,6 +182,7 @@ export function StockNotificationProvider({ children }: { children: ReactNode })
 
   const value = useMemo<StockNotificationContextValue>(
     () => ({
+      alertRows,
       totalWarningCount,
       unreviewedCount,
       hasAlerts,
@@ -195,6 +195,7 @@ export function StockNotificationProvider({ children }: { children: ReactNode })
       refresh,
     }),
     [
+      alertRows,
       totalWarningCount,
       unreviewedCount,
       hasAlerts,

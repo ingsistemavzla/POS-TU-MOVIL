@@ -14,7 +14,8 @@ Fecha de cierre de esta tanda: **2026-07-15**
 | Bajo (frontend) | Hecho y en `main` | `648a6ba` |
 | Medio — polling + PDF | Hecho y en `main` | `348babd` |
 | Medio — índices SQL | Script en repo + **aplicado en Supabase** | `d027493` + ejecución manual |
-| Alto (`process_sale`, Almacén, Historial UI) | **Pendiente** — no tocado | — |
+| Alto — alertas de stock unificadas | Hecho y en `main` (consulta única + debounce Realtime) | (ver commit reciente) |
+| Alto (`process_sale`, Almacén, Historial UI) | **Pendiente** | — |
 
 ---
 
@@ -101,13 +102,23 @@ Abrir **Historial** y **Master Audit** y sentir si carga más fluido con volumen
 
 ---
 
-## Próximo (cuando se decida — nivel alto / medio riesgoso)
+## 4) Nivel alto (parcial) — alertas unificadas — pendiente documentar commit
+
+Hecho en código (ver commits posteriores a esta bitácora):
+
+- Una sola consulta `qty < 10` compartida navbar + dashboard
+- Realtime filtrado por `company_id` + debounce 1.5s
+- Polling 60s (antes 45s) y solo con pestaña visible
+- Mismos umbrales UI (0 / 1–3 / 3–9)
+
+---
+
+## Próximo (cuando se decida — nivel alto restante)
 
 Solo con medición y cuidado (sí pueden tocar lógica si se hacen mal):
 
 1. `process_sale` set-based + auditoría única  
-2. Alertas de stock: un solo cache, Realtime filtrado, menos polling  
-3. Almacén / Artículos / Historial: no bajar 1000 filas al cliente  
+2. Almacén / Artículos / Historial: no bajar 1000 filas al cliente  
 
 Regla sugerida: medir p50/p95 y Web Vitals antes de tocar alto.
 

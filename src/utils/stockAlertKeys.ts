@@ -1,4 +1,4 @@
-import { StockAlertMode } from '@/hooks/useDashboardStockAlerts';
+import { StockAlertMode } from '@/constants/stockAlerts';
 
 export function buildStockAlertItemKey(
   productId: string,
