@@ -43,7 +43,11 @@ import {
   Smartphone,
   Headphones,
   Wrench,
+  Calendar as CalendarIcon,
 } from 'lucide-react';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -156,6 +160,75 @@ function nextUtcDayKey(dateKey: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+const MAX_RANGE_DAYS = 31;
+const RANGE_FETCH_LIMIT = 3000;
+
+type DateFilterMode = 'day' | 'range';
+
+function dateKeyFromDate(d: Date): string {
+  return format(d, 'yyyy-MM-dd');
+}
+
+function parseDateKey(key: string): Date {
+  return parseISO(`${key}T12:00:00.000Z`);
+}
+
+function normalizeRangeKeys(from: string, to: string): { from: string; to: string } {
+  if (from <= to) return { from, to };
+  return { from: to, to: from };
+}
+
+function dayCountInclusive(from: string, to: string): number {
+  const { from: a, to: b } = normalizeRangeKeys(from, to);
+  const start = new Date(`${a}T00:00:00.000Z`).getTime();
+  const end = new Date(`${b}T00:00:00.000Z`).getTime();
+  return Math.round((end - start) / 86400000) + 1;
+}
+
+function applyMovementFilters(
+  list: MovementRow[],
+  movementTypeFilter: MovementTypeFilter,
+  storeFilter: string,
+  debouncedSearch: string
+): MovementRow[] {
+  let out = list;
+  if (movementTypeFilter !== 'ALL') {
+    out = out.filter((m) => getMovementCategory(m) === movementTypeFilter);
+  }
+  if (storeFilter !== 'all') {
+    out = out.filter(
+      (m) => m.store_from_id === storeFilter || m.store_to_id === storeFilter
+    );
+  }
+  if (debouncedSearch.trim()) {
+    const term = debouncedSearch.toLowerCase();
+    out = out.filter(
+      (m) =>
+        m.product_name.toLowerCase().includes(term) ||
+        m.product_sku.toLowerCase().includes(term) ||
+        (m.reason ?? '').toLowerCase().includes(term)
+    );
+  }
+  return out;
+}
+
+function shiftDateKey(key: string, deltaDays: number): string {
+  const d = parseDateKey(key);
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  return dateKeyFromDate(d);
+}
+
+function totalsByCategory(list: MovementRow[]): Record<MovementCategory, number> {
+  return list.reduce(
+    (acc, m) => {
+      const cat = getMovementCategory(m);
+      acc[cat] = (acc[cat] ?? 0) + m.qty;
+      return acc;
+    },
+    { VENTAS: 0, AUMENTOS: 0, DISMINUCIONES: 0, TRANSFERENCIAS: 0 } as Record<MovementCategory, number>
+  );
+}
+
 export const HistorialPage: React.FC = () => {
   const { userProfile } = useAuth();
   const { toast } = useToast();
@@ -167,7 +240,14 @@ export const HistorialPage: React.FC = () => {
   const [snapshotsLoading, setSnapshotsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearch = useDebounce(searchTerm, 300);
-  const [selectedDateIndex, setSelectedDateIndex] = useState(0);
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+  const [dateFilterMode, setDateFilterMode] = useState<DateFilterMode>('day');
+  const [rangeFromKey, setRangeFromKey] = useState<string | null>(null);
+  const [rangeToKey, setRangeToKey] = useState<string | null>(null);
+  const [rangeTruncated, setRangeTruncated] = useState(false);
+  const [showDayCalendar, setShowDayCalendar] = useState(false);
+  const [showRangeFromCalendar, setShowRangeFromCalendar] = useState(false);
+  const [showRangeToCalendar, setShowRangeToCalendar] = useState(false);
   const [movementTypeFilter, setMovementTypeFilter] = useState<MovementTypeFilter>('ALL');
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [storeFilter, setStoreFilter] = useState<string>('all');
@@ -199,7 +279,16 @@ export const HistorialPage: React.FC = () => {
       });
       const list = Array.from(set).sort((a, b) => b.localeCompare(a));
       setDatesList(list);
-      setSelectedDateIndex((i) => (list.length === 0 ? 0 : Math.min(i, list.length - 1)));
+      if (list.length > 0) {
+        setSelectedDateKey((prev) => (prev && list.includes(prev) ? prev : list[0]));
+        setRangeToKey((prev) => (prev && list.includes(prev) ? prev : list[0]));
+        setRangeFromKey((prev) => {
+          if (prev && list.includes(prev)) return prev;
+          return list[Math.min(6, list.length - 1)];
+        });
+      } else {
+        setSelectedDateKey(null);
+      }
     } catch (err: any) {
       console.error('Error fetching historial dates:', err);
       toast({
@@ -240,6 +329,51 @@ export const HistorialPage: React.FC = () => {
       toast({
         title: 'Error',
         description: err.message ?? 'No se pudieron cargar los movimientos',
+        variant: 'destructive',
+      });
+      setMovements([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /** Movimientos en un rango de días (máx. {MAX_RANGE_DAYS} días, consulta filtrada en servidor). */
+  const fetchMovementsForRange = async (fromKey: string, toKey: string) => {
+    if (!userProfile?.company_id || !fromKey || !toKey) {
+      setMovements([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setRangeTruncated(false);
+    try {
+      const { from, to } = normalizeRangeKeys(fromKey, toKey);
+      const rangeStart = `${from}T00:00:00.000Z`;
+      const rangeEnd = `${nextUtcDayKey(to)}T00:00:00.000Z`;
+
+      const { data, error } = await supabase
+        .from('inventory_movements')
+        .select(MOVEMENT_SELECT)
+        .eq('company_id', userProfile.company_id)
+        .gte('created_at', rangeStart)
+        .lt('created_at', rangeEnd)
+        .order('created_at', { ascending: false })
+        .limit(RANGE_FETCH_LIMIT);
+
+      if (error) throw error;
+      setMovements((data || []).map(mapMovementRow));
+      if ((data?.length ?? 0) >= RANGE_FETCH_LIMIT) {
+        setRangeTruncated(true);
+        toast({
+          title: 'Muchos movimientos',
+          description: `Se muestran los ${RANGE_FETCH_LIMIT} más recientes del rango. Acota fechas o usa modo un día.`,
+        });
+      }
+    } catch (err: any) {
+      console.error('Error fetching historial range:', err);
+      toast({
+        title: 'Error',
+        description: err.message ?? 'No se pudieron cargar los movimientos del rango',
         variant: 'destructive',
       });
       setMovements([]);
@@ -330,16 +464,36 @@ export const HistorialPage: React.FC = () => {
     void fetchDateKeys();
   }, [userProfile?.company_id]);
 
-  const currentDateKey = datesList[selectedDateIndex] ?? null;
+  const selectedDateIndex = selectedDateKey ? datesList.indexOf(selectedDateKey) : -1;
 
   useEffect(() => {
-    if (!currentDateKey) {
+    if (!userProfile?.company_id) return;
+
+    if (dateFilterMode === 'day') {
+      if (!selectedDateKey) {
+        setMovements([]);
+        setLoading(false);
+        return;
+      }
+      setRangeTruncated(false);
+      void fetchMovementsForDay(selectedDateKey);
+      return;
+    }
+
+    if (!rangeFromKey || !rangeToKey) {
       setMovements([]);
       setLoading(false);
       return;
     }
-    void fetchMovementsForDay(currentDateKey);
-  }, [userProfile?.company_id, currentDateKey]);
+
+    const { from, to } = normalizeRangeKeys(rangeFromKey, rangeToKey);
+    if (dayCountInclusive(from, to) > MAX_RANGE_DAYS) {
+      setMovements([]);
+      setLoading(false);
+      return;
+    }
+    void fetchMovementsForRange(from, to);
+  }, [userProfile?.company_id, dateFilterMode, selectedDateKey, rangeFromKey, rangeToKey]);
 
   useEffect(() => {
     fetchSnapshots();
@@ -359,40 +513,28 @@ export const HistorialPage: React.FC = () => {
     fetchStores();
   }, [userProfile?.company_id]);
 
-  // Movimientos del día (ya vienen filtrados por fecha en servidor), + categoría/sucursal/búsqueda en cliente
-  const movementsForCurrentDay = useMemo(() => {
-    let list = movements;
-    if (movementTypeFilter !== 'ALL') {
-      list = list.filter((m) => getMovementCategory(m) === movementTypeFilter);
-    }
-    if (storeFilter !== 'all') {
-      list = list.filter(
-        (m) => m.store_from_id === storeFilter || m.store_to_id === storeFilter
-      );
-    }
-    if (debouncedSearch.trim()) {
-      const term = debouncedSearch.toLowerCase();
-      list = list.filter(
-        (m) =>
-          m.product_name.toLowerCase().includes(term) ||
-          m.product_sku.toLowerCase().includes(term) ||
-          (m.reason ?? '').toLowerCase().includes(term)
-      );
-    }
-    return list;
-  }, [movements, movementTypeFilter, storeFilter, debouncedSearch]);
+  const filteredMovements = useMemo(
+    () => applyMovementFilters(movements, movementTypeFilter, storeFilter, debouncedSearch),
+    [movements, movementTypeFilter, storeFilter, debouncedSearch]
+  );
 
-  // Totales del día por categoría (sobre todos los del día, sin filtro de pestaña)
-  const dailyTotalsByCategory = useMemo(() => {
-    return movements.reduce(
-      (acc, m) => {
-        const cat = getMovementCategory(m);
-        acc[cat] = (acc[cat] ?? 0) + m.qty;
-        return acc;
-      },
-      { VENTAS: 0, AUMENTOS: 0, DISMINUCIONES: 0, TRANSFERENCIAS: 0 } as Record<MovementCategory, number>
-    );
-  }, [movements]);
+  const movementsGroupedByDay = useMemo(() => {
+    const map = new Map<string, MovementRow[]>();
+    for (const m of filteredMovements) {
+      const day = m.created_at.slice(0, 10);
+      if (!map.has(day)) map.set(day, []);
+      map.get(day)!.push(m);
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => b.localeCompare(a));
+  }, [filteredMovements]);
+
+  const dailyTotalsByCategory = useMemo(() => totalsByCategory(movements), [movements]);
+
+  const activeRange =
+    rangeFromKey && rangeToKey ? normalizeRangeKeys(rangeFromKey, rangeToKey) : null;
+  const activeRangeDayCount =
+    activeRange ? dayCountInclusive(activeRange.from, activeRange.to) : 0;
+  const rangeTooWide = activeRange !== null && activeRangeDayCount > MAX_RANGE_DAYS;
 
   const formatFecha = (iso: string) => {
     try {
@@ -469,6 +611,138 @@ export const HistorialPage: React.FC = () => {
     }
   };
 
+  const goToOlderDay = () => {
+    if (!selectedDateKey) return;
+    if (selectedDateIndex >= 0 && selectedDateIndex < datesList.length - 1) {
+      setSelectedDateKey(datesList[selectedDateIndex + 1]);
+      return;
+    }
+    setSelectedDateKey(shiftDateKey(selectedDateKey, -1));
+  };
+
+  const goToNewerDay = () => {
+    if (!selectedDateKey) return;
+    if (selectedDateIndex > 0) {
+      setSelectedDateKey(datesList[selectedDateIndex - 1]);
+      return;
+    }
+    setSelectedDateKey(shiftDateKey(selectedDateKey, 1));
+  };
+
+  const renderCategoryTotalsBadges = (totals: Record<MovementCategory, number>) => (
+    <div className="flex flex-wrap gap-2">
+      <Badge variant="outline" className={CATEGORY_COLORS.VENTAS + ' font-mono px-3 py-1'}>
+        Ventas: {totals.VENTAS}
+      </Badge>
+      <Badge variant="outline" className={CATEGORY_COLORS.AUMENTOS + ' font-mono px-3 py-1'}>
+        Aumentos: +{totals.AUMENTOS}
+      </Badge>
+      <Badge variant="outline" className={CATEGORY_COLORS.DISMINUCIONES + ' font-mono px-3 py-1'}>
+        Disminuciones: {totals.DISMINUCIONES}
+      </Badge>
+      <Badge variant="outline" className={CATEGORY_COLORS.TRANSFERENCIAS + ' font-mono px-3 py-1'}>
+        Transferencias: {totals.TRANSFERENCIAS >= 0 ? '+' : ''}{totals.TRANSFERENCIAS}
+      </Badge>
+    </div>
+  );
+
+  const renderMovementRows = (items: MovementRow[]) =>
+    items.map((m) => {
+      const isExpanded = expandedMovementId === m.id;
+      return (
+        <React.Fragment key={m.id}>
+          <TableRow className={isExpanded ? 'bg-white/10' : ''}>
+            <TableCell className="text-sm font-mono text-white/80">
+              {formatFecha(m.created_at)}
+            </TableCell>
+            <TableCell>
+              <div className="flex items-center gap-2">
+                {getMovementIcon(m)}
+                <div>
+                  <div className="font-medium text-white">{m.product_name}</div>
+                  <div className="text-xs text-muted-foreground font-mono">{m.product_sku}</div>
+                </div>
+              </div>
+            </TableCell>
+            <TableCell className="text-center">{getMovementBadge(m)}</TableCell>
+            <TableCell
+              className={`text-right font-semibold ${
+                m.qty >= 0 ? 'text-emerald-300' : 'text-red-300'
+              }`}
+            >
+              {m.qty >= 0 ? '+' : ''}{m.qty}
+            </TableCell>
+            <TableCell className="text-center">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setExpandedMovementId(isExpanded ? null : m.id)}
+                className="text-xs border-white/30 hover:bg-white/10"
+              >
+                {isExpanded ? (
+                  <>
+                    <ChevronUp className="h-3 w-3 mr-1" />
+                    Ocultar
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-3 w-3 mr-1" />
+                    Ver detalles
+                  </>
+                )}
+              </Button>
+            </TableCell>
+          </TableRow>
+          {isExpanded && (
+            <TableRow>
+              <TableCell colSpan={5} className="glass-muted-dark p-4 border-l-4 border-l-blue-400/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <Package className="w-4 h-4 text-blue-400" />
+                  <h4 className="font-semibold text-sm text-white">Detalles de la transacción</h4>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Store className="w-3 h-3 shrink-0 text-muted-foreground" />
+                    <span className="text-white/90">{getStoreDisplay(m)}</span>
+                  </div>
+                  {m.reason && <p className="text-white/80">{m.reason}</p>}
+                  {m.old_qty != null && m.new_qty != null && (
+                    <p className="font-mono text-white/70">
+                      Conciliación: {m.old_qty} → {m.new_qty}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {formatFechaConSegundos(m.created_at)}
+                  </p>
+                </div>
+              </TableCell>
+            </TableRow>
+          )}
+        </React.Fragment>
+      );
+    });
+
+  const renderMovementsTable = (items: MovementRow[], emptyMessage: string) => {
+    if (items.length === 0) {
+      return <p className="text-center text-muted-foreground py-12">{emptyMessage}</p>;
+    }
+    return (
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[100px]">Hora</TableHead>
+            <TableHead>Producto</TableHead>
+            <TableHead className="text-center">Tipo</TableHead>
+            <TableHead className="text-right">Cambio</TableHead>
+            <TableHead className="text-center">Detalles</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>{renderMovementRows(items)}</TableBody>
+      </Table>
+    );
+  };
+
   // Agrupar snapshots por fecha (día). Por cada día y tienda, solo el más reciente (evita duplicados y filas con 0 en categorías).
   const snapshotsByDate = useMemo(() => {
     const byDate = new Map<string, SnapshotRow[]>();
@@ -538,59 +812,201 @@ export const HistorialPage: React.FC = () => {
                   ))}
                 </SelectContent>
               </Select>
-              {/* Paginación por día */}
-              {datesList.length > 0 && (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm text-muted-foreground">Fecha:</span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="glass-panel-dense"
-                    disabled={selectedDateIndex >= datesList.length - 1}
-                    onClick={() => setSelectedDateIndex((i) => Math.min(i + 1, datesList.length - 1))}
-                  >
-                    ← Día anterior
-                  </Button>
-                  <span className="text-sm font-medium text-white min-w-[120px] text-center">
-                    {currentDateKey ? formatDateOnly(currentDateKey + 'T12:00:00') : '—'}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="glass-panel-dense"
-                    disabled={selectedDateIndex <= 0}
-                    onClick={() => setSelectedDateIndex((i) => Math.max(i - 1, 0))}
-                  >
-                    Día siguiente →
-                  </Button>
-                  <span className="text-xs text-muted-foreground">
-                    {selectedDateIndex + 1} / {datesList.length}
-                  </span>
-                </div>
-              )}
             </div>
 
-            {/* Totales del día (badges con colores por categoría) */}
-            {currentDateKey && (
+            <Card className="glass-panel-dense border-white/10">
+              <CardContent className="p-4 space-y-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Label className="text-sm text-muted-foreground shrink-0">Consulta:</Label>
+                  <Select
+                    value={dateFilterMode}
+                    onValueChange={(v) => setDateFilterMode(v as DateFilterMode)}
+                  >
+                    <SelectTrigger className="w-[180px] glass-panel-dense border-white/20">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="day">Un día</SelectItem>
+                      <SelectItem value="range">Rango de días</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {dateFilterMode === 'day' ? (
+                    <>
+                      <Select
+                        value={selectedDateKey ?? undefined}
+                        onValueChange={setSelectedDateKey}
+                        disabled={datesLoading || datesList.length === 0}
+                      >
+                        <SelectTrigger className="w-[200px] glass-panel-dense border-white/20">
+                          <SelectValue placeholder="Día con movimientos" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {datesList.map((d) => (
+                            <SelectItem key={d} value={d}>
+                              {formatDateOnly(`${d}T12:00:00`)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Popover open={showDayCalendar} onOpenChange={setShowDayCalendar}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="glass-panel-dense"
+                          >
+                            <CalendarIcon className="w-4 h-4 mr-2" />
+                            Calendario
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={selectedDateKey ? parseDateKey(selectedDateKey) : undefined}
+                            onSelect={(date) => {
+                              if (date) {
+                                setSelectedDateKey(dateKeyFromDate(date));
+                                setShowDayCalendar(false);
+                              }
+                            }}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="glass-panel-dense"
+                        disabled={!selectedDateKey}
+                        onClick={goToOlderDay}
+                      >
+                        ← Día anterior
+                      </Button>
+                      <span className="text-sm font-medium text-white min-w-[120px] text-center">
+                        {selectedDateKey ? formatDateOnly(`${selectedDateKey}T12:00:00`) : '—'}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="glass-panel-dense"
+                        disabled={!selectedDateKey}
+                        onClick={goToNewerDay}
+                      >
+                        Día siguiente →
+                      </Button>
+                      {selectedDateIndex >= 0 && (
+                        <span className="text-xs text-muted-foreground">
+                          {selectedDateIndex + 1} / {datesList.length} con actividad
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="hist-range-from" className="text-sm whitespace-nowrap">
+                          Desde:
+                        </Label>
+                        <Popover open={showRangeFromCalendar} onOpenChange={setShowRangeFromCalendar}>
+                          <PopoverTrigger asChild>
+                            <div className="relative">
+                              <Input
+                                id="hist-range-from"
+                                type="text"
+                                value={rangeFromKey ?? ''}
+                                readOnly
+                                className="w-[140px] pr-8 glass-input cursor-pointer"
+                                placeholder="yyyy-mm-dd"
+                              />
+                              <CalendarIcon className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                            </div>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={rangeFromKey ? parseDateKey(rangeFromKey) : undefined}
+                              onSelect={(date) => {
+                                if (date) {
+                                  setRangeFromKey(dateKeyFromDate(date));
+                                  setShowRangeFromCalendar(false);
+                                }
+                              }}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="hist-range-to" className="text-sm whitespace-nowrap">
+                          Hasta:
+                        </Label>
+                        <Popover open={showRangeToCalendar} onOpenChange={setShowRangeToCalendar}>
+                          <PopoverTrigger asChild>
+                            <div className="relative">
+                              <Input
+                                id="hist-range-to"
+                                type="text"
+                                value={rangeToKey ?? ''}
+                                readOnly
+                                className="w-[140px] pr-8 glass-input cursor-pointer"
+                                placeholder="yyyy-mm-dd"
+                              />
+                              <CalendarIcon className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                            </div>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={rangeToKey ? parseDateKey(rangeToKey) : undefined}
+                              onSelect={(date) => {
+                                if (date) {
+                                  setRangeToKey(dateKeyFromDate(date));
+                                  setShowRangeToCalendar(false);
+                                }
+                              }}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                      {activeRange && (
+                        <Badge variant="outline" className="font-mono border-white/20">
+                          {activeRangeDayCount} día{activeRangeDayCount !== 1 ? 's' : ''}
+                        </Badge>
+                      )}
+                      {rangeTooWide && (
+                        <span className="text-xs text-red-400">
+                          Máximo {MAX_RANGE_DAYS} días por consulta
+                        </span>
+                      )}
+                      {rangeTruncated && (
+                        <span className="text-xs text-amber-400">
+                          Resultados truncados ({RANGE_FETCH_LIMIT} filas)
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {dateFilterMode === 'day'
+                    ? 'Carga solo el día seleccionado en servidor (rápido). Puedes elegir cualquier fecha en calendario.'
+                    : `Consulta hasta ${MAX_RANGE_DAYS} días en una sola petición; los movimientos se agrupan por día.`}
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Totales del día o del rango */}
+            {(dateFilterMode === 'day' ? selectedDateKey : activeRange && !rangeTooWide) && (
               <Card className="glass-panel-dense border-white/10">
                 <CardContent className="p-4">
-                  <p className="text-sm font-semibold text-white/90 mb-3">Totales del día</p>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline" className={CATEGORY_COLORS.VENTAS + ' font-mono px-3 py-1'}>
-                      Ventas: {dailyTotalsByCategory.VENTAS}
-                    </Badge>
-                    <Badge variant="outline" className={CATEGORY_COLORS.AUMENTOS + ' font-mono px-3 py-1'}>
-                      Aumentos: +{dailyTotalsByCategory.AUMENTOS}
-                    </Badge>
-                    <Badge variant="outline" className={CATEGORY_COLORS.DISMINUCIONES + ' font-mono px-3 py-1'}>
-                      Disminuciones: {dailyTotalsByCategory.DISMINUCIONES}
-                    </Badge>
-                    <Badge variant="outline" className={CATEGORY_COLORS.TRANSFERENCIAS + ' font-mono px-3 py-1'}>
-                      Transferencias: {dailyTotalsByCategory.TRANSFERENCIAS >= 0 ? '+' : ''}{dailyTotalsByCategory.TRANSFERENCIAS}
-                    </Badge>
-                  </div>
+                  <p className="text-sm font-semibold text-white/90 mb-3">
+                    {dateFilterMode === 'day'
+                      ? 'Totales del día'
+                      : `Totales del rango (${activeRangeDayCount} día${activeRangeDayCount !== 1 ? 's' : ''})`}
+                  </p>
+                  {renderCategoryTotalsBadges(dailyTotalsByCategory)}
                 </CardContent>
               </Card>
             )}
@@ -638,107 +1054,52 @@ export const HistorialPage: React.FC = () => {
                           <div className="flex items-center justify-center py-12">
                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
                           </div>
-                        ) : datesList.length === 0 ? (
-                          <p className="text-center text-muted-foreground py-12">
-                            No hay movimientos. La última fecha con movimientos aparecerá al cargar.
-                          </p>
-                        ) : !currentDateKey ? (
+                        ) : dateFilterMode === 'day' && !selectedDateKey ? (
                           <p className="text-center text-muted-foreground py-12">Selecciona una fecha.</p>
-                        ) : movementsForCurrentDay.length === 0 ? (
+                        ) : dateFilterMode === 'range' && rangeTooWide ? (
                           <p className="text-center text-muted-foreground py-12">
-                            No hay movimientos para esta fecha{tabValue !== 'ALL' ? ` de categoría ${tabValue}` : ''}.
+                            El rango supera {MAX_RANGE_DAYS} días. Acota las fechas para consultar.
+                          </p>
+                        ) : dateFilterMode === 'range' && (!rangeFromKey || !rangeToKey) ? (
+                          <p className="text-center text-muted-foreground py-12">
+                            Selecciona fecha desde y hasta.
+                          </p>
+                        ) : dateFilterMode === 'day' ? (
+                          renderMovementsTable(
+                            filteredMovements,
+                            `No hay movimientos para esta fecha${tabValue !== 'ALL' ? ` de categoría ${tabValue}` : ''}.`
+                          )
+                        ) : movementsGroupedByDay.length === 0 ? (
+                          <p className="text-center text-muted-foreground py-12">
+                            No hay movimientos en el rango{tabValue !== 'ALL' ? ` de categoría ${tabValue}` : ''}.
                           </p>
                         ) : (
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="w-[100px]">Hora</TableHead>
-                                <TableHead>Producto</TableHead>
-                                <TableHead className="text-center">Tipo</TableHead>
-                                <TableHead className="text-right">Cambio</TableHead>
-                                <TableHead className="text-center">Detalles</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {movementsForCurrentDay.map((m) => {
-                                const isExpanded = expandedMovementId === m.id;
-                                return (
-                                  <React.Fragment key={m.id}>
-                                    <TableRow className={isExpanded ? 'bg-white/10' : ''}>
-                                      <TableCell className="text-sm font-mono text-white/80">
-                                        {formatFecha(m.created_at)}
-                                      </TableCell>
-                                      <TableCell>
-                                        <div className="flex items-center gap-2">
-                                          {getMovementIcon(m)}
-                                          <div>
-                                            <div className="font-medium text-white">{m.product_name}</div>
-                                            <div className="text-xs text-muted-foreground font-mono">{m.product_sku}</div>
-                                          </div>
-                                        </div>
-                                      </TableCell>
-                                      <TableCell className="text-center">{getMovementBadge(m)}</TableCell>
-                                      <TableCell
-                                        className={`text-right font-semibold ${
-                                          m.qty >= 0 ? 'text-emerald-300' : 'text-red-300'
-                                        }`}
-                                      >
-                                        {m.qty >= 0 ? '+' : ''}{m.qty}
-                                      </TableCell>
-                                      <TableCell className="text-center">
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          onClick={() => setExpandedMovementId(isExpanded ? null : m.id)}
-                                          className="text-xs border-white/30 hover:bg-white/10"
-                                        >
-                                          {isExpanded ? (
-                                            <>
-                                              <ChevronUp className="h-3 w-3 mr-1" />
-                                              Ocultar
-                                            </>
-                                          ) : (
-                                            <>
-                                              <ChevronDown className="h-3 w-3 mr-1" />
-                                              Ver detalles
-                                            </>
-                                          )}
-                                        </Button>
-                                      </TableCell>
-                                    </TableRow>
-                                    {isExpanded && (
-                                      <TableRow>
-                                        <TableCell colSpan={5} className="glass-muted-dark p-4 border-l-4 border-l-blue-400/50">
-                                          <div className="flex items-center gap-2 mb-2">
-                                            <Package className="w-4 h-4 text-blue-400" />
-                                            <h4 className="font-semibold text-sm text-white">Detalles de la transacción</h4>
-                                          </div>
-                                          <div className="space-y-2 text-sm">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                              <Store className="w-3 h-3 shrink-0 text-muted-foreground" />
-                                              <span className="text-white/90">{getStoreDisplay(m)}</span>
-                                            </div>
-                                            {m.reason && (
-                                              <p className="text-white/80">{m.reason}</p>
-                                            )}
-                                            {m.old_qty != null && m.new_qty != null && (
-                                              <p className="font-mono text-white/70">
-                                                Conciliación: {m.old_qty} → {m.new_qty}
-                                              </p>
-                                            )}
-                                            <p className="text-xs text-muted-foreground flex items-center gap-1">
-                                              <Clock className="w-3 h-3" />
-                                              {formatFechaConSegundos(m.created_at)}
-                                            </p>
-                                          </div>
-                                        </TableCell>
-                                      </TableRow>
-                                    )}
-                                  </React.Fragment>
-                                );
-                              })}
-                            </TableBody>
-                          </Table>
+                          <div className="divide-y divide-white/10">
+                            {movementsGroupedByDay.map(([dayKey, dayItems]) => {
+                              const dayRaw = movements.filter((m) => m.created_at.slice(0, 10) === dayKey);
+                              const dayTotals = totalsByCategory(dayRaw);
+                              return (
+                                <div key={dayKey} className="py-4 px-2 space-y-3">
+                                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                                      <CalendarIcon className="w-4 h-4 text-muted-foreground" />
+                                      {formatDateOnly(`${dayKey}T12:00:00`)}
+                                      <span className="text-xs font-normal text-muted-foreground">
+                                        ({dayItems.length} mov.)
+                                      </span>
+                                    </h3>
+                                    <div className="flex flex-wrap gap-1 scale-90 origin-left sm:origin-right">
+                                      {renderCategoryTotalsBadges(dayTotals)}
+                                    </div>
+                                  </div>
+                                  {renderMovementsTable(
+                                    dayItems,
+                                    `Sin movimientos${tabValue !== 'ALL' ? ` de ${tabValue}` : ''} este día.`
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         )}
                       </div>
                     </CardContent>

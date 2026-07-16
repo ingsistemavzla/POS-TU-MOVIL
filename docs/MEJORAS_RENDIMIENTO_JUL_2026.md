@@ -15,7 +15,8 @@ Fecha de cierre de esta tanda: **2026-07-15**
 | Medio — polling + PDF | Hecho y en `main` | `348babd` |
 | Medio — índices SQL | Script en repo + **aplicado en Supabase** | `d027493` + ejecución manual |
 | Alto — alertas de stock unificadas | Hecho + fix límite 1000 | `31c5992`, `2cbcd12` |
-| Alto — Historial por día (server) | Hecho: fechas livianas + load por día | (ver commit reciente) |
+| Alto — Historial por día (server) | Hecho: fechas livianas + load por día | `3755394` |
+| Alto — Historial día/rango + calendario | Hecho: selector día, rango ≤31d, agrupado por día | (commit reciente) |
 | Alto (`process_sale`, Almacén UI) | **Pendiente** | — |
 
 ---
@@ -96,21 +97,49 @@ Abrir **Historial** y **Master Audit** y sentir si carga más fluido con volumen
 ## Checklist rápido del lunes
 
 - [ ] App abre y POS vende normal
-- [ ] Historial carga sin error
+- [ ] Historial carga sin error (modo un día)
+- [ ] Historial: rango de días agrupa por día y respeta máx. 31
 - [ ] Alertas de stock en navbar funcionan
 - [ ] Los 6 índices siguen listados en Supabase
 - [ ] No hay quejas de “desapareció una función”
 
 ---
 
-## 4) Nivel alto (parcial) — alertas unificadas — pendiente documentar commit
+## 4) Nivel alto — alertas unificadas — `31c5992` + fix `2cbcd12`
 
-Hecho en código (ver commits posteriores a esta bitácora):
-
-- Una sola consulta `qty < 10` compartida navbar + dashboard
+- Una sola consulta compartida navbar + dashboard (3 rangos: 0 / 1–3 / 3–9)
 - Realtime filtrado por `company_id` + debounce 1.5s
-- Polling 60s (antes 45s) y solo con pestaña visible
-- Mismos umbrales UI (0 / 1–3 / 3–9)
+- Polling 60s y solo con pestaña visible
+- Fix: no llenar el límite ~1000 solo con ceros (paneles bajo/crítico vacíos)
+
+**Verificar:** alertas en navbar y dashboard muestran bajo/crítico/agotado correctamente.
+
+---
+
+## 5) Nivel alto — Historial por día — `3755394`
+
+- `fetchDateKeys()`: solo `created_at` (límite 3000) para armar días
+- `fetchMovementsForDay(dateKey)`: filtro servidor `company_id` + rango UTC del día
+- Filtros categoría/sucursal/búsqueda en cliente sobre el día cargado
+
+---
+
+## 6) Nivel alto — Historial día / rango + calendario — (commit reciente)
+
+Archivo: `src/pages/HistorialPage.tsx`
+
+**Qué:**
+- Modo **Un día**: selector de días con actividad, calendario, prev/next
+- Modo **Rango**: desde–hasta (máx. 31 días), una consulta filtrada en servidor
+- En rango: movimientos **agrupados por día** con totales por categoría
+- Límite 3000 filas en rango + aviso si trunca
+- Misma funcionalidad: búsqueda, sucursal, pestañas Ventas/Aumentos/etc., detalle expandible
+
+**Cómo verificar:**
+- Historial → Movimientos → Un día: elige fecha en lista o calendario; carga solo ese día
+- Rango de 3–7 días: aparecen bloques por día con totales
+- Rango > 31 días: mensaje de acotar (no consulta)
+- Filtros de categoría/sucursal/búsqueda siguen igual
 
 ---
 
@@ -119,7 +148,7 @@ Hecho en código (ver commits posteriores a esta bitácora):
 Solo con medición y cuidado (sí pueden tocar lógica si se hacen mal):
 
 1. `process_sale` set-based + auditoría única  
-2. Almacén / Artículos / Historial: no bajar 1000 filas al cliente  
+2. Almacén / Artículos: no bajar inventario completo al cliente  
 
 Regla sugerida: medir p50/p95 y Web Vitals antes de tocar alto.
 
