@@ -21,22 +21,10 @@ export interface StockAlertInventoryRow {
   storeName: string;
 }
 
-/** Una sola consulta: todo el stock de alerta (0 hasta 9 inclusive). */
-export async function fetchAllStockAlertRows(
-  companyId: string
-): Promise<StockAlertInventoryRow[]> {
-  const { data, error } = await supabase
-    .from('inventories')
-    .select(
-      'qty, product_id, store_id, products!inner(id, name, sku, category, active), stores(id, name)'
-    )
-    .eq('company_id', companyId)
-    .eq('products.active', true)
-    .lt('qty', STOCK_WARNING_MAX_QTY)
-    .order('qty', { ascending: true });
+const SELECT =
+  'qty, product_id, store_id, products!inner(id, name, sku, category, active), stores(id, name)';
 
-  if (error) throw error;
-
+function mapRows(data: unknown[] | null): StockAlertInventoryRow[] {
   return (data ?? [])
     .filter((row: any) => row.products && row.stores)
     .map((row: any) => ({
@@ -48,6 +36,54 @@ export async function fetchAllStockAlertRows(
       storeId: row.store_id as string,
       storeName: row.stores.name as string,
     }));
+}
+
+function mergeUnique(rows: StockAlertInventoryRow[]): StockAlertInventoryRow[] {
+  const map = new Map<string, StockAlertInventoryRow>();
+  for (const row of rows) {
+    map.set(`${row.productId}:${row.storeId}`, row);
+  }
+  return Array.from(map.values()).sort((a, b) => a.currentStock - b.currentStock);
+}
+
+/**
+ * Tres consultas por rango (no una sola 0–9).
+ * Motivo: el límite ~1000 de Supabase, si se pide qty<10 ordenado ASC,
+ * se llena de ceros y nunca llegan qty 1–9.
+ */
+export async function fetchAllStockAlertRows(
+  companyId: string
+): Promise<StockAlertInventoryRow[]> {
+  const base = () =>
+    supabase
+      .from('inventories')
+      .select(SELECT)
+      .eq('company_id', companyId)
+      .eq('products.active', true);
+
+  const [warningRes, criticalRes, outRes] = await Promise.all([
+    base()
+      .gte('qty', STOCK_WARNING_MIN_QTY)
+      .lt('qty', STOCK_WARNING_MAX_QTY)
+      .order('qty', { ascending: true }),
+    base()
+      .gte('qty', STOCK_CRITICAL_MIN_QTY)
+      .lte('qty', STOCK_CRITICAL_MAX_QTY)
+      .order('qty', { ascending: true }),
+    base()
+      .eq('qty', STOCK_OUT_OF_STOCK_QTY)
+      .order('qty', { ascending: true }),
+  ]);
+
+  if (warningRes.error) throw warningRes.error;
+  if (criticalRes.error) throw criticalRes.error;
+  if (outRes.error) throw outRes.error;
+
+  return mergeUnique([
+    ...mapRows(warningRes.data),
+    ...mapRows(criticalRes.data),
+    ...mapRows(outRes.data),
+  ]);
 }
 
 export function rowMatchesMode(qty: number, mode: StockAlertMode): boolean {
