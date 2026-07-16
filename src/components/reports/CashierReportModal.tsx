@@ -19,7 +19,6 @@ import {
   Zap
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '@/utils/currency';
-import { PDFGenerator } from '@/utils/pdfGenerator';
 
 interface CashierReportModalProps {
   isOpen: boolean;
@@ -38,8 +37,9 @@ export function CashierReportModal({ isOpen, onClose, data }: CashierReportModal
   const [activeTab, setActiveTab] = useState('summary');
   const [sortBy, setSortBy] = useState<'salesProcessed' | 'averageTime' | 'performance' | 'errors'>('salesProcessed');
 
-  const handleExport = (format: 'pdf' | 'excel') => {
+  const handleExport = async (format: 'pdf' | 'excel') => {
     if (format === 'pdf') {
+      const { PDFGenerator } = await import('@/utils/pdfGenerator');
       const pdfGenerator = new PDFGenerator();
       const pdf = pdfGenerator.generateCashiersReport(data, 'Mi Empresa');
       const filename = `Reporte_Cajeros_${new Date().toLocaleDateString('es-VE').replace(/\//g, '-')}.pdf`;

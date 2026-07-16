@@ -33,6 +33,7 @@ export const NegativeStockAlert: React.FC = () => {
     
     // Verificar cada 30 segundos
     const interval = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       checkNegativeStock();
     }, 30000);
 

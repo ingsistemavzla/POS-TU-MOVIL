@@ -673,6 +673,7 @@ export const EstadisticasPage: React.FC = () => {
     if (!userProfile?.company_id) return;
 
     const interval = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       fetchStatistics();
     }, 30000); // Actualizar cada 30 segundos
 

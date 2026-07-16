@@ -88,6 +88,7 @@ export function LiveAlerts({ alerts = [] }: LiveAlertsProps) {
 
     // Simular nuevas alertas cada 30 segundos
     const interval = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       const newAlert: Alert = {
         id: Date.now().toString(),
         type: ['success', 'warning', 'info'][Math.floor(Math.random() * 3)] as any,

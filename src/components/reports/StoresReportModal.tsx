@@ -17,7 +17,6 @@ import {
   Target
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '@/utils/currency';
-import { PDFGenerator } from '@/utils/pdfGenerator';
 
 interface StoresReportModalProps {
   isOpen: boolean;
@@ -36,8 +35,9 @@ export function StoresReportModal({ isOpen, onClose, data }: StoresReportModalPr
   const [activeTab, setActiveTab] = useState('summary');
   const [sortBy, setSortBy] = useState<'sales' | 'customers' | 'productivity' | 'growth'>('sales');
 
-  const handleExport = (format: 'pdf' | 'excel') => {
+  const handleExport = async (format: 'pdf' | 'excel') => {
     if (format === 'pdf') {
+      const { PDFGenerator } = await import('@/utils/pdfGenerator');
       const pdfGenerator = new PDFGenerator();
       const pdf = pdfGenerator.generateStoresReport(data, 'Mi Empresa');
       const filename = `Reporte_Tiendas_${new Date().toLocaleDateString('es-VE').replace(/\//g, '-')}.pdf`;

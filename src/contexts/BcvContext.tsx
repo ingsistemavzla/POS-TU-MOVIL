@@ -140,6 +140,7 @@ export function BcvProvider({ children }: { children: React.ReactNode }) {
 
     const THIRTY_MIN_MS = 30 * 60 * 1000;
     const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
       refreshRate();
     }, THIRTY_MIN_MS);
 

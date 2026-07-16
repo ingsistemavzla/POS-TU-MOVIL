@@ -104,6 +104,7 @@ export function ActivityDashboard({ data }: ActivityDashboardProps) {
 
     // Simular nuevas actividades
     const interval = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       const newActivity: ActivityItem = {
         id: Date.now().toString(),
         type: ['sale', 'user', 'inventory'][Math.floor(Math.random() * 3)] as any,
@@ -120,11 +121,13 @@ export function ActivityDashboard({ data }: ActivityDashboardProps) {
 
     // Simular cambios en usuarios activos
     const userInterval = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       setActiveUsers(prev => Math.max(15, Math.min(35, prev + (Math.random() > 0.5 ? 1 : -1))));
     }, 30000);
 
     // Simular cambios en carga del sistema
     const loadInterval = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       setSystemLoad(prev => Math.max(20, Math.min(90, prev + (Math.random() > 0.5 ? 5 : -5))));
     }, 20000);
 

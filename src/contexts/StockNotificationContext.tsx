@@ -130,6 +130,7 @@ export function StockNotificationProvider({ children }: { children: ReactNode })
     void refresh();
 
     const interval = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       void refresh();
     }, 45_000);
 

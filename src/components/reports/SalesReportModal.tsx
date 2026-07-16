@@ -17,7 +17,6 @@ import {
   PieChart
 } from 'lucide-react';
 import { formatCurrency, formatNumber } from '@/utils/currency';
-import { PDFGenerator } from '@/utils/pdfGenerator';
 import { ExecutiveReportCharts } from './ExecutiveReportCharts';
 import { useExecutiveReports } from '@/hooks/useExecutiveReports';
 
@@ -53,8 +52,9 @@ export function SalesReportModal({ isOpen, onClose, data, executiveData, dateFro
   
   const finalExecutiveData = executiveData || executiveReportData;
 
-  const handleExport = (format: 'pdf' | 'excel') => {
+  const handleExport = async (format: 'pdf' | 'excel') => {
     if (format === 'pdf') {
+      const { PDFGenerator } = await import('@/utils/pdfGenerator');
       const pdfGenerator = new PDFGenerator();
       const pdf = pdfGenerator.generateSalesReport(data, 'Mi Empresa');
       const filename = `Reporte_Ventas_${new Date().toLocaleDateString('es-VE').replace(/\//g, '-')}.pdf`;
