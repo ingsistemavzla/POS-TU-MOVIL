@@ -254,7 +254,8 @@ const getEmptyData = (): DashboardData => ({
   },
 });
 
-export function useDashboardData() {
+export function useDashboardData(options?: { enabled?: boolean }) {
+  const enabled = options?.enabled !== false;
   const { userProfile, company } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -270,6 +271,13 @@ export function useDashboardData() {
   useEffect(() => {
     let cancelled = false;
 
+    if (!enabled) {
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const fetchData = async () => {
       // Protección: si no hay usuario o compañía, devolver datos vacíos
       if (!userProfile || !company) {
@@ -282,7 +290,8 @@ export function useDashboardData() {
       }
 
       const companyId = company.id;
-      const cached = readDashboardPageCache(companyId);
+      // Cache fresca o stale: mostrar al instante y refrescar detrás
+      const cached = readDashboardPageCache(companyId, { allowStale: true });
       const hasCachedData = !!cached;
 
       if (cached && !cancelled) {
@@ -844,7 +853,7 @@ export function useDashboardData() {
     return () => {
       cancelled = true;
     };
-  }, [userProfileId, companyId, userCompanyId]); // ✅ FIX: Usar IDs estables en lugar de objetos completos
+  }, [userProfileId, companyId, userCompanyId, enabled]); // ✅ FIX: Usar IDs estables en lugar de objetos completos
 
   return { data, loading, error };
 }

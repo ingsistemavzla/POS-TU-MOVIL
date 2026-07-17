@@ -18,6 +18,8 @@ Fecha de cierre de esta tanda: **2026-07-15**
 | Alto — Historial por día (server) | Hecho: fechas livianas + load por día | `3755394` |
 | Alto — Historial día/rango + calendario | Hecho: selector día, rango ≤31d, agrupado por día | `591145a` |
 | Alto — Almacén/Artículos catálogo | Hecho: productos paginados + inventario por IDs | `2439e6c` |
+| Tanda rápida POS + Estadísticas + cache | Hecho (frontend) | (commit reciente) |
+| Índices POS clientes/productos | Script en repo — **aplicar en Supabase** | (commit reciente) |
 | Alto (`process_sale`) | **Pendiente** | — |
 
 ---
@@ -205,12 +207,61 @@ Tras el push, Render vuelve a desplegar solo. No hay migración SQL en este camb
 
 ---
 
-## Próximo (cuando se decida — nivel alto restante)
+## 8) Tanda rápida — POS + Estadísticas + cache dashboard
 
-Solo con medición y cuidado (sí pueden tocar lógica si se hacen mal):
+**POS (`POS.tsx`):**
+- Debounce búsqueda 300→180 ms
+- Límite resultados 100→50
+- Evita doble fetch Enter+debounce (mismo término)
+- Stock con requestId (no pisa respuestas viejas)
+- Invalida término al cambiar tienda
 
-1. `process_sale` set-based + auditoría única  
-2. (Opcional) paginación de página visible 20 en servidor + RPC de totales  
+**Estadísticas:**
+- Poll 30s→3 min (solo pestaña visible)
+- Refresh en segundo plano (no pantalla completa “Cargando…” al volver)
+- `useDashboardData` diferido (`enabled` tras inventario) → no bloquea carga inicial
+
+**Dashboard cache:**
+- TTL fresca 10 min; stale usable hasta 45 min mientras refresca detrás
+- `useDashboardData({ enabled })` para pantallas que no lo necesitan de inmediato
+
+**Reversión:** `git revert <hash_este_commit>` — padre previo: `a67a3db`
+
+---
+
+## 9) Índices POS — clientes + productos (aplicar en Supabase)
+
+Script: `sql/06_indices_pos_customers_products.sql`  
+Migración: `supabase/migrations/20260716210000_indexes_pos_customers_products.sql`
+
+**Índices:**
+- `idx_customers_company_id_number`
+- `idx_products_company_active_created`
+- `idx_products_name_trgm` / `sku_trgm` / `barcode_trgm` (requiere `pg_trgm`)
+- `idx_products_company_sku` / `barcode` (escáner igualdad exacta)
+
+**Cómo aplicar:** Supabase → SQL Editor → pegar y ejecutar sección B del script (o el archivo completo).  
+Verificar sección C: deben salir **7 filas**.
+
+**Reversión SQL (si hiciera falta):**
+```sql
+DROP INDEX IF EXISTS idx_customers_company_id_number;
+DROP INDEX IF EXISTS idx_products_company_active_created;
+DROP INDEX IF EXISTS idx_products_name_trgm;
+DROP INDEX IF EXISTS idx_products_sku_trgm;
+DROP INDEX IF EXISTS idx_products_barcode_trgm;
+DROP INDEX IF EXISTS idx_products_company_sku;
+DROP INDEX IF EXISTS idx_products_company_barcode;
+```
+
+---
+
+## Próximo (siguiente tanda)
+
+1. POS: 1 consulta producto+stock (RPC/join)  
+2. Estadísticas: inventario por lotes como Almacén  
+3. Dashboard RPC agregaciones  
+4. `process_sale` (delicado)  
 
 Regla sugerida: medir p50/p95 y Web Vitals antes de tocar `process_sale`.
 

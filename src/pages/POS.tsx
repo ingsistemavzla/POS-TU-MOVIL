@@ -174,7 +174,8 @@ export default function POS() {
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchRequestIdRef = useRef(0);
-  const debouncedSearchTerm = useDebounce(searchTerm, 300);
+  const lastFetchedSearchRef = useRef('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 180);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [scanMode, setScanMode] = useState(false); // búsqueda por texto por defecto
@@ -393,7 +394,10 @@ export default function POS() {
     if (!userProfile?.company_id) return;
     const q = term.trim();
     if (!q) return;
+
+    const qKey = q.toLowerCase();
     const requestId = ++searchRequestIdRef.current;
+    lastFetchedSearchRef.current = qKey;
     setIsSearching(true);
     setHasSearched(true);
 
@@ -404,7 +408,7 @@ export default function POS() {
         .filter('active', 'eq', true)
         .filter('company_id', 'eq', userProfile.company_id)
         .or(`name.ilike.%${q}%,sku.ilike.%${q}%,barcode.ilike.%${q}%`)
-        .limit(100);
+        .limit(50);
 
       if (requestId !== searchRequestIdRef.current) return;
 
@@ -414,8 +418,13 @@ export default function POS() {
       }
       const productsData = (data as unknown as Product[]) || [];
       setProducts(productsData);
-      
-      await loadProductStock(productsData);
+
+      // Stock enseguida (mismo requestId; no espera a otro debounce)
+      if (productsData.length > 0) {
+        await loadProductStock(productsData, requestId);
+      } else if (requestId === searchRequestIdRef.current) {
+        setProductStock({});
+      }
     } catch (err) {
       if (requestId !== searchRequestIdRef.current) return;
       console.error('Search products error:', err);
@@ -427,25 +436,31 @@ export default function POS() {
   };
 
   useEffect(() => {
+    // Al cambiar de tienda, invalidar caché de búsqueda para recargar stock
+    lastFetchedSearchRef.current = '';
+  }, [selectedStore?.id]);
+
+  useEffect(() => {
     if (scanMode) return;
     const q = debouncedSearchTerm.trim();
     if (!q) {
       searchRequestIdRef.current += 1;
+      lastFetchedSearchRef.current = '';
       setProducts([]);
       setHasSearched(false);
       setIsSearching(false);
       return;
     }
+    // Si Enter ya resolvió este término, no repetir (debounce)
+    if (q.toLowerCase() === lastFetchedSearchRef.current) return;
     searchProducts(q);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearchTerm, scanMode, selectedStore?.id, userProfile?.company_id]);
 
-  const loadProductStock = async (productsList: Product[]) => {
+  const loadProductStock = async (productsList: Product[], requestId?: number) => {
     if (!userProfile?.company_id || productsList.length === 0 || !selectedStore) return;
     
     try {
-      // Usar la tienda seleccionada del contexto
-      // For cashiers and managers, always use assigned store; for admin, use selected store
       const isRestrictedUser = userProfile?.role === 'cashier' || userProfile?.role === 'manager';
       const storeId = isRestrictedUser
         ? (userProfile as any)?.assigned_store_id ?? selectedStore?.id
@@ -460,27 +475,26 @@ export default function POS() {
         return;
       }
       
-      // Get inventory for all products in this store
-      // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
       const productIds = productsList.map(p => p.id);
       const { data, error } = await (supabase as any)
         .from('inventories')
         .select('product_id, qty')
         .in('product_id', productIds)
-        .eq('store_id', storeId) // ✅ KEEP: UI filter for selected store
-        // ✅ REMOVED: .eq('company_id', userProfile.company_id) - RLS handles this automatically
+        .eq('store_id', storeId);
       
+      if (requestId != null && requestId !== searchRequestIdRef.current) return;
+
       if (error) {
         console.error('Error loading product stock:', error);
         return;
       }
       
-      // Create stock map
       const stockMap: Record<string, number> = {};
       (data as any[] || []).forEach(item => {
         stockMap[item.product_id] = item.qty || 0;
       });
       
+      if (requestId != null && requestId !== searchRequestIdRef.current) return;
       setProductStock(stockMap);
     } catch (error) {
       console.error('Error loading product stock:', error);

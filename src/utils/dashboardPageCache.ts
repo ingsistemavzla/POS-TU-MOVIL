@@ -1,7 +1,10 @@
 import type { DashboardData } from '@/hooks/useDashboardData';
 
 const STORAGE_KEY = 'pos_dashboard_page_cache_v1';
-const TTL_MS = 3 * 60 * 1000;
+/** Cache “fresca”: se considera vigente para no forzar loader. */
+const TTL_MS = 10 * 60 * 1000;
+/** Cache “stale”: se puede mostrar mientras se refresca en segundo plano. */
+const STALE_TTL_MS = 45 * 60 * 1000;
 
 export interface DashboardPageCachePayload {
   data: DashboardData;
@@ -9,14 +12,19 @@ export interface DashboardPageCachePayload {
   companyId: string;
 }
 
-export function readDashboardPageCache(companyId: string): DashboardData | null {
+export function readDashboardPageCache(
+  companyId: string,
+  options?: { allowStale?: boolean }
+): DashboardData | null {
   if (typeof window === 'undefined' || !companyId) return null;
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as DashboardPageCachePayload;
     if (parsed.companyId !== companyId) return null;
-    if (Date.now() - parsed.timestamp > TTL_MS) return null;
+    const age = Date.now() - parsed.timestamp;
+    const maxAge = options?.allowStale ? STALE_TTL_MS : TTL_MS;
+    if (age > maxAge) return null;
     return parsed.data;
   } catch {
     return null;

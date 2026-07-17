@@ -81,11 +81,15 @@ interface InventorySummary {
 
 export const EstadisticasPage: React.FC = () => {
   const { userProfile } = useAuth();
-  const { data: dashboardData } = useDashboardData();
+  // Diferir dashboard pesado: primero inventario; financiamiento carga después sin bloquear pantalla
+  const [financeEnabled, setFinanceEnabled] = useState(false);
+  const { data: dashboardData } = useDashboardData({ enabled: financeEnabled });
   // 🔥 USAR LA MISMA FUNCIÓN QUE ALMACÉN: useInventoryFinancialSummary
   // Esto garantiza que los totales por categoría sean consistentes (75 para Servicio Técnico)
   const { data: financialSummary, loading: financialLoading } = useInventoryFinancialSummary(null); // null = todas las tiendas
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const hasLoadedOnceRef = React.useRef(false);
   const [storeStats, setStoreStats] = useState<Record<string, StoreStats>>({});
   const [inventorySummary, setInventorySummary] = useState<InventorySummary>({
     totalValue: 0,
@@ -109,7 +113,7 @@ export const EstadisticasPage: React.FC = () => {
   /** false = precio venta (sale_price_usd); true = costo (cost_usd), alineado con Cierres diarios */
   const [showCostValue, setShowCostValue] = useState(false);
 
-  const fetchStatistics = async () => {
+  const fetchStatistics = async (opts?: { background?: boolean }) => {
     try {
       // MASTER_ADMIN puede ver todo sin company_id
       // Otros roles requieren company_id
@@ -119,6 +123,12 @@ export const EstadisticasPage: React.FC = () => {
         console.log('No company_id found for non-master user');
         setLoading(false);
         return;
+      }
+
+      if (opts?.background && hasLoadedOnceRef.current) {
+        setIsRefreshing(true);
+      } else if (!hasLoadedOnceRef.current) {
+        setLoading(true);
       }
 
       console.time('📊 EstadisticasPage - fetchStatistics');
@@ -657,8 +667,11 @@ export const EstadisticasPage: React.FC = () => {
     } catch (error) {
       console.error('Error fetching statistics:', error);
     } finally {
-      // Solo marcar como no-loading cuando ambas consultas terminen
+      hasLoadedOnceRef.current = true;
       setLoading(false);
+      setIsRefreshing(false);
+      // Cargar bloque de financiamiento en segundo plano (no bloquea UI)
+      setFinanceEnabled(true);
     }
   };
 
@@ -668,14 +681,14 @@ export const EstadisticasPage: React.FC = () => {
     }
   }, [userProfile?.company_id]);
 
-  // 🔄 AUTO-REFRESH: Actualizar estadísticas cada 30 segundos para reflejar cambios en inventario
+  // AUTO-REFRESH cada 3 min (antes 30s): menos saturación al cambiar de pantallas
   useEffect(() => {
     if (!userProfile?.company_id) return;
 
     const interval = setInterval(() => {
       if (document.visibilityState !== 'visible') return;
-      fetchStatistics();
-    }, 30000); // Actualizar cada 30 segundos
+      fetchStatistics({ background: true });
+    }, 180000);
 
     return () => clearInterval(interval);
   }, [userProfile?.company_id]);
@@ -758,12 +771,12 @@ export const EstadisticasPage: React.FC = () => {
             {showCostValue ? 'Ver valor de venta' : 'Ver valor de costo'}
           </Button>
           <Button 
-            onClick={fetchStatistics} 
+            onClick={() => fetchStatistics({ background: true })} 
             variant="outline"
-            disabled={loading}
+            disabled={loading || isRefreshing}
             className="flex items-center gap-2"
           >
-            {loading ? (
+            {loading || isRefreshing ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Actualizando...
