@@ -18,8 +18,8 @@ Fecha de cierre de esta tanda: **2026-07-15**
 | Alto — Historial por día (server) | Hecho: fechas livianas + load por día | `3755394` |
 | Alto — Historial día/rango + calendario | Hecho: selector día, rango ≤31d, agrupado por día | `591145a` |
 | Alto — Almacén/Artículos catálogo | Hecho: productos paginados + inventario por IDs | `2439e6c` |
-| Tanda rápida POS + Estadísticas + cache | Hecho (frontend) | (commit reciente) |
-| Índices POS clientes/productos | Script en repo — **aplicar en Supabase** | (commit reciente) |
+| Tanda rápida POS + Estadísticas + cache | Hecho (frontend) | `6d2d237` |
+| Índices POS clientes/productos | Script en repo — **aplicar en Supabase** | `d7083be` |
 | Alto (`process_sale`) | **Pendiente** | — |
 
 ---
