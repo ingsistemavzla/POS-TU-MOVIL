@@ -225,7 +225,8 @@ Tras el push, Render vuelve a desplegar solo. No hay migración SQL en este camb
 - TTL fresca 10 min; stale usable hasta 45 min mientras refresca detrás
 - `useDashboardData({ enabled })` para pantallas que no lo necesitan de inmediato
 
-**Reversión:** `git revert <hash_este_commit>` — padre previo: `a67a3db`
+**Commit:** `6d2d237`  
+**Reversión:** `git revert 6d2d237 --no-edit` — padre previo: `a67a3db`
 
 ---
 
