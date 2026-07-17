@@ -20,7 +20,7 @@ Fecha de cierre de esta tanda: **2026-07-15**
 | Alto — Almacén/Artículos catálogo | Hecho: productos paginados + inventario por IDs | `2439e6c` |
 | Tanda rápida POS + Estadísticas + cache | Hecho (frontend) | `6d2d237` |
 | Índices POS clientes/productos | **Aplicado en Supabase** (2026-07-16) — 7/7 verificados | `d7083be` |
-| POS 1 consulta + Dashboard instantáneo | Hecho (frontend) | (commit reciente) |
+| POS 1 consulta + Dashboard instantáneo | Hecho (frontend) | `ffba8c9` |
 | Alto (`process_sale`) | **Pendiente** | — |
 
 ---
