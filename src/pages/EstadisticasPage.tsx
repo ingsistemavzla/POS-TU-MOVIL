@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -37,6 +37,18 @@ import { useDashboardData } from '@/hooks/useDashboardData';
 import { useInventoryFinancialSummary } from '@/hooks/useInventoryFinancialSummary';
 import { formatCurrency } from '@/utils/currency';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import {
+  fetchAllActiveProducts,
+  fetchInventoriesForProductIds,
+} from '@/utils/inventoryCatalogFetch';
+import {
+  readEstadisticasPageCache,
+  writeEstadisticasPageCache,
+} from '@/utils/estadisticasPageCache';
+
+/** Splash: mínimo breve; máximo 5s o hasta que haya datos (lo que ocurra primero). */
+const STATS_SPLASH_MIN_MS = 400;
+const STATS_SPLASH_MAX_MS = 5000;
 
 interface StoreStats {
   storeName: string;
@@ -79,14 +91,50 @@ interface InventorySummary {
   totalUnits: number;
 }
 
+/** Placeholders fijos: las 3 cards de categoría siempre ocupan espacio (sin salto de layout). */
+const EMPTY_CATEGORY_CARDS: CategoryStats[] = [
+  {
+    category: 'phones',
+    label: 'Teléfonos',
+    totalValue: 0,
+    totalCostValue: 0,
+    uniqueProducts: 0,
+    totalUnits: 0,
+    percentage: 0,
+    costPercentage: 0,
+  },
+  {
+    category: 'accessories',
+    label: 'Accesorios',
+    totalValue: 0,
+    totalCostValue: 0,
+    uniqueProducts: 0,
+    totalUnits: 0,
+    percentage: 0,
+    costPercentage: 0,
+  },
+  {
+    category: 'technical_service',
+    label: 'Servicio Técnico',
+    totalValue: 0,
+    totalCostValue: 0,
+    uniqueProducts: 0,
+    totalUnits: 0,
+    percentage: 0,
+    costPercentage: 0,
+  },
+];
+
 export const EstadisticasPage: React.FC = () => {
   const { userProfile } = useAuth();
-  // Diferir dashboard pesado: primero inventario; financiamiento carga después sin bloquear pantalla
+  // Diferir dashboard + RPC financiera: primero inventario; no saturan la red al abrir
   const [financeEnabled, setFinanceEnabled] = useState(false);
   const { data: dashboardData } = useDashboardData({ enabled: financeEnabled });
-  // 🔥 USAR LA MISMA FUNCIÓN QUE ALMACÉN: useInventoryFinancialSummary
-  // Esto garantiza que los totales por categoría sean consistentes (75 para Servicio Técnico)
-  const { data: financialSummary, loading: financialLoading } = useInventoryFinancialSummary(null); // null = todas las tiendas
+  const { data: financialSummary } = useInventoryFinancialSummary(null, {
+    enabled: financeEnabled,
+  });
+  const [showBriefSplash, setShowBriefSplash] = useState(true);
+  const [splashMinDone, setSplashMinDone] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const hasLoadedOnceRef = React.useRef(false);
@@ -113,7 +161,44 @@ export const EstadisticasPage: React.FC = () => {
   /** false = precio venta (sale_price_usd); true = costo (cost_usd), alineado con Cierres diarios */
   const [showCostValue, setShowCostValue] = useState(false);
 
-  const fetchStatistics = async (opts?: { background?: boolean }) => {
+  const hasPaintedData =
+    inventorySummary.uniqueProducts > 0 ||
+    categoryStats.length > 0 ||
+    Object.keys(storeStats).length > 0;
+
+  // Splash: mínimo 0.4s; cierra al tener datos o a los 5s (lo primero)
+  useEffect(() => {
+    const minT = window.setTimeout(() => setSplashMinDone(true), STATS_SPLASH_MIN_MS);
+    const maxT = window.setTimeout(() => setShowBriefSplash(false), STATS_SPLASH_MAX_MS);
+    return () => {
+      window.clearTimeout(minT);
+      window.clearTimeout(maxT);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (splashMinDone && hasPaintedData) {
+      setShowBriefSplash(false);
+    }
+  }, [splashMinDone, hasPaintedData]);
+
+  // Pintar cache ANTES del paint → evita “Cargando estadísticas…” largo al reabrir
+  useLayoutEffect(() => {
+    const companyId = userProfile?.company_id;
+    if (!companyId) return;
+    const cached = readEstadisticasPageCache(companyId, { allowStale: true });
+    if (!cached) return;
+    setStoreStats(cached.storeStats as Record<string, StoreStats>);
+    setInventorySummary(cached.inventorySummary as InventorySummary);
+    setCategoryStats(cached.categoryStats as CategoryStats[]);
+    setUncategorizedProducts(cached.uncategorizedProducts as UncategorizedProductRow[]);
+    setGlobalCategoryTotals(cached.globalCategoryTotals);
+    hasLoadedOnceRef.current = true;
+    setLoading(false);
+    setFinanceEnabled(true);
+  }, [userProfile?.company_id]);
+
+  const fetchStatistics = async (opts?: { background?: boolean; forceRefresh?: boolean }) => {
     try {
       // MASTER_ADMIN puede ver todo sin company_id
       // Otros roles requieren company_id
@@ -127,126 +212,65 @@ export const EstadisticasPage: React.FC = () => {
 
       if (opts?.background && hasLoadedOnceRef.current) {
         setIsRefreshing(true);
-      } else if (!hasLoadedOnceRef.current) {
-        setLoading(true);
       }
+      // No forzar pantalla completa de loading: el panel ya está visible
 
       console.time('📊 EstadisticasPage - fetchStatistics');
 
-      // ═══════════════════════════════════════════════════════════════
-      // ESTRATEGIA HÍBRIDA: Consultas paralelas con SELECT MÍNIMO
-      // Para MASTER_ADMIN: Sin filtro de company_id (ve todo)
-      // Para otros roles: Filtrado por company_id
-      // ═══════════════════════════════════════════════════════════════
-
-      // Construir query de tiendas
+      // Tiendas (misma lógica de roles)
       let storesQuery = (supabase.from('stores') as any)
         .select('id, name')
         .eq('active', true)
         .order('name');
-      
-      // Solo filtrar por company_id si NO es master_admin
+
       if (!isMasterAdmin && userProfile?.company_id) {
         storesQuery = storesQuery.eq('company_id', userProfile.company_id);
       }
 
-      // GERENTE: Solo su tienda asignada
       const isManager = userProfile?.role === 'manager';
       if (isManager && userProfile?.assigned_store_id) {
         storesQuery = storesQuery.eq('id', userProfile.assigned_store_id);
       }
 
-      // Construir query de inventario
-      // ⚠️ FILTRO CRÍTICO: JOIN con products y filtrar solo productos activos
-      // 🔥 SOLUCIÓN: Usar range() para obtener todos los registros (Supabase limita a 1000 por defecto)
-      let inventoryQuery = (supabase.from('inventories') as any)
-        .select(`
-          store_id,
-          product_id,
-          qty,
-          min_qty,
-          products!inner(
-            category,
-            sale_price_usd,
-            cost_usd,
-            active,
-            sku,
-            name
-          )
-        `)
-        .eq('products.active', true);  // ⚠️ Solo inventario de productos activos
-      
-      // 🔥 PAGINACIÓN: Obtener todos los registros en lotes de 1000
-      // Supabase tiene un límite de 1000 registros por consulta, necesitamos hacer múltiples consultas
-      
-      // Solo filtrar por company_id si NO es master_admin
-      if (!isMasterAdmin && userProfile?.company_id) {
-        inventoryQuery = inventoryQuery.eq('company_id', userProfile.company_id);
-      }
+      const isRestricted =
+        (userProfile?.role === 'cashier' || userProfile?.role === 'manager') &&
+        !!userProfile?.assigned_store_id;
+      const restrictedStoreId = isRestricted ? userProfile!.assigned_store_id! : null;
 
-      // GERENTE: Solo inventario de su tienda asignada
-      if (isManager && userProfile?.assigned_store_id) {
-        inventoryQuery = inventoryQuery.eq('store_id', userProfile.assigned_store_id);
-      }
-
-      // 🔥 PAGINACIÓN: Obtener todos los registros de inventario (Supabase limita a 1000 por consulta)
-      const fetchAllInventory = async () => {
-        const allData: any[] = [];
-        const pageSize = 1000;
-        let from = 0;
-        let hasMore = true;
-
-        while (hasMore) {
-          const pageQuery = inventoryQuery.range(from, from + pageSize - 1);
-          const { data, error } = await pageQuery;
-          
-          if (error) {
-            console.error('Error fetching inventory page:', error);
-            break;
-          }
-
-          if (data && data.length > 0) {
-            allData.push(...data);
-            from += pageSize;
-            hasMore = data.length === pageSize; // Si devolvió menos de pageSize, no hay más
-          } else {
-            hasMore = false;
-          }
-        }
-
-        console.log(`📊 [EstadisticasPage] Inventario obtenido: ${allData.length} registros (en ${Math.ceil(from / pageSize)} páginas)`);
-
-        // Filtrar por tienda si es cajero o manager
-        const isRestricted = (userProfile?.role === 'cashier' || userProfile?.role === 'manager') && userProfile?.assigned_store_id;
-        if (isRestricted) {
-          return {
-            data: allData.filter((item: any) => item.store_id === userProfile.assigned_store_id),
-            error: null
-          };
-        }
-
-        return { data: allData, error: null };
-      };
-
-      // Ejecutar consultas en PARALELO para máxima velocidad
-      const [storesResult, inventoryResult] = await Promise.all([
+      // Como Almacén: productos paginados + inventario por IDs (sin JOIN pesado)
+      const bypassCache = !!opts?.forceRefresh;
+      const [storesResult, productsData] = await Promise.all([
         storesQuery,
-        fetchAllInventory()
+        fetchAllActiveProducts({ bypassCache }),
       ]);
-
-      console.timeLog('📊 EstadisticasPage - fetchStatistics', 'Consultas completadas');
 
       if (storesResult.error) {
         console.error('Error fetching stores:', storesResult.error);
         setLoading(false);
+        setIsRefreshing(false);
         return;
       }
 
-      if (inventoryResult.error) {
-        console.error('Error fetching inventory:', inventoryResult.error);
+      const productIds = productsData.map((p) => p.id);
+      let inventoryRows: Array<{
+        product_id: string;
+        store_id: string;
+        qty: number;
+        min_qty: number;
+      }> = [];
+      try {
+        inventoryRows = await fetchInventoriesForProductIds(productIds, {
+          storeId: restrictedStoreId,
+          bypassCache,
+        });
+      } catch (inventoryError) {
+        console.error('Error fetching inventory:', inventoryError);
         setLoading(false);
+        setIsRefreshing(false);
         return;
       }
+
+      console.timeLog('📊 EstadisticasPage - fetchStatistics', 'Consultas completadas');
 
       const stores = storesResult.data || [];
       const storeMap = new Map<string, string>();
@@ -254,67 +278,36 @@ export const EstadisticasPage: React.FC = () => {
         storeMap.set(store.id, store.name);
       });
 
-      // 🔥 DEBUG: Verificar datos RAW antes de sanitizar
-      const rawInventoryData = inventoryResult.data || [];
-      const rawTechnicalService = rawInventoryData.filter((item: any) => 
-        item.products?.category === 'technical_service'
-      );
-      const rawTechnicalServiceTotal = rawTechnicalService.reduce((sum: number, item: any) => 
-        sum + Math.max(0, item.qty || 0), 0
-      );
-      console.log('📊 [EstadisticasPage] Datos RAW de Servicio Técnico:');
-      console.log('  - Items encontrados:', rawTechnicalService.length);
-      console.log('  - Total unidades (RAW):', rawTechnicalServiceTotal);
-      console.log('  - Total registros de inventario (TODOS):', rawInventoryData.length);
-      
-      // 🔥 DISTRIBUCIÓN DETALLADA POR SUCURSAL (para comparar con BD)
-      const distributionByStore = rawTechnicalService.reduce((acc: Record<string, { count: number, total: number, items: any[] }>, item: any) => {
-        const storeId = item.store_id || 'unknown';
-        const storeName = storeMap.get(storeId) || storeId;
-        if (!acc[storeName]) {
-          acc[storeName] = { count: 0, total: 0, items: [] };
-        }
-        acc[storeName].count++;
-        acc[storeName].total += Math.max(0, item.qty || 0);
-        acc[storeName].items.push({
-          product_id: item.product_id,
-          qty: item.qty,
-          store_id: item.store_id
-        });
-        return acc;
-      }, {});
-      console.log('  - Distribución por tienda (RAW):', Object.entries(distributionByStore).map(([store, data]) => ({
-        store,
-        total: data.total,
-        count: data.count,
-        items: data.items.slice(0, 3) // Primeros 3 items
-      })));
-      console.log('  - Suma de distribución:', Object.values(distributionByStore).reduce((sum, store) => sum + store.total, 0));
-      console.log('  - VALORES ESPERADOS (BD): Centro=2, La Isla=0, Store=2, Zona Gamer=71, Total=75');
+      const productById = new Map(productsData.map((p) => [p.id, p]));
 
-      // Sanitizar datos (validación rápida)
-      const sanitizedInventory = sanitizeInventoryData(inventoryResult.data || []);
-      
-      console.timeLog('📊 EstadisticasPage - fetchStatistics', `Datos sanitizados: ${sanitizedInventory.length} items`);
-      
-      // 🔥 DEBUG: Verificar datos de Servicio Técnico después de sanitizar
-      const technicalServiceItems = sanitizedInventory.filter((item: any) => 
-        item.products?.category === 'technical_service'
-      );
-      const technicalServiceTotal = technicalServiceItems.reduce((sum: number, item: any) => 
-        sum + Math.max(0, item.qty || 0), 0
-      );
-      console.log('📊 [EstadisticasPage] Servicio Técnico (después de sanitizar):');
-      console.log('  - Items encontrados:', technicalServiceItems.length);
-      console.log('  - Total unidades:', technicalServiceTotal);
-      console.log('  - Distribución por tienda:', technicalServiceItems.reduce((acc: Record<string, number>, item: any) => {
-        const storeId = item.store_id || 'unknown';
-        const storeName = storeMap.get(storeId) || storeId;
-        acc[storeName] = (acc[storeName] || 0) + Math.max(0, item.qty || 0);
-        return acc;
-      }, {}));
+      // Misma forma que antes (products embebido) para no tocar el cálculo
+      const inventoryResultData = inventoryRows
+        .map((row) => {
+          const product = productById.get(row.product_id);
+          if (!product) return null;
+          return {
+            store_id: row.store_id,
+            product_id: row.product_id,
+            qty: row.qty,
+            min_qty: row.min_qty,
+            products: {
+              category: product.category,
+              sale_price_usd: product.sale_price_usd,
+              cost_usd: product.cost_usd,
+              active: product.active,
+              sku: product.sku,
+              name: product.name,
+            },
+          };
+        })
+        .filter(Boolean);
 
-      // 3. Calcular estadísticas por sucursal
+      const sanitizedInventory = sanitizeInventoryData(inventoryResultData || []);
+
+      console.timeLog(
+        '📊 EstadisticasPage - fetchStatistics',
+        `Datos listos: ${sanitizedInventory.length} filas inventario / ${productsData.length} productos`
+      );
       const statsByStore: Record<string, StoreStats> = {};
       
       // Inicializar todas las sucursales
@@ -653,6 +646,27 @@ export const EstadisticasPage: React.FC = () => {
 
       setCategoryStats(categoryStatsArray);
 
+      if (userProfile?.company_id) {
+        writeEstadisticasPageCache(userProfile.company_id, {
+          storeStats: statsByStore,
+          inventorySummary: {
+            totalValue: Math.round(totalValue * 100) / 100,
+            totalCostValue: Math.round(totalCostValue * 100) / 100,
+            uniqueProducts,
+            totalStores: stores.length,
+            outOfStock,
+            outOfStockPercentage:
+              uniqueProducts > 0 ? Math.round((outOfStock / uniqueProducts) * 100 * 10) / 10 : 0,
+            lowStock,
+            criticalStock,
+            totalUnits,
+          },
+          categoryStats: categoryStatsArray,
+          uncategorizedProducts: uncategorizedRows,
+          globalCategoryTotals: finalGlobalTotals,
+        });
+      }
+
       console.timeEnd('📊 EstadisticasPage - fetchStatistics');
       console.log('📊 Estadísticas calculadas:', {
         tiendas: stores.length,
@@ -676,9 +690,11 @@ export const EstadisticasPage: React.FC = () => {
   };
 
   useEffect(() => {
-    if (userProfile?.company_id) {
-      fetchStatistics();
-    }
+    if (!userProfile?.company_id) return;
+
+    const hadCache = hasLoadedOnceRef.current;
+    // Con cache: refresh en background. Sin cache: fetch (panel ya visible tras splash)
+    fetchStatistics({ background: hadCache });
   }, [userProfile?.company_id]);
 
   // AUTO-REFRESH cada 3 min (antes 30s): menos saturación al cambiar de pantallas
@@ -693,37 +709,22 @@ export const EstadisticasPage: React.FC = () => {
     return () => clearInterval(interval);
   }, [userProfile?.company_id]);
 
-  if (loading) {
+  if (showBriefSplash) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{
         background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%)'
       }}>
         <div className="text-center space-y-6">
-          {/* Contenedor glass-panel para la pantalla de carga */}
           <div className="glass-panel border border-green-500/30 rounded-lg p-8 shadow-lg shadow-green-500/20">
-            {/* Logo animado con zoom in y bounce */}
             <div className="flex justify-center mb-6">
               <div className="relative">
-                {/* Círculo de fondo con pulso verde */}
                 <div className="absolute inset-0 rounded-full bg-green-500/20 animate-ping"></div>
-                <div className="absolute inset-0 rounded-full bg-green-500/10 animate-pulse"></div>
-                {/* Logo principal con animación de zoom y bounce */}
                 <div className="relative w-20 h-20 rounded-lg glass-panel border border-green-500/30 flex items-center justify-center shadow-lg shadow-green-500/50">
-                  <ShoppingCart 
-                    className="w-12 h-12 text-green-400 animate-zoom-bounce" 
-                  />
+                  <ShoppingCart className="w-12 h-12 text-green-400 animate-zoom-bounce" />
                 </div>
               </div>
             </div>
-            {/* Texto de carga */}
-            <div className="space-y-3">
-              <p className="text-lg font-semibold text-white animate-pulse">Cargando estadísticas...</p>
-              <div className="flex justify-center gap-2">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce shadow-md shadow-green-500/50" style={{ animationDelay: '0ms' }}></div>
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce shadow-md shadow-green-500/50" style={{ animationDelay: '150ms' }}></div>
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce shadow-md shadow-green-500/50" style={{ animationDelay: '300ms' }}></div>
-              </div>
-            </div>
+            <p className="text-lg font-semibold text-white animate-pulse">Cargando estadísticas...</p>
           </div>
         </div>
       </div>
@@ -733,6 +734,20 @@ export const EstadisticasPage: React.FC = () => {
   const storeStatsArray = Object.values(storeStats).sort((a, b) => 
     a.storeName.localeCompare(b.storeName)
   );
+  const isUpdating = loading || isRefreshing;
+  // Siempre 4 cards: valor total + 3 categorías (reales o placeholder)
+  const categoryCardsToShow: CategoryStats[] = (() => {
+    if (categoryStats.length === 0) return EMPTY_CATEGORY_CARDS;
+    const byCat = new Map(categoryStats.map((c) => [c.category, c]));
+    const ordered = EMPTY_CATEGORY_CARDS.map(
+      (placeholder) => byCat.get(placeholder.category) || placeholder
+    );
+    // Incluir “sin categoría” u otras si existen
+    const extras = categoryStats.filter(
+      (c) => !EMPTY_CATEGORY_CARDS.some((p) => p.category === c.category)
+    );
+    return [...ordered, ...extras];
+  })();
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -771,7 +786,7 @@ export const EstadisticasPage: React.FC = () => {
             {showCostValue ? 'Ver valor de venta' : 'Ver valor de costo'}
           </Button>
           <Button 
-            onClick={() => fetchStatistics({ background: true })} 
+            onClick={() => fetchStatistics({ background: true, forceRefresh: true })} 
             variant="outline"
             disabled={loading || isRefreshing}
             className="flex items-center gap-2"
@@ -823,7 +838,9 @@ export const EstadisticasPage: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div
-              className="text-2xl font-bold"
+              className={`text-2xl font-bold transition-opacity duration-300 ${
+                isUpdating && !hasPaintedData ? 'opacity-50 animate-pulse' : 'opacity-100'
+              }`}
               style={{ color: showCostValue ? '#f59e0b' : '#a855f7' }}
             >
               USD{' '}
@@ -838,21 +855,34 @@ export const EstadisticasPage: React.FC = () => {
             <p className="text-xs text-white/55 mt-1">
               {showCostValue ? 'Costo (USD) · entrada de mercancía' : 'Precio Venta (USD) · precio al público'}
             </p>
-            <p className="text-sm text-white/90 mt-2">
+            <p
+              className={`text-sm text-white/90 mt-2 transition-opacity duration-300 ${
+                isUpdating && !hasPaintedData ? 'opacity-50' : 'opacity-100'
+              }`}
+            >
               {inventorySummary.uniqueProducts} productos registrados en total
             </p>
-            <p className="text-sm text-white/70 mt-1">
+            <p
+              className={`text-sm text-white/70 mt-1 transition-opacity duration-300 ${
+                isUpdating && !hasPaintedData ? 'opacity-50' : 'opacity-100'
+              }`}
+            >
               {inventorySummary.totalUnits.toLocaleString()} unidades en total en todo el inventario
             </p>
-            <p className="text-xs text-white/60 mt-1">
+            <p
+              className={`text-xs text-white/60 mt-1 transition-opacity duration-300 ${
+                isUpdating && !hasPaintedData ? 'opacity-50' : 'opacity-100'
+              }`}
+            >
               en {inventorySummary.totalStores} tiendas
             </p>
           </CardContent>
         </Card>
 
-        {/* Cards de Categorías - Formato compacto */}
-        {categoryStats.map((cat) => {
+        {/* Cards de Categorías — siempre montadas (placeholder o datos reales) */}
+        {categoryCardsToShow.map((cat) => {
           const isUncategorized = cat.category === 'uncategorized';
+          const valuesPending = isUpdating && !hasPaintedData;
 
           const getCategoryIcon = () => {
             if (cat.category === 'phones') return <Smartphone className="w-4 h-4 text-blue-400" />;
@@ -917,7 +947,11 @@ export const EstadisticasPage: React.FC = () => {
                 )}
               </CardHeader>
               <CardContent>
-                <div className={`text-xl font-bold ${showCostValue ? 'text-amber-400' : colors.text}`}>
+                <div
+                  className={`text-xl font-bold transition-opacity duration-300 ${
+                    valuesPending ? 'opacity-50 animate-pulse' : 'opacity-100'
+                  } ${showCostValue ? 'text-amber-400' : colors.text}`}
+                >
                   USD{' '}
                   {(showCostValue ? cat.totalCostValue : cat.totalValue).toLocaleString('es-VE', {
                     minimumFractionDigits: 2,
@@ -927,13 +961,25 @@ export const EstadisticasPage: React.FC = () => {
                 <p className="text-xs text-white/55 mt-1">
                   {showCostValue ? 'Costo (USD)' : 'Precio Venta (USD)'}
                 </p>
-                <p className="text-sm text-white/90 mt-2">
+                <p
+                  className={`text-sm text-white/90 mt-2 transition-opacity duration-300 ${
+                    valuesPending ? 'opacity-50' : 'opacity-100'
+                  }`}
+                >
                   {cat.uniqueProducts} productos agregados
                 </p>
-                <p className="text-sm text-white/70 mt-1">
+                <p
+                  className={`text-sm text-white/70 mt-1 transition-opacity duration-300 ${
+                    valuesPending ? 'opacity-50' : 'opacity-100'
+                  }`}
+                >
                   Total unidades: {cat.totalUnits.toLocaleString()}
                 </p>
-                <p className="text-sm text-white/60 mt-1">
+                <p
+                  className={`text-sm text-white/60 mt-1 transition-opacity duration-300 ${
+                    valuesPending ? 'opacity-50' : 'opacity-100'
+                  }`}
+                >
                   % del total: {showCostValue ? cat.costPercentage : cat.percentage}%
                 </p>
                 <Badge variant="outline" className="mt-2 text-xs border-white/20">

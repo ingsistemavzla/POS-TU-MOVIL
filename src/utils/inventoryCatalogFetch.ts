@@ -6,6 +6,19 @@ const PAGE_SIZE = 1000;
 /** Tamaño seguro para `.in('product_id', …)` por request. */
 const PRODUCT_ID_CHUNK = 150;
 
+/** Cache en memoria corta: Almacén / Artículos / Estadísticas comparten catálogo. */
+const MEMORY_TTL_MS = 3 * 60 * 1000;
+
+type ProductsMem = { at: number; key: string; data: CatalogProductRow[] };
+type InvMem = {
+  at: number;
+  key: string;
+  data: Array<{ product_id: string; store_id: string; qty: number; min_qty: number }>;
+};
+
+let productsMem: ProductsMem | null = null;
+let inventoryMem: InvMem | null = null;
+
 export const PRODUCT_CATALOG_SELECT =
   'id, sku, barcode, name, category, cost_usd, sale_price_usd, tax_rate, active, created_at';
 
@@ -46,11 +59,21 @@ export interface CatalogBuildResult {
 /**
  * Productos activos con paginación por rango (evita truncar en ~1000).
  * Categoría opcional filtrada en servidor.
+ * Cache memoria ~90s para reabrir Estadísticas / Almacén sin repetir red.
  */
 export async function fetchAllActiveProducts(options?: {
   category?: string | null;
+  bypassCache?: boolean;
 }): Promise<CatalogProductRow[]> {
   const category = options?.category;
+  const cacheKey = `cat:${category ?? 'all'}`;
+
+  if (!options?.bypassCache && productsMem && productsMem.key === cacheKey) {
+    if (Date.now() - productsMem.at < MEMORY_TTL_MS) {
+      return productsMem.data;
+    }
+  }
+
   const all: CatalogProductRow[] = [];
   let from = 0;
 
@@ -75,40 +98,70 @@ export async function fetchAllActiveProducts(options?: {
     from += PAGE_SIZE;
   }
 
+  productsMem = { at: Date.now(), key: cacheKey, data: all };
   return all;
 }
 
 /**
  * Inventario solo de los product_id dados (sin JOIN a products).
  * Chunk + range para no saturar PostgREST.
+ * Cache memoria ~90s (misma clave de tienda + cantidad de IDs).
  */
 export async function fetchInventoriesForProductIds(
-  productIds: string[]
-): Promise<Array<{ product_id: string; store_id: string; qty: number }>> {
+  productIds: string[],
+  options?: { storeId?: string | null; bypassCache?: boolean }
+): Promise<Array<{ product_id: string; store_id: string; qty: number; min_qty: number }>> {
   if (productIds.length === 0) return [];
 
-  const all: Array<{ product_id: string; store_id: string; qty: number }> = [];
+  const storeId = options?.storeId ?? null;
+  const cacheKey = `inv:${storeId ?? 'all'}:${productIds.length}:${productIds[0]}:${productIds[productIds.length - 1]}`;
+
+  if (!options?.bypassCache && inventoryMem && inventoryMem.key === cacheKey) {
+    if (Date.now() - inventoryMem.at < MEMORY_TTL_MS) {
+      return inventoryMem.data;
+    }
+  }
+
+  const all: Array<{ product_id: string; store_id: string; qty: number; min_qty: number }> = [];
 
   for (let i = 0; i < productIds.length; i += PRODUCT_ID_CHUNK) {
     const chunk = productIds.slice(i, i + PRODUCT_ID_CHUNK);
     let from = 0;
 
     while (true) {
-      const { data, error } = await (supabase.from('inventories') as any)
-        .select('product_id, store_id, qty')
+      let query = (supabase.from('inventories') as any)
+        .select('product_id, store_id, qty, min_qty')
         .in('product_id', chunk)
         .range(from, from + PAGE_SIZE - 1);
 
+      if (storeId) {
+        query = query.eq('store_id', storeId);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
 
-      const rows = (data ?? []) as Array<{ product_id: string; store_id: string; qty: number }>;
+      const rows = (data ?? []) as Array<{
+        product_id: string;
+        store_id: string;
+        qty: number;
+        min_qty: number | null;
+      }>;
       if (rows.length === 0) break;
-      all.push(...rows);
+      all.push(
+        ...rows.map((r) => ({
+          product_id: r.product_id,
+          store_id: r.store_id,
+          qty: r.qty,
+          min_qty: r.min_qty ?? 0,
+        }))
+      );
       if (rows.length < PAGE_SIZE) break;
       from += PAGE_SIZE;
     }
   }
 
+  inventoryMem = { at: Date.now(), key: cacheKey, data: all };
   return all;
 }
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -124,7 +124,9 @@ export const AlmacenPage: React.FC = () => {
       }
 
       const companyId = userProfile.company_id;
-      const sessionCached = readInventoryPageCache(companyId, categoryFilter);
+      const sessionCached = readInventoryPageCache(companyId, categoryFilter, {
+        allowStale: true,
+      });
       const hasLocalData = products.length > 0;
 
       if (sessionCached && !hasLocalData) {
@@ -139,9 +141,17 @@ export const AlmacenPage: React.FC = () => {
         setIsRefetching(true);
       }
 
-      const productsData = await fetchAllActiveProducts({
-        category: categoryFilter !== 'all' ? categoryFilter : null,
-      });
+      const storesQuery = (supabase.from('stores') as any)
+        .select('id, name')
+        .eq('active', true)
+        .order('name');
+
+      const [productsData, storesResult] = await Promise.all([
+        fetchAllActiveProducts({
+          category: categoryFilter !== 'all' ? categoryFilter : null,
+        }),
+        storesQuery,
+      ]);
 
       if (!productsData) {
         setProducts([]);
@@ -149,12 +159,7 @@ export const AlmacenPage: React.FC = () => {
         return;
       }
 
-      const storesQuery = (supabase.from('stores') as any)
-        .select('id, name')
-        .eq('active', true)
-        .order('name');
-
-      const { data: storesData, error: storesError } = await storesQuery;
+      const { data: storesData, error: storesError } = storesResult;
 
       if (storesError) {
         console.error('Error fetching stores:', storesError);
@@ -200,9 +205,19 @@ export const AlmacenPage: React.FC = () => {
     }
   };
 
+  // Pintar cache antes del paint; refrescar en background (no borrar cache al montar)
+  useLayoutEffect(() => {
+    const companyId = userProfile?.company_id;
+    if (!companyId) return;
+    const cached = readInventoryPageCache(companyId, categoryFilter, { allowStale: true });
+    if (!cached) return;
+    setProducts(cached.products as Product[]);
+    setStoreInventories(cached.storeInventories as Record<string, StoreInventory[]>);
+    setLoading(false);
+  }, [userProfile?.company_id, categoryFilter]);
+
   useEffect(() => {
     if (userProfile?.company_id) {
-      clearInventoryPageCache();
       fetchData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

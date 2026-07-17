@@ -25,13 +25,22 @@ export interface FinancialSummary {
   message?: string;
 }
 
-export function useInventoryFinancialSummary(storeId?: string | null) {
+export function useInventoryFinancialSummary(
+  storeId?: string | null,
+  options?: { enabled?: boolean }
+) {
+  const enabled = options?.enabled !== false;
   const { userProfile, company } = useAuth();
   const [data, setData] = useState<FinancialSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
+
     const fetchData = async () => {
       if (!userProfile?.company_id && !company?.id) {
         setLoading(false);
@@ -106,7 +115,7 @@ export function useInventoryFinancialSummary(storeId?: string | null) {
     };
 
     fetchData();
-  }, [userProfile?.company_id, company?.id, storeId]);
+  }, [userProfile?.company_id, company?.id, storeId, enabled]);
 
   return {
     data,

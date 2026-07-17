@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useLayoutEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   DollarSign, 
@@ -29,10 +29,11 @@ import { OutOfStockAlertPanel } from '@/components/dashboard/OutOfStockAlertPane
 import { CriticalStockAlertPanel } from '@/components/dashboard/CriticalStockAlertPanel';
 import { TopProductsPanel } from '@/components/dashboard/TopProductsPanel';
 import { Progress } from '@/components/ui/progress';
+import { readDashboardPageCache } from '@/utils/dashboardPageCache';
 
 type PeriodType = 'today' | 'yesterday' | 'thisMonth';
 
-/** Splash visual breve (~0.3s). No espera a que terminen las consultas. */
+/** Splash visual breve (~0.3s). Con cache se omite. */
 const DASHBOARD_SPLASH_MS = 300;
 
 export default function Dashboard() {
@@ -40,12 +41,20 @@ export default function Dashboard() {
   const { company, userProfile } = useAuth();
   const { data: dashboardDataRaw, loading: dashboardLoading, error, refetch } = useDashboardData();
 
-  // Muestra “Cargando… / CONECTANDO…” apenas un segundo, luego el panel
   const [showBriefSplash, setShowBriefSplash] = useState(true);
+
+  // Si hay cache, no mostrar splash (panel inmediato)
+  useLayoutEffect(() => {
+    if (!company?.id) return;
+    const cached = readDashboardPageCache(company.id, { allowStale: true });
+    if (cached) setShowBriefSplash(false);
+  }, [company?.id]);
+
   useEffect(() => {
+    if (!showBriefSplash) return;
     const t = window.setTimeout(() => setShowBriefSplash(false), DASHBOARD_SPLASH_MS);
     return () => window.clearTimeout(t);
-  }, []);
+  }, [showBriefSplash]);
 
   // Diferir Krece + métodos de pago: primer paint del panel sin esperarlos
   const [secondaryEnabled, setSecondaryEnabled] = useState(false);

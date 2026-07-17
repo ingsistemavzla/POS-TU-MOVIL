@@ -1,7 +1,14 @@
-import { useState, useEffect, useLayoutEffect, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { readDashboardPageCache, writeDashboardPageCache } from '@/utils/dashboardPageCache';
+
+/**
+ * true = intentar RPC get_dashboard_sales_summary primero.
+ * Si falla (SQL no aplicado / error), fallback automático a fetch+JS.
+ * Apagar para forzar solo el path legacy.
+ */
+const USE_DASHBOARD_SALES_RPC = true;
 
 export interface DashboardData {
   // Métricas generales
@@ -183,41 +190,253 @@ const getDateRanges = () => {
   };
 };
 
-// Helper: obtener ventas de un período específico
-// 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
-const getSalesForPeriod = async (
-  companyId: string, // Mantenido para compatibilidad, pero no se usa en la query
+type SalesAgg = { total: number; count: number; average: number };
+
+type DashboardSaleRow = {
+  id: string;
+  total_usd: number;
+  total_bs: number | null;
+  created_at: string;
+  store_id: string | null;
+  krece_enabled: boolean | null;
+  krece_financed_amount_usd: number | null;
+  cashea_enabled: boolean | null;
+  cashea_financed_amount_usd: number | null;
+};
+
+const SALE_DASHBOARD_SELECT =
+  'id, total_usd, total_bs, created_at, store_id, krece_enabled, krece_financed_amount_usd, cashea_enabled, cashea_financed_amount_usd';
+
+/** Una sola descarga paginada de ventas completed en el rango (evita 4 + 3×N consultas). */
+async function fetchCompletedSalesInRange(
   startDate: Date,
-  endDate: Date,
-  storeId?: string // UI filter: Admin puede querer ver una tienda específica
-) => {
-  try {
-    let query = supabase
+  endDate: Date
+): Promise<DashboardSaleRow[]> {
+  const all: DashboardSaleRow[] = [];
+  const pageSize = 1000;
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
       .from('sales')
-      .select('id, total_usd, created_at')
-      // ✅ REMOVED: .eq('company_id', companyId) - RLS handles this automatically
-      .eq('status', 'completed')  // ✅ FIX: Only fetch completed sales
+      .select(SALE_DASHBOARD_SELECT)
+      .eq('status', 'completed')
       .gte('created_at', startDate.toISOString())
-      .lte('created_at', endDate.toISOString());
-
-    // ✅ KEEP: storeId filter is for UI filtering (admin selecting specific store), not security
-    if (storeId) {
-      query = query.eq('store_id', storeId);
-    }
-
-    const { data, error } = await query;
+      .lte('created_at', endDate.toISOString())
+      .order('created_at', { ascending: false })
+      .range(from, from + pageSize - 1);
 
     if (error) {
-      console.warn('Error fetching sales:', error);
-      return { total: 0, count: 0, average: 0 };
+      console.warn('Error fetching sales range:', error);
+      break;
     }
 
-    const sales = data || [];
-    const total = sales.reduce((sum, s) => sum + safeNum(s.total_usd), 0);
-    const count = sales.length;
-    const average = count > 0 ? total / count : 0;
+    const rows = (data || []) as DashboardSaleRow[];
+    if (rows.length === 0) break;
+    all.push(...rows);
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
 
-    return { total, count, average };
+  return all;
+}
+
+function inPeriod(iso: string, start: Date, end: Date): boolean {
+  const t = new Date(iso).getTime();
+  return t >= start.getTime() && t <= end.getTime();
+}
+
+function aggregateSales(
+  rows: DashboardSaleRow[],
+  start: Date,
+  end: Date,
+  storeId?: string
+): SalesAgg {
+  let total = 0;
+  let count = 0;
+  for (const s of rows) {
+    if (storeId && s.store_id !== storeId) continue;
+    if (!inPeriod(s.created_at, start, end)) continue;
+    total += safeNum(s.total_usd);
+    count += 1;
+  }
+  return { total, count, average: count > 0 ? total / count : 0 };
+}
+
+function financialHealthFromRows(
+  rows: DashboardSaleRow[],
+  start: Date,
+  end: Date,
+  totalGross: number
+): DashboardData['financialHealth']['today'] {
+  let totalReceivables = 0;
+  let totalKreceReceivables = 0;
+  let totalCasheaReceivables = 0;
+  const methodCount = { cash: 0, krece: 0, cashea: 0 };
+  const methodTotals = { cash: 0, krece: 0, cashea: 0 };
+
+  for (const sale of rows) {
+    if (!inPeriod(sale.created_at, start, end)) continue;
+    const totalUSD = safeNum(sale.total_usd);
+
+    if (sale.cashea_enabled) {
+      methodCount.cashea += 1;
+      methodTotals.cashea += totalUSD;
+      const casheaFinanced = safeNum(sale.cashea_financed_amount_usd || 0);
+      totalCasheaReceivables += casheaFinanced;
+      totalReceivables += casheaFinanced;
+    } else if (sale.krece_enabled) {
+      methodCount.krece += 1;
+      methodTotals.krece += totalUSD;
+      const kreceFinanced = safeNum(sale.krece_financed_amount_usd || 0);
+      totalKreceReceivables += kreceFinanced;
+      totalReceivables += kreceFinanced;
+    } else {
+      methodCount.cash += 1;
+      methodTotals.cash += totalUSD;
+    }
+  }
+
+  const netIncome = totalGross - totalReceivables;
+  return {
+    receivables_usd: totalReceivables,
+    net_income_usd: Math.max(0, netIncome),
+    sales_by_method_count: methodCount,
+    receivables_breakdown: {
+      krece_usd: totalKreceReceivables,
+      cashea_usd: totalCasheaReceivables,
+    },
+    avg_ticket_cash: methodCount.cash > 0 ? methodTotals.cash / methodCount.cash : 0,
+    avg_ticket_krece: methodCount.krece > 0 ? methodTotals.krece / methodCount.krece : 0,
+    avg_ticket_cashea: methodCount.cashea > 0 ? methodTotals.cashea / methodCount.cashea : 0,
+  };
+}
+
+function dailySalesFromRows(rows: DashboardSaleRow[], thirtyDaysAgo: Date): DashboardData['dailySales'] {
+  const dailyMap = new Map<string, { sales: number; salesUSD: number; orders: number }>();
+  for (const sale of rows) {
+    if (new Date(sale.created_at).getTime() < thirtyDaysAgo.getTime()) continue;
+    const date = new Date(sale.created_at).toISOString().split('T')[0];
+    if (!dailyMap.has(date)) {
+      dailyMap.set(date, { sales: 0, salesUSD: 0, orders: 0 });
+    }
+    const dayData = dailyMap.get(date)!;
+    dayData.sales += safeNum(sale.total_bs);
+    dayData.salesUSD += safeNum(sale.total_usd);
+    dayData.orders += 1;
+  }
+  return Array.from(dailyMap.entries())
+    .map(([date, data]) => ({ date, ...data }))
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 30);
+}
+
+type RpcPeriodAgg = { total: number; count: number; average: number };
+
+type RpcSalesSummary = {
+  error?: boolean;
+  message?: string;
+  periods?: {
+    today: RpcPeriodAgg;
+    yesterday: RpcPeriodAgg;
+    thisMonth: RpcPeriodAgg;
+    lastMonth: RpcPeriodAgg;
+  };
+  store_metrics?: Array<{
+    storeId: string;
+    sales: { today: number; yesterday: number; thisMonth: number };
+    orders: { today: number; yesterday: number; thisMonth: number };
+    averageOrder: { today: number; yesterday: number; thisMonth: number };
+  }>;
+  daily_sales?: DashboardData['dailySales'];
+  financial_health?: DashboardData['financialHealth'];
+};
+
+function salesRangeStartFromDates(dates: ReturnType<typeof getDateRanges>): Date {
+  return dates.startOfLastMonth.getTime() < dates.thirtyDaysAgo.getTime()
+    ? dates.startOfLastMonth
+    : dates.thirtyDaysAgo;
+}
+
+/** Intenta agregación en Postgres; null = usar fallback JS. */
+async function fetchSalesSummaryViaRpc(
+  companyId: string,
+  dates: ReturnType<typeof getDateRanges>
+): Promise<RpcSalesSummary | null> {
+  if (!USE_DASHBOARD_SALES_RPC) return null;
+
+  try {
+    const { data, error } = await (supabase as any).rpc('get_dashboard_sales_summary', {
+      p_company_id: companyId,
+      p_today_start: dates.today.toISOString(),
+      p_today_end: dates.todayEnd.toISOString(),
+      p_yesterday_start: dates.yesterday.toISOString(),
+      p_yesterday_end: dates.yesterdayEnd.toISOString(),
+      p_month_start: dates.startOfMonth.toISOString(),
+      p_month_end: dates.todayEnd.toISOString(),
+      p_last_month_start: dates.startOfLastMonth.toISOString(),
+      p_last_month_end: dates.endOfLastMonth.toISOString(),
+      p_thirty_days_ago: dates.thirtyDaysAgo.toISOString(),
+      p_range_start: salesRangeStartFromDates(dates).toISOString(),
+    });
+
+    if (error) {
+      console.warn('get_dashboard_sales_summary RPC error → fallback JS:', error.message || error);
+      return null;
+    }
+
+    const result = data as RpcSalesSummary | null;
+    if (!result || result.error || !result.periods) {
+      console.warn('get_dashboard_sales_summary inválido → fallback JS:', result?.message);
+      return null;
+    }
+
+    return result;
+  } catch (err) {
+    console.warn('get_dashboard_sales_summary exception → fallback JS:', err);
+    return null;
+  }
+}
+
+function mapStoreMetricsFromRpc(
+  stores: Array<{ id: string; name: string }>,
+  rpcMetrics: RpcSalesSummary['store_metrics']
+): DashboardData['storeMetrics'] {
+  const byId = new Map((rpcMetrics || []).map((m) => [m.storeId, m]));
+  return stores.map((store) => {
+    const m = byId.get(store.id);
+    return {
+      storeId: store.id,
+      storeName: store.name,
+      sales: {
+        today: safeNum(m?.sales?.today),
+        yesterday: safeNum(m?.sales?.yesterday),
+        thisMonth: safeNum(m?.sales?.thisMonth),
+      },
+      orders: {
+        today: safeNum(m?.orders?.today),
+        yesterday: safeNum(m?.orders?.yesterday),
+        thisMonth: safeNum(m?.orders?.thisMonth),
+      },
+      averageOrder: {
+        today: safeNum(m?.averageOrder?.today),
+        yesterday: safeNum(m?.averageOrder?.yesterday),
+        thisMonth: safeNum(m?.averageOrder?.thisMonth),
+      },
+    };
+  });
+}
+
+// Helper legacy (fallback si hace falta): obtener ventas de un período
+const getSalesForPeriod = async (
+  companyId: string,
+  startDate: Date,
+  endDate: Date,
+  storeId?: string
+): Promise<SalesAgg> => {
+  try {
+    const rows = await fetchCompletedSalesInRange(startDate, endDate);
+    return aggregateSales(rows, startDate, endDate, storeId);
   } catch (err) {
     console.warn('Error in getSalesForPeriod:', err);
     return { total: 0, count: 0, average: 0 };
@@ -322,7 +541,7 @@ export function useDashboardData(options?: { enabled?: boolean }) {
         const dates = getDateRanges();
 
         // ============================================
-        // 1. OBTENER ESTADÍSTICAS DE LA VISTA
+        // 1-3. Vista + tiendas + ventas (en paralelo)
         // ============================================
         let statsFromView = {
           totalProducts: 0,
@@ -331,48 +550,43 @@ export function useDashboardData(options?: { enabled?: boolean }) {
           lowStockCount: 0,
         };
 
-        try {
-          // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
-          const { data: viewData, error: viewError } = await supabase
-            .from('dashboard_stats_view')
-            .select('total_products, total_stock, total_value, low_stock_count')
-            // ✅ REMOVED: .eq('company_id', companyId) - RLS handles this automatically
-            .single();
+        const [viewOutcome, storesOutcome, rpcSummary] = await Promise.all([
+          (async () => {
+            try {
+              const { data: viewData, error: viewError } = await supabase
+                .from('dashboard_stats_view')
+                .select('total_products, total_stock, total_value, low_stock_count')
+                .single();
+              if (!viewError && viewData) {
+                return {
+                  totalProducts: safeNum(viewData.total_products),
+                  totalStock: safeNum(viewData.total_stock),
+                  totalValue: safeNum(viewData.total_value),
+                  lowStockCount: safeNum(viewData.low_stock_count),
+                };
+              }
+            } catch {
+              console.warn('Vista dashboard_stats_view no disponible, usando valores por defecto');
+            }
+            return null;
+          })(),
+          (async () => {
+            try {
+              const { data: storesData, error: storesError } = await supabase
+                .from('stores')
+                .select('id, name')
+                .eq('active', true);
+              if (!storesError && storesData) return storesData as Array<{ id: string; name: string }>;
+            } catch (err) {
+              console.warn('Error fetching stores:', err);
+            }
+            return [] as Array<{ id: string; name: string }>;
+          })(),
+          fetchSalesSummaryViaRpc(cid, dates),
+        ]);
 
-          if (!viewError && viewData) {
-            statsFromView = {
-              totalProducts: safeNum(viewData.total_products),
-              totalStock: safeNum(viewData.total_stock),
-              totalValue: safeNum(viewData.total_value),
-              lowStockCount: safeNum(viewData.low_stock_count),
-            };
-          }
-        } catch (err) {
-          console.warn('Vista dashboard_stats_view no disponible, usando valores por defecto');
-        }
-
-        // ============================================
-        // 2. OBTENER TIENDAS
-        // 🛡️ RLS: No necesitamos filtrar por company_id o role - RLS lo hace automáticamente
-        // ============================================
-        let stores: Array<{ id: string; name: string }> = [];
-
-        try {
-          // ✅ SIMPLIFIED: RLS automatically filters stores based on user's permissions
-          // Managers/Cashiers only see their assigned store, Admins see all stores in their company
-          const { data: storesData, error: storesError } = await supabase
-            .from('stores')
-            .select('id, name')
-            // ✅ REMOVED: .eq('company_id', companyId) - RLS handles this automatically
-            // ✅ REMOVED: Role-based filtering - RLS handles this automatically
-            .eq('active', true);
-          
-          if (!storesError && storesData) {
-            stores = storesData;
-          }
-        } catch (err) {
-          console.warn('Error fetching stores:', err);
-        }
+        if (viewOutcome) statsFromView = viewOutcome;
+        const stores = storesOutcome;
 
         // Si no hay tiendas, devolver datos vacíos
         if (stores.length === 0) {
@@ -382,43 +596,184 @@ export function useDashboardData(options?: { enabled?: boolean }) {
         }
 
         // ============================================
-        // 3. OBTENER VENTAS POR PERÍODO (Paralelizado con Promise.all)
-        // 🛡️ RLS: No necesitamos filtrar por role/store - RLS lo hace automáticamente
+        // 3b. Ventas: RPC o fallback descarga + agregación
         // ============================================
-        // ✅ REMOVED: Role-based store filtering - RLS handles this automatically
-        // Managers/Cashiers only see sales from their assigned store, Admins see all sales in their company
+        let todaySales: SalesAgg;
+        let yesterdaySales: SalesAgg;
+        let thisMonthSales: SalesAgg;
+        let lastMonthSales: SalesAgg;
+        let dailySales: DashboardData['dailySales'];
+        let storeMetrics: DashboardData['storeMetrics'];
+        let financialHealth: DashboardData['financialHealth'];
+        let allSalesRows: DashboardSaleRow[] | null = null;
 
-        // ✅ OPTIMIZACIÓN: Ejecutar todas las consultas de períodos en paralelo
-        const [todaySales, yesterdaySales, thisMonthSales, lastMonthSales] = await Promise.all([
-          getSalesForPeriod(companyId, dates.today, dates.todayEnd), // No store filter - RLS handles it
-          getSalesForPeriod(companyId, dates.yesterday, dates.yesterdayEnd),
-          getSalesForPeriod(companyId, dates.startOfMonth, dates.todayEnd),
-          getSalesForPeriod(companyId, dates.startOfLastMonth, dates.endOfLastMonth),
-        ]);
+        if (rpcSummary?.periods) {
+          const p = rpcSummary.periods;
+          todaySales = {
+            total: safeNum(p.today?.total),
+            count: safeNum(p.today?.count),
+            average: safeNum(p.today?.average),
+          };
+          yesterdaySales = {
+            total: safeNum(p.yesterday?.total),
+            count: safeNum(p.yesterday?.count),
+            average: safeNum(p.yesterday?.average),
+          };
+          thisMonthSales = {
+            total: safeNum(p.thisMonth?.total),
+            count: safeNum(p.thisMonth?.count),
+            average: safeNum(p.thisMonth?.average),
+          };
+          lastMonthSales = {
+            total: safeNum(p.lastMonth?.total),
+            count: safeNum(p.lastMonth?.count),
+            average: safeNum(p.lastMonth?.average),
+          };
+          dailySales = (rpcSummary.daily_sales || []).map((d) => ({
+            date: d.date,
+            sales: safeNum(d.sales),
+            salesUSD: safeNum(d.salesUSD),
+            orders: safeNum(d.orders),
+          }));
+          storeMetrics = mapStoreMetricsFromRpc(stores, rpcSummary.store_metrics);
+          financialHealth = {
+            today: {
+              ...emptyFinancialPeriod(),
+              ...(rpcSummary.financial_health?.today || {}),
+              sales_by_method_count: {
+                ...emptyFinancialPeriod().sales_by_method_count,
+                ...(rpcSummary.financial_health?.today?.sales_by_method_count || {}),
+              },
+              receivables_breakdown: {
+                ...emptyFinancialPeriod().receivables_breakdown,
+                ...(rpcSummary.financial_health?.today?.receivables_breakdown || {}),
+              },
+            },
+            yesterday: {
+              ...emptyFinancialPeriod(),
+              ...(rpcSummary.financial_health?.yesterday || {}),
+              sales_by_method_count: {
+                ...emptyFinancialPeriod().sales_by_method_count,
+                ...(rpcSummary.financial_health?.yesterday?.sales_by_method_count || {}),
+              },
+              receivables_breakdown: {
+                ...emptyFinancialPeriod().receivables_breakdown,
+                ...(rpcSummary.financial_health?.yesterday?.receivables_breakdown || {}),
+              },
+            },
+            thisMonth: {
+              ...emptyFinancialPeriod(),
+              ...(rpcSummary.financial_health?.thisMonth || {}),
+              sales_by_method_count: {
+                ...emptyFinancialPeriod().sales_by_method_count,
+                ...(rpcSummary.financial_health?.thisMonth?.sales_by_method_count || {}),
+              },
+              receivables_breakdown: {
+                ...emptyFinancialPeriod().receivables_breakdown,
+                ...(rpcSummary.financial_health?.thisMonth?.receivables_breakdown || {}),
+              },
+            },
+          };
+          (['today', 'yesterday', 'thisMonth'] as const).forEach((period) => {
+            const fh = financialHealth[period];
+            fh.receivables_usd = safeNum(fh.receivables_usd);
+            fh.net_income_usd = safeNum(fh.net_income_usd);
+            fh.avg_ticket_cash = safeNum(fh.avg_ticket_cash);
+            fh.avg_ticket_krece = safeNum(fh.avg_ticket_krece);
+            fh.avg_ticket_cashea = safeNum(fh.avg_ticket_cashea);
+            fh.receivables_breakdown.krece_usd = safeNum(fh.receivables_breakdown.krece_usd);
+            fh.receivables_breakdown.cashea_usd = safeNum(fh.receivables_breakdown.cashea_usd);
+            fh.sales_by_method_count.cash = safeNum(fh.sales_by_method_count.cash);
+            fh.sales_by_method_count.krece = safeNum(fh.sales_by_method_count.krece);
+            fh.sales_by_method_count.cashea = safeNum(fh.sales_by_method_count.cashea);
+          });
+        } else {
+          const salesRangeStart = salesRangeStartFromDates(dates);
+          allSalesRows = await fetchCompletedSalesInRange(salesRangeStart, dates.todayEnd);
+
+          todaySales = aggregateSales(allSalesRows, dates.today, dates.todayEnd);
+          yesterdaySales = aggregateSales(allSalesRows, dates.yesterday, dates.yesterdayEnd);
+          thisMonthSales = aggregateSales(allSalesRows, dates.startOfMonth, dates.todayEnd);
+          lastMonthSales = aggregateSales(
+            allSalesRows,
+            dates.startOfLastMonth,
+            dates.endOfLastMonth
+          );
+          dailySales = dailySalesFromRows(allSalesRows, dates.thirtyDaysAgo);
+          storeMetrics = stores.map((store) => {
+            const storeToday = aggregateSales(allSalesRows!, dates.today, dates.todayEnd, store.id);
+            const storeYesterday = aggregateSales(
+              allSalesRows!,
+              dates.yesterday,
+              dates.yesterdayEnd,
+              store.id
+            );
+            const storeThisMonth = aggregateSales(
+              allSalesRows!,
+              dates.startOfMonth,
+              dates.todayEnd,
+              store.id
+            );
+            return {
+              storeId: store.id,
+              storeName: store.name,
+              sales: {
+                today: storeToday.total,
+                yesterday: storeYesterday.total,
+                thisMonth: storeThisMonth.total,
+              },
+              orders: {
+                today: storeToday.count,
+                yesterday: storeYesterday.count,
+                thisMonth: storeThisMonth.count,
+              },
+              averageOrder: {
+                today: storeToday.average,
+                yesterday: storeYesterday.average,
+                thisMonth: storeThisMonth.average,
+              },
+            };
+          });
+          financialHealth = {
+            today: financialHealthFromRows(
+              allSalesRows,
+              dates.today,
+              dates.todayEnd,
+              todaySales.total || 0
+            ),
+            yesterday: financialHealthFromRows(
+              allSalesRows,
+              dates.yesterday,
+              dates.yesterdayEnd,
+              yesterdaySales.total || 0
+            ),
+            thisMonth: financialHealthFromRows(
+              allSalesRows,
+              dates.startOfMonth,
+              dates.todayEnd,
+              thisMonthSales.total || 0
+            ),
+          };
+        }
 
         // ============================================
-        // 4-7. OBTENER DATOS ADICIONALES (Paralelizado con Promise.all)
-        // 🛡️ RLS: No necesitamos filtrar por company_id o role - RLS lo hace automáticamente
+        // 4-6. DATOS ADICIONALES (paralelizados; daily ya viene de allSalesRows)
         // ============================================
         const storeIds = stores.map(s => s.id);
-        // ✅ REMOVED: Role-based store filtering - RLS handles this automatically
 
-        // ✅ OPTIMIZACIÓN: Ejecutar todas las consultas independientes en paralelo
         const [
           recentSalesResult,
           topProductsResult,
           criticalStockResult,
-          dailySalesResult
+          salesByCategoryResult,
         ] = await Promise.all([
           // 4. Ventas recientes
           (async () => {
             try {
-              // 🛡️ RLS: No necesitamos filtrar por company_id o store_id - RLS lo hace automáticamente
               const recentQuery = supabase
                 .from('sales')
                 .select('id, total_usd, total_bs, created_at, store_id, stores(name)')
-                // ✅ REMOVED: .eq('company_id', companyId) - RLS handles this automatically
-                // ✅ REMOVED: Role-based store filtering - RLS handles this automatically
+                .eq('status', 'completed')
                 .order('created_at', { ascending: false })
                 .limit(10);
 
@@ -442,16 +797,15 @@ export function useDashboardData(options?: { enabled?: boolean }) {
           // 5. Productos más vendidos
           (async () => {
             try {
-              // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
               const { data: topData, error: topError } = await supabase
                 .from('sale_items')
                 .select(`
                   qty,
                   subtotal_usd,
                   products(id, name, sku),
-                  sales!inner(store_id, stores(name), company_id)
+                  sales!inner(store_id, stores(name), company_id, created_at, status)
                 `)
-                // ✅ REMOVED: .eq('sales.company_id', companyId) - RLS handles this automatically
+                .eq('sales.status', 'completed')
                 .gte('sales.created_at', dates.startOfMonth.toISOString())
                 .limit(50);
 
@@ -488,16 +842,15 @@ export function useDashboardData(options?: { enabled?: boolean }) {
               return [];
             }
           })(),
-          // 6. Stock crítico
+          // 6. Stock crítico (tope para no bajar todo el inventario)
           (async () => {
             try {
-              // ⚠️ FILTRO CRÍTICO: JOIN con products y filtrar solo productos activos
-              // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
               const { data: stockData, error: stockError } = await supabase
                 .from('inventories')
                 .select('qty, min_qty, products!inner(id, name, sku, active), stores(id, name)')
                 .in('store_id', storeIds)
-                .eq('products.active', true);  // ⚠️ Solo inventario de productos activos
+                .eq('products.active', true)
+                .limit(500);
 
               if (stockError) throw stockError;
               if (!stockData) return [];
@@ -522,38 +875,65 @@ export function useDashboardData(options?: { enabled?: boolean }) {
               return [];
             }
           })(),
-          // 7. Ventas por día
-          (async () => {
+          // 7. Ventas por categoría (antes en serie; ahora paralelo)
+          (async (): Promise<DashboardData['salesByCategory']> => {
             try {
-              // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
-              const { data: dailyData, error: dailyError } = await supabase
-                .from('sales')
-                .select('total_usd, total_bs, created_at')
-                // ✅ REMOVED: .eq('company_id', companyId) - RLS handles this automatically
-                .gte('created_at', dates.thirtyDaysAgo.toISOString())
-                .order('created_at', { ascending: false });
+              const { data: catData, error: catError } = await supabase
+                .from('sale_items')
+                .select(`
+                  qty,
+                  subtotal_usd,
+                  products(id, category),
+                  sales!inner(company_id, created_at, status)
+                `)
+                .eq('sales.status', 'completed')
+                .gte('sales.created_at', dates.startOfMonth.toISOString())
+                .limit(200);
 
-              if (dailyError) throw dailyError;
-              if (!dailyData) return [];
+              if (catError || !catData) return [];
 
-              const dailyMap = new Map<string, { sales: number; salesUSD: number; orders: number }>();
-              (dailyData as any[]).forEach((sale: any) => {
-                const date = new Date(sale.created_at).toISOString().split('T')[0];
-                if (!dailyMap.has(date)) {
-                  dailyMap.set(date, { sales: 0, salesUSD: 0, orders: 0 });
+              const catMap = new Map<string, any>();
+              (catData as any[]).forEach((item: any) => {
+                const category = item.products?.category || 'Sin Categoría';
+                const qty = safeNum(item.qty);
+                const totalUSD = safeNum(item.subtotal_usd);
+
+                if (!catMap.has(category)) {
+                  catMap.set(category, {
+                    category,
+                    totalSales: 0,
+                    totalSalesUSD: 0,
+                    totalQuantity: 0,
+                    orderCount: 0,
+                    averageOrderValue: 0,
+                    percentage: 0,
+                  });
                 }
-                const dayData = dailyMap.get(date)!;
-                dayData.sales += safeNum(sale.total_bs);
-                dayData.salesUSD += safeNum(sale.total_usd);
-                dayData.orders += 1;
+
+                const cat = catMap.get(category)!;
+                cat.totalSalesUSD += totalUSD;
+                cat.totalSales = cat.totalSalesUSD;
+                cat.totalQuantity += qty;
+                cat.orderCount += 1;
               });
 
-              return Array.from(dailyMap.entries())
-                .map(([date, data]) => ({ date, ...data }))
-                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                .slice(0, 30);
+              const totalCatSales = Array.from(catMap.values()).reduce(
+                (sum, c) => sum + c.totalSalesUSD,
+                0
+              );
+
+              return Array.from(catMap.values())
+                .map((cat) => ({
+                  ...cat,
+                  averageOrderValue:
+                    cat.totalQuantity > 0 ? cat.totalSalesUSD / cat.totalQuantity : 0,
+                  percentage:
+                    totalCatSales > 0 ? (cat.totalSalesUSD / totalCatSales) * 100 : 0,
+                }))
+                .sort((a, b) => b.totalSalesUSD - a.totalSalesUSD)
+                .slice(0, 10);
             } catch (err) {
-              console.warn('Error fetching daily sales:', err);
+              console.warn('Error fetching sales by category:', err);
               return [];
             }
           })(),
@@ -562,53 +942,7 @@ export function useDashboardData(options?: { enabled?: boolean }) {
         const recentSales: DashboardData['recentSales'] = recentSalesResult;
         const topProducts: DashboardData['topProducts'] = topProductsResult;
         const criticalStock: DashboardData['criticalStock'] = criticalStockResult;
-        const dailySales: DashboardData['dailySales'] = dailySalesResult;
-
-        // ============================================
-        // 8. OBTENER MÉTRICAS POR TIENDA (Paralelizado con Promise.all)
-        // ============================================
-        // ✅ OPTIMIZACIÓN: Ejecutar todas las consultas de tiendas en paralelo
-        const storeMetricsPromises = stores.map(async (store) => {
-          try {
-            const [storeToday, storeYesterday, storeThisMonth] = await Promise.all([
-              getSalesForPeriod(companyId, dates.today, dates.todayEnd, store.id),
-              getSalesForPeriod(companyId, dates.yesterday, dates.yesterdayEnd, store.id),
-              getSalesForPeriod(companyId, dates.startOfMonth, dates.todayEnd, store.id),
-            ]);
-
-            return {
-              storeId: store.id,
-              storeName: store.name,
-              sales: {
-                today: storeToday.total,
-                yesterday: storeYesterday.total,
-                thisMonth: storeThisMonth.total,
-              },
-              orders: {
-                today: storeToday.count,
-                yesterday: storeYesterday.count,
-                thisMonth: storeThisMonth.count,
-              },
-              averageOrder: {
-                today: storeToday.average,
-                yesterday: storeYesterday.average,
-                thisMonth: storeThisMonth.average,
-              },
-            };
-          } catch (err) {
-            console.warn(`Error fetching metrics for store ${store.id}:`, err);
-            // Retornar métricas vacías en caso de error
-            return {
-              storeId: store.id,
-              storeName: store.name,
-              sales: { today: 0, yesterday: 0, thisMonth: 0 },
-              orders: { today: 0, yesterday: 0, thisMonth: 0 },
-              averageOrder: { today: 0, yesterday: 0, thisMonth: 0 },
-            };
-          }
-        });
-
-        const storeMetrics: DashboardData['storeMetrics'] = await Promise.all(storeMetricsPromises);
+        const salesByCategory: DashboardData['salesByCategory'] = salesByCategoryResult;
 
         // ============================================
         // 9. RESUMEN DE TIENDAS
@@ -632,171 +966,8 @@ export function useDashboardData(options?: { enabled?: boolean }) {
         });
 
         // ============================================
-        // 10. VENTAS POR CATEGORÍA (Simple)
+        // 11. SALUD FINANCIERA (ya calculada en bloque 3 RPC/fallback)
         // ============================================
-        let salesByCategory: DashboardData['salesByCategory'] = [];
-
-        try {
-          // 🛡️ RLS: No necesitamos filtrar por company_id - RLS lo hace automáticamente
-          const { data: catData, error: catError } = await supabase
-            .from('sale_items')
-            .select(`
-              qty,
-              subtotal_usd,
-              products(id, category),
-              sales!inner(company_id, created_at)
-            `)
-            // ✅ REMOVED: .eq('sales.company_id', companyId) - RLS handles this automatically
-            .gte('sales.created_at', dates.startOfMonth.toISOString())
-            .limit(50);
-
-          if (!catError && catData) {
-            const catMap = new Map<string, any>();
-
-            (catData as any[]).forEach((item: any) => {
-          const category = item.products?.category || 'Sin Categoría';
-              const qty = safeNum(item.qty);
-              const totalUSD = safeNum(item.subtotal_usd);
-          
-              if (!catMap.has(category)) {
-                catMap.set(category, {
-              category,
-              totalSales: 0,
-              totalSalesUSD: 0,
-              totalQuantity: 0,
-              orderCount: 0,
-              averageOrderValue: 0,
-                  percentage: 0,
-                });
-              }
-
-              const cat = catMap.get(category)!;
-              cat.totalSalesUSD += totalUSD;
-              cat.totalSales = cat.totalSalesUSD;
-              cat.totalQuantity += qty;
-              cat.orderCount += 1;
-            });
-
-            const totalCatSales = Array.from(catMap.values()).reduce((sum, c) => sum + c.totalSalesUSD, 0);
-
-            salesByCategory = Array.from(catMap.values())
-              .map(cat => ({
-                ...cat,
-                averageOrderValue: cat.totalQuantity > 0 ? cat.totalSalesUSD / cat.totalQuantity : 0,
-                percentage: totalCatSales > 0 ? (cat.totalSalesUSD / totalCatSales) * 100 : 0,
-              }))
-          .sort((a, b) => b.totalSalesUSD - a.totalSalesUSD)
-              .slice(0, 10);
-          }
-        } catch (err) {
-          console.warn('Error fetching sales by category:', err);
-        }
-
-        // ============================================
-        // 11. SALUD FINANCIERA REAL (Nuevo) - Por Período
-        // ============================================
-        // ✅ FIX: Función helper para calcular financialHealth para un período específico
-        const calculateFinancialHealthForPeriod = async (
-          startDate: Date,
-          endDate: Date,
-          totalGross: number
-        ): Promise<DashboardData['financialHealth']['today']> => {
-          const defaultHealth = {
-            receivables_usd: 0,
-            net_income_usd: 0,
-            sales_by_method_count: { cash: 0, krece: 0, cashea: 0 },
-            receivables_breakdown: { krece_usd: 0, cashea_usd: 0 },
-            avg_ticket_cash: 0,
-            avg_ticket_krece: 0,
-            avg_ticket_cashea: 0,
-          };
-
-          try {
-            const { data: financialSalesData, error: financialError } = await supabase
-              .from('sales')
-              .select(`
-                id,
-                total_usd,
-                krece_enabled,
-                krece_financed_amount_usd,
-                cashea_enabled,
-                cashea_financed_amount_usd
-              `)
-              .eq('status', 'completed')
-              .gte('created_at', startDate.toISOString())
-              .lte('created_at', endDate.toISOString());
-
-            if (financialError || !financialSalesData) {
-              return defaultHealth;
-            }
-
-            let totalReceivables = 0;
-            let totalKreceReceivables = 0;
-            let totalCasheaReceivables = 0;
-            const methodCount = { cash: 0, krece: 0, cashea: 0 };
-            const methodTotals = { cash: 0, krece: 0, cashea: 0 };
-
-            (financialSalesData as any[]).forEach((sale: any) => {
-              const totalUSD = safeNum(sale.total_usd);
-
-              // Contar por método y acumular totales
-              if (sale.cashea_enabled) {
-                methodCount.cashea += 1;
-                methodTotals.cashea += totalUSD;
-                const casheaFinanced = safeNum(sale.cashea_financed_amount_usd || 0);
-                totalCasheaReceivables += casheaFinanced;
-                totalReceivables += casheaFinanced;
-              } else if (sale.krece_enabled) {
-                methodCount.krece += 1;
-                methodTotals.krece += totalUSD;
-                const kreceFinanced = safeNum(sale.krece_financed_amount_usd || 0);
-                totalKreceReceivables += kreceFinanced;
-                totalReceivables += kreceFinanced;
-              } else {
-                methodCount.cash += 1;
-                methodTotals.cash += totalUSD;
-              }
-            });
-
-            // Calcular ticket promedio por método
-            const avgTicketCash = methodCount.cash > 0 ? methodTotals.cash / methodCount.cash : 0;
-            const avgTicketKrece = methodCount.krece > 0 ? methodTotals.krece / methodCount.krece : 0;
-            const avgTicketCashea = methodCount.cashea > 0 ? methodTotals.cashea / methodCount.cashea : 0;
-
-            // ✅ FIX: MÉTODO DE SUSTRACCIÓN SEGURO (Infalible)
-            // El dinero en caja es simplemente lo que vendí MENOS lo que me deben
-            const netIncome = totalGross - totalReceivables;
-
-            return {
-              receivables_usd: totalReceivables,
-              net_income_usd: Math.max(0, netIncome), // Asegurar que no sea negativo (por seguridad)
-              sales_by_method_count: methodCount,
-              receivables_breakdown: {
-                krece_usd: totalKreceReceivables,
-                cashea_usd: totalCasheaReceivables,
-              },
-              avg_ticket_cash: avgTicketCash,
-              avg_ticket_krece: avgTicketKrece,
-              avg_ticket_cashea: avgTicketCashea,
-            };
-          } catch (err) {
-            console.warn('Error calculating financial health for period:', err);
-            return defaultHealth;
-          }
-        };
-
-        // ✅ FIX: Calcular financialHealth para cada período en paralelo
-        const [financialHealthToday, financialHealthYesterday, financialHealthMonth] = await Promise.all([
-          calculateFinancialHealthForPeriod(dates.today, dates.todayEnd, todaySales.total || 0),
-          calculateFinancialHealthForPeriod(dates.yesterday, dates.yesterdayEnd, yesterdaySales.total || 0),
-          calculateFinancialHealthForPeriod(dates.startOfMonth, dates.todayEnd, thisMonthSales.total || 0),
-        ]);
-
-        const financialHealth: DashboardData['financialHealth'] = {
-          today: financialHealthToday,
-          yesterday: financialHealthYesterday,
-          thisMonth: financialHealthMonth,
-        };
 
         // ============================================
         // 12. CONSTRUIR RESPUESTA FINAL

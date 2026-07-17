@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -125,7 +125,9 @@ export const ArticulosPage: React.FC = () => {
 
       const companyId = userProfile.company_id;
 
-      const sessionCached = readInventoryPageCache(companyId, categoryFilter);
+      const sessionCached = readInventoryPageCache(companyId, categoryFilter, {
+        allowStale: true,
+      });
       if (sessionCached && products.length === 0) {
         setProducts(sessionCached.products as Product[]);
         setStoreInventories(sessionCached.storeInventories as Record<string, StoreInventory[]>);
@@ -139,25 +141,15 @@ export const ArticulosPage: React.FC = () => {
       }
 
       const cached = productsCache.current;
-      if (
+      const cacheFresh =
         cached &&
         cached.categoryScope === categoryFilter &&
-        Date.now() - cached.timestamp < CACHE_TTL
-      ) {
-        setProducts(cached.products);
-        setStoreInventories(cached.storeInventories);
-        setLoading(false);
-        setIsRefetching(false);
-        return;
-      }
+        Date.now() - cached.timestamp < CACHE_TTL;
 
-      if (cached && (Date.now() - cached.timestamp) >= CACHE_TTL) {
-        productsCache.current = null;
-        clearInventoryPageCache();
-      }
-
-      const isInitialLoad = products.length === 0 && !productsCache.current;
-      if (isInitialLoad) {
+      // Cache fresca: pintar y refrescar en background (no return temprano que deje datos viejos eternos)
+      if (cacheFresh && products.length > 0) {
+        setIsRefetching(true);
+      } else if (products.length === 0 && !sessionCached) {
         setLoading(true);
       } else {
         setIsRefetching(true);
@@ -223,25 +215,38 @@ export const ArticulosPage: React.FC = () => {
   };
 
 
+  // Pintar cache antes del paint; no borrar al montar (solo en mutaciones)
+  useLayoutEffect(() => {
+    const companyId = userProfile?.company_id;
+    if (!companyId) return;
+    const cached = readInventoryPageCache(companyId, categoryFilter, { allowStale: true });
+    if (!cached) return;
+    setProducts(cached.products as Product[]);
+    setStoreInventories(cached.storeInventories as Record<string, StoreInventory[]>);
+    productsCache.current = {
+      products: cached.products as Product[],
+      storeInventories: cached.storeInventories as Record<string, StoreInventory[]>,
+      timestamp: cached.timestamp,
+      categoryScope: categoryFilter,
+    };
+    setLoading(false);
+  }, [userProfile?.company_id, categoryFilter]);
+
   useEffect(() => {
     if (userProfile?.company_id) {
-      productsCache.current = null;
-      clearInventoryPageCache();
       fetchData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userProfile?.company_id, categoryFilter]);
 
-  // ✅ OPTIMIZACIÓN: Limpiar cache expirado periódicamente
+  // ✅ OPTIMIZACIÓN: Limpiar solo cache de memoria expirado (no session al montar)
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
-      if (productsCache.current && (now - productsCache.current.timestamp) > CACHE_TTL) {
-        console.log('[ArticulosPage] 🧹 Cache expirado, limpiando...');
+      if (productsCache.current && now - productsCache.current.timestamp > CACHE_TTL) {
         productsCache.current = null;
-      clearInventoryPageCache();
       }
-    }, 60000); // Revisar cada minuto
+    }, 60000);
 
     return () => clearInterval(interval);
   }, []);
