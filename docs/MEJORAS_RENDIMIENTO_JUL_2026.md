@@ -19,7 +19,7 @@ Fecha de cierre de esta tanda: **2026-07-15**
 | Alto — Historial día/rango + calendario | Hecho: selector día, rango ≤31d, agrupado por día | `591145a` |
 | Alto — Almacén/Artículos catálogo | Hecho: productos paginados + inventario por IDs | `2439e6c` |
 | Tanda rápida POS + Estadísticas + cache | Hecho (frontend) | `6d2d237` |
-| Índices POS clientes/productos | Script en repo — **aplicar en Supabase** | `d7083be` |
+| Índices POS clientes/productos | **Aplicado en Supabase** (2026-07-16) — 7/7 verificados | `d7083be` |
 | Alto (`process_sale`) | **Pendiente** | — |
 
 ---
@@ -243,6 +243,9 @@ Migración: `supabase/migrations/20260716210000_indexes_pos_customers_products.s
 
 **Cómo aplicar:** Supabase → SQL Editor → pegar y ejecutar sección B del script (o el archivo completo).  
 Verificar sección C: deben salir **7 filas**.
+
+**Estado 2026-07-16:** aplicado y verificado (Paso 4 = 7 filas).  
+Nota: varios índices ya existían (p. ej. `idx_customers_company_id_number`, `idx_products_name_trgm`); los faltantes (`sku_trgm`, `barcode_trgm`, `company_active_created`, etc.) se crearon con IF NOT EXISTS. Sin duplicados de cédula (Paso 2 vacío).
 
 **Reversión SQL (si hiciera falta):**
 ```sql
