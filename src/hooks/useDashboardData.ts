@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { readDashboardPageCache, writeDashboardPageCache } from '@/utils/dashboardPageCache';
@@ -235,7 +235,7 @@ const emptyFinancialPeriod = (): DashboardData['financialHealth']['today'] => ({
 });
 
 // Datos vacíos por defecto (para fallback)
-const getEmptyData = (): DashboardData => ({
+export const getEmptyDashboardData = (): DashboardData => ({
   totalSales: { today: 0, yesterday: 0, thisMonth: 0, lastMonth: 0 },
   totalSalesUSD: { today: 0, yesterday: 0, thisMonth: 0, lastMonth: 0 },
   totalOrders: { today: 0, yesterday: 0, thisMonth: 0, lastMonth: 0 },
@@ -254,19 +254,29 @@ const getEmptyData = (): DashboardData => ({
   },
 });
 
+const getEmptyData = getEmptyDashboardData;
+
 export function useDashboardData(options?: { enabled?: boolean }) {
   const enabled = options?.enabled !== false;
   const { userProfile, company } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  // ✅ FIX: Extraer IDs estables para evitar bucle infinito
-  // Los objetos userProfile y company pueden cambiar de referencia en cada render
-  // pero sus IDs son estables, así que usamos solo los IDs como dependencias
   const userProfileId = userProfile?.id;
   const companyId = company?.id;
   const userCompanyId = userProfile?.company_id;
+
+  // Pintar cache stale/fresca ANTES del paint cuando ya hay company
+  useLayoutEffect(() => {
+    if (!companyId) return;
+    const cached = readDashboardPageCache(companyId, { allowStale: true });
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+    }
+  }, [companyId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -279,9 +289,7 @@ export function useDashboardData(options?: { enabled?: boolean }) {
     }
 
     const fetchData = async () => {
-      // Protección: si no hay usuario o compañía, devolver datos vacíos
       if (!userProfile || !company) {
-        console.log('useDashboardData: No userProfile or company, returning empty data');
         if (!cancelled) {
           setData(getEmptyData());
           setLoading(false);
@@ -289,9 +297,8 @@ export function useDashboardData(options?: { enabled?: boolean }) {
         return;
       }
 
-      const companyId = company.id;
-      // Cache fresca o stale: mostrar al instante y refrescar detrás
-      const cached = readDashboardPageCache(companyId, { allowStale: true });
+      const cid = company.id;
+      const cached = readDashboardPageCache(cid, { allowStale: true });
       const hasCachedData = !!cached;
 
       if (cached && !cancelled) {
@@ -299,7 +306,6 @@ export function useDashboardData(options?: { enabled?: boolean }) {
         setLoading(false);
       }
 
-      // Timeout de seguridad (20 segundos máximo)
       const timeoutId = setTimeout(() => {
         if (cancelled) return;
         console.warn('useDashboardData: Timeout alcanzado, devolviendo datos vacíos');
@@ -308,6 +314,7 @@ export function useDashboardData(options?: { enabled?: boolean }) {
       }, 20000);
 
       try {
+        // Con cache: no bloquear UI; sin cache: loading en segundo plano (UI ya muestra shell)
         if (!hasCachedData && !cancelled) {
           setLoading(true);
         }
@@ -831,7 +838,7 @@ export function useDashboardData(options?: { enabled?: boolean }) {
 
         if (!cancelled) {
           setData(dashboardData);
-          writeDashboardPageCache(companyId, dashboardData);
+          writeDashboardPageCache(cid, dashboardData);
         }
         clearTimeout(timeoutId);
       } catch (err) {
@@ -853,7 +860,9 @@ export function useDashboardData(options?: { enabled?: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [userProfileId, companyId, userCompanyId, enabled]); // ✅ FIX: Usar IDs estables en lugar de objetos completos
+  }, [userProfileId, companyId, userCompanyId, enabled, refreshKey]);
 
-  return { data, loading, error };
+  const refetch = () => setRefreshKey((k) => k + 1);
+
+  return { data, loading, error, refetch };
 }

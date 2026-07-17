@@ -248,7 +248,7 @@ export const DashboardStoreTable: React.FC<DashboardStoreTableProps> = ({ select
     );
   }
 
-  // Estado vacío
+  // Estado vacío / esperando
   if (!data?.summary || data.summary.length === 0) {
     return (
       <Card className="glass-panel-dense">
@@ -261,7 +261,9 @@ export const DashboardStoreTable: React.FC<DashboardStoreTableProps> = ({ select
         <CardContent>
           <div className="text-center py-12 text-white/90">
             <Store className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p>No hay ventas en este periodo</p>
+            <p className={loading ? 'animate-pulse text-emerald-300/90' : ''}>
+              {loading ? 'Esperando datos...' : 'No hay ventas en este periodo'}
+            </p>
           </div>
         </CardContent>
       </Card>

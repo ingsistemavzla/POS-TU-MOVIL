@@ -353,12 +353,13 @@ export default function POS() {
     }
   }, [globalBcvRate, cart.length, isProcessingSale]);
 
-  // Recargar stock cuando cambie la tienda seleccionada
+  // Solo al cambiar de tienda: recargar stock de resultados visibles (no en cada búsqueda)
   useEffect(() => {
     if (products.length > 0 && selectedStore) {
-      loadProductStock(products);
+      void loadProductStock(products);
     }
-  }, [selectedStore, products]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStore?.id]);
 
   // Limpiar carrito y productos al cambiar de tienda (solo para Admin)
   // Esto previene mezclar inventarios de diferentes tiendas
@@ -390,6 +391,38 @@ export default function POS() {
 
   // Removed keyboard shortcuts to simplify UX per request
 
+  const resolvePosStoreId = (): string | null => {
+    const isRestrictedUser = userProfile?.role === 'cashier' || userProfile?.role === 'manager';
+    if (isRestrictedUser) {
+      return (userProfile as any)?.assigned_store_id ?? selectedStore?.id ?? null;
+    }
+    return selectedStore?.id ?? null;
+  };
+
+  /** Extrae mapa de stock desde embed inventories (1 viaje HTTP). */
+  const stockMapFromEmbedded = (
+    rows: Array<{ id: string; inventories?: Array<{ qty?: number; store_id?: string }> | { qty?: number; store_id?: string } | null }>,
+    storeId: string | null
+  ): Record<string, number> => {
+    const stockMap: Record<string, number> = {};
+    for (const row of rows) {
+      const inv = row.inventories;
+      if (!inv) {
+        stockMap[row.id] = 0;
+        continue;
+      }
+      if (Array.isArray(inv)) {
+        const match = storeId
+          ? inv.find((i) => i.store_id === storeId)
+          : inv[0];
+        stockMap[row.id] = Math.max(0, match?.qty ?? 0);
+      } else {
+        stockMap[row.id] = Math.max(0, inv.qty ?? 0);
+      }
+    }
+    return stockMap;
+  };
+
   const searchProducts = async (term: string) => {
     if (!userProfile?.company_id) return;
     const q = term.trim();
@@ -401,30 +434,61 @@ export default function POS() {
     setIsSearching(true);
     setHasSearched(true);
 
+    const storeId = resolvePosStoreId();
+
     try {
-      const { data, error } = await supabase
+      // 1 viaje: productos + inventario embebido (left) de todas las tiendas visibles por RLS;
+      // luego se toma el qty de la tienda activa en cliente.
+      const { data, error } = await (supabase as any)
         .from('products')
-        .select('id,name,sku,barcode,category,sale_price_usd')
-        .filter('active', 'eq', true)
-        .filter('company_id', 'eq', userProfile.company_id)
+        .select('id,name,sku,barcode,category,sale_price_usd, inventories!left(qty, store_id)')
+        .eq('active', true)
+        .eq('company_id', userProfile.company_id)
         .or(`name.ilike.%${q}%,sku.ilike.%${q}%,barcode.ilike.%${q}%`)
         .limit(50);
 
       if (requestId !== searchRequestIdRef.current) return;
 
       if (error) {
-        console.error('Error searching products:', error);
+        console.warn('POS search embed falló, usando 2 consultas:', error.message || error);
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('products')
+          .select('id,name,sku,barcode,category,sale_price_usd')
+          .filter('active', 'eq', true)
+          .filter('company_id', 'eq', userProfile.company_id)
+          .or(`name.ilike.%${q}%,sku.ilike.%${q}%,barcode.ilike.%${q}%`)
+          .limit(50);
+
+        if (requestId !== searchRequestIdRef.current) return;
+        if (fallbackError) {
+          console.error('Error searching products:', fallbackError);
+          return;
+        }
+        const productsData = (fallbackData as unknown as Product[]) || [];
+        setProducts(productsData);
+        if (productsData.length > 0) {
+          await loadProductStock(productsData, requestId);
+        } else {
+          setProductStock({});
+        }
         return;
       }
-      const productsData = (data as unknown as Product[]) || [];
-      setProducts(productsData);
 
-      // Stock enseguida (mismo requestId; no espera a otro debounce)
-      if (productsData.length > 0) {
-        await loadProductStock(productsData, requestId);
-      } else if (requestId === searchRequestIdRef.current) {
-        setProductStock({});
-      }
+      const rows = (data || []) as Array<{
+        id: string;
+        name: string;
+        sku: string;
+        barcode: string | null;
+        category: string | null;
+        sale_price_usd: number;
+        inventories?: unknown;
+      }>;
+
+      const productsData: Product[] = rows.map(({ inventories: _inv, ...rest }) => rest as Product);
+      const stockMap = stockMapFromEmbedded(rows as any, storeId);
+
+      setProducts(productsData);
+      setProductStock(stockMap);
     } catch (err) {
       if (requestId !== searchRequestIdRef.current) return;
       console.error('Search products error:', err);
@@ -458,14 +522,11 @@ export default function POS() {
   }, [debouncedSearchTerm, scanMode, selectedStore?.id, userProfile?.company_id]);
 
   const loadProductStock = async (productsList: Product[], requestId?: number) => {
-    if (!userProfile?.company_id || productsList.length === 0 || !selectedStore) return;
-    
+    if (!userProfile?.company_id || productsList.length === 0) return;
+
     try {
-      const isRestrictedUser = userProfile?.role === 'cashier' || userProfile?.role === 'manager';
-      const storeId = isRestrictedUser
-        ? (userProfile as any)?.assigned_store_id ?? selectedStore?.id
-        : selectedStore?.id;
-      
+      const storeId = resolvePosStoreId();
+
       if (!storeId) {
         toast({
           title: "Error",
@@ -474,26 +535,26 @@ export default function POS() {
         });
         return;
       }
-      
+
       const productIds = productsList.map(p => p.id);
       const { data, error } = await (supabase as any)
         .from('inventories')
         .select('product_id, qty')
         .in('product_id', productIds)
         .eq('store_id', storeId);
-      
+
       if (requestId != null && requestId !== searchRequestIdRef.current) return;
 
       if (error) {
         console.error('Error loading product stock:', error);
         return;
       }
-      
+
       const stockMap: Record<string, number> = {};
       (data as any[] || []).forEach(item => {
         stockMap[item.product_id] = item.qty || 0;
       });
-      
+
       if (requestId != null && requestId !== searchRequestIdRef.current) return;
       setProductStock(stockMap);
     } catch (error) {
@@ -717,23 +778,34 @@ export default function POS() {
         return;
       }
 
-      // If not found in loaded products, try to fetch from database
+      const storeId = resolvePosStoreId();
       const { data, error } = await (supabase as any)
         .from('products')
-        .select('id,name,sku,barcode,category,sale_price_usd')
+        .select('id,name,sku,barcode,category,sale_price_usd, inventories!left(qty, store_id)')
         .or(`barcode.eq.${barcode},sku.eq.${barcode}`)
-        .filter('active', 'eq', true)
-        .filter('company_id', 'eq', userProfile?.company_id as string)
-        .single();
-      
+        .eq('active', true)
+        .eq('company_id', userProfile?.company_id as string)
+        .maybeSingle();
+
       if (error) {
         console.error('Error searching product by barcode:', error);
         alert(`Error buscando producto: ${error.message}`);
         return;
       }
-      
+
       if (data) {
-        await addToCart(data as unknown as Product);
+        const { inventories, ...rest } = data;
+        const productRow = rest as Product;
+        const stockMap = stockMapFromEmbedded(
+          [{ id: productRow.id, inventories }],
+          storeId
+        );
+        setProductStock((prev) => ({ ...prev, ...stockMap }));
+        setProducts((prev) => {
+          if (prev.some((p) => p.id === productRow.id)) return prev;
+          return [productRow, ...prev];
+        });
+        await addToCart(productRow);
       } else {
         alert(`Producto con código ${barcode} no encontrado`);
       }

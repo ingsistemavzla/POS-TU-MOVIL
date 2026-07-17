@@ -20,6 +20,7 @@ Fecha de cierre de esta tanda: **2026-07-15**
 | Alto — Almacén/Artículos catálogo | Hecho: productos paginados + inventario por IDs | `2439e6c` |
 | Tanda rápida POS + Estadísticas + cache | Hecho (frontend) | `6d2d237` |
 | Índices POS clientes/productos | **Aplicado en Supabase** (2026-07-16) — 7/7 verificados | `d7083be` |
+| POS 1 consulta + Dashboard instantáneo | Hecho (frontend) | (commit reciente) |
 | Alto (`process_sale`) | **Pendiente** | — |
 
 ---
@@ -260,14 +261,51 @@ DROP INDEX IF EXISTS idx_products_company_barcode;
 
 ---
 
+## 10) POS — producto + stock en 1 consulta
+
+**Archivo:** `src/pages/POS.tsx`
+
+**Qué:**
+- Búsqueda con `inventories!left(qty, store_id)` en el mismo SELECT
+- Stock de la tienda activa se arma en cliente (sin 2.º round-trip)
+- Fallback a 2 consultas si el embed falla
+- Escáner barcode también trae stock embebido
+- Eliminado doble fetch de stock al cambiar `products` (solo al cambiar tienda)
+
+**Cómo verificar:**
+- POS → buscar producto → stock visible sin demora extra
+- Escáner → agrega al carrito con stock correcto
+- Cambiar tienda (admin) → stock se recalcula
+
+---
+
+## 11) Dashboard — panel instantáneo (sin pantalla “CONECTANDO…”)
+
+**Archivos:** `Dashboard.tsx`, `useDashboardData.ts`, `usePaymentMethodsData.ts`, `useKreceStats.ts`, `App.tsx`, `DashboardInstantFallback.tsx`
+
+**Qué:**
+- Nunca bloquea con loader a pantalla completa: muestra el panel al instante (cache o ceros)
+- Cifras se recalculan en segundo plano; hint “Actualizando…”
+- Krece + métodos de pago se difieren ~200 ms (no compiten con el primer paint)
+- Suspense del chunk usa skeleton liviano (no `LoadingScreen`)
+- Botón Actualizar sí dispara `refetch`
+
+**Cómo verificar:**
+- Login admin → Dashboard aparece de inmediato (sin eternidad en “Cargando datos…”)
+- Números se rellenan/actualizan detrás
+- 2.ª visita en la sesión: cifras cache casi al instante
+
+**Nota:** Hacer del panel Estadísticas la home del admin es opcional (manager ya entra a Estadísticas). Prioridad: Dashboard instantáneo.
+
+---
+
 ## Próximo (siguiente tanda)
 
-1. POS: 1 consulta producto+stock (RPC/join)  
-2. Estadísticas: inventario por lotes como Almacén  
-3. Dashboard RPC agregaciones  
-4. `process_sale` (delicado)  
+1. Estadísticas: inventario por lotes como Almacén  
+2. Dashboard RPC agregaciones (menos 3×N queries)  
+3. `process_sale` (delicado)  
 
-Regla sugerida: medir p50/p95 y Web Vitals antes de tocar `process_sale`.
+Regla sugerida: medir antes de tocar `process_sale`.
 
 ---
 

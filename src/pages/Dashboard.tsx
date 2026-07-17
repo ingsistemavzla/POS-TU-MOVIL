@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   DollarSign, 
@@ -15,7 +15,7 @@ import {
   TrendingDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useDashboardData } from '@/hooks/useDashboardData';
+import { useDashboardData, getEmptyDashboardData } from '@/hooks/useDashboardData';
 import { useKreceStats } from '@/hooks/useKreceStats';
 import { usePaymentMethodsData } from '@/hooks/usePaymentMethodsData';
 import { useAuth } from '@/contexts/AuthContext';
@@ -32,29 +32,60 @@ import { Progress } from '@/components/ui/progress';
 
 type PeriodType = 'today' | 'yesterday' | 'thisMonth';
 
+/** Splash visual breve (~0.3s). No espera a que terminen las consultas. */
+const DASHBOARD_SPLASH_MS = 300;
+
 export default function Dashboard() {
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('today');
   const { company, userProfile } = useAuth();
-  const { data: dashboardData, loading: dashboardLoading, error } = useDashboardData();
-  const { stats: kreceStats } = useKreceStats(selectedPeriod);
-  const { data: paymentMethodsDataResponse } = usePaymentMethodsData(selectedPeriod);
+  const { data: dashboardDataRaw, loading: dashboardLoading, error, refetch } = useDashboardData();
+
+  // Muestra “Cargando… / CONECTANDO…” apenas un segundo, luego el panel
+  const [showBriefSplash, setShowBriefSplash] = useState(true);
+  useEffect(() => {
+    const t = window.setTimeout(() => setShowBriefSplash(false), DASHBOARD_SPLASH_MS);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  // Diferir Krece + métodos de pago: primer paint del panel sin esperarlos
+  const [secondaryEnabled, setSecondaryEnabled] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => setSecondaryEnabled(true), 200);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  const { stats: kreceStats } = useKreceStats(selectedPeriod, { enabled: secondaryEnabled });
+  const { data: paymentMethodsDataResponse } = usePaymentMethodsData(selectedPeriod, {
+    enabled: secondaryEnabled,
+  });
   const paymentData = paymentMethodsDataResponse?.data || paymentMethodsDataResponse;
   
-  // Obtener datos de pagos del período anterior para comparación
   const previousPeriod: PeriodType = 
     selectedPeriod === 'today' ? 'yesterday' :
     selectedPeriod === 'yesterday' ? 'today' :
     'today';
   
-  const { data: previousPaymentDataResponse } = usePaymentMethodsData(previousPeriod);
+  const { data: previousPaymentDataResponse } = usePaymentMethodsData(previousPeriod, {
+    enabled: secondaryEnabled,
+  });
   const previousPaymentData = previousPaymentDataResponse?.data || previousPaymentDataResponse;
   
   const [refreshing, setRefreshing] = useState(false);
 
+  // Siempre hay datos para pintar (cache, vacíos o frescos)
+  const dashboardData = dashboardDataRaw ?? getEmptyDashboardData();
+  const isRefreshingData = dashboardLoading || refreshing;
+  const showStaleHint = dashboardLoading && !!dashboardDataRaw;
+
   const handleRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
+    refetch();
+    window.setTimeout(() => setRefreshing(false), 800);
   };
+
+  if (showBriefSplash) {
+    return <DashboardPageLoader />;
+  }
 
   // Función para obtener datos según el período
   const getPeriodData = () => {
@@ -150,36 +181,8 @@ export default function Dashboard() {
 
   const totalPaymentUSD = paymentData?.totalUSD || 0;
 
-  if (dashboardLoading && !dashboardData) {
-    return <DashboardPageLoader />;
-  }
-
-  // Error state
-  if (error) {
-    return (
-      <div className="space-y-6 p-4 sm:p-6">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-white mb-2">Error al cargar datos</h3>
-            <p className="text-white/90">{error}</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Empty state
-  if (!dashboardData) {
-    return (
-      <div className="space-y-6 p-4 sm:p-6">
-        <div className="text-center py-8">
-          <Package className="w-12 h-12 mx-auto mb-4 opacity-50 text-white/90" />
-          <p className="text-white/90">No hay datos para mostrar</p>
-        </div>
-      </div>
-    );
-  }
+  // Error no bloqueante: se muestra banner, el panel sigue visible
+  // (ya no hay pantalla completa "Cargando datos del dashboard...")
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -190,6 +193,17 @@ export default function Dashboard() {
           <p className="text-sm text-white/90 mt-1">
             {company?.name} - Resumen de ventas y métricas
           </p>
+          {isRefreshingData && (
+            <p className="text-xs text-emerald-300/90 mt-1 flex items-center gap-1.5">
+              <RefreshCw className="w-3 h-3 animate-spin" />
+              {showStaleHint ? 'Actualizando cifras en segundo plano…' : 'Cargando cifras…'}
+            </p>
+          )}
+          {error && (
+            <p className="text-xs text-amber-300 mt-1">
+              No se pudo refrescar todo: {error}. Se muestran los últimos datos disponibles.
+            </p>
+          )}
         </div>
         <div className="flex items-center space-x-2">
           <button
@@ -226,10 +240,10 @@ export default function Dashboard() {
             variant="outline"
             size="sm"
             onClick={handleRefresh}
-            disabled={dashboardLoading || refreshing}
+            disabled={isRefreshingData}
             className="ml-2"
           >
-            <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshingData ? 'animate-spin' : ''}`} />
             Actualizar
           </Button>
         </div>
@@ -385,6 +399,7 @@ export default function Dashboard() {
                 netIncomePercentage={liquidityPercentage}
                 receivablesPercentage={creditPercentage}
                 className="h-[200px]"
+                awaitingData={isRefreshingData}
               />
             </CardContent>
           </Card>
@@ -503,7 +518,9 @@ export default function Dashboard() {
               </ResponsiveContainer>
             ) : (
               <div className="flex items-center justify-center h-[300px] text-white/90">
-                <p>No hay datos de tiendas</p>
+                <p className={isRefreshingData ? 'animate-pulse text-emerald-300/90' : ''}>
+                  {isRefreshingData ? 'Esperando datos...' : 'No hay datos de tiendas'}
+                </p>
               </div>
             )}
           </CardContent>
@@ -587,7 +604,11 @@ export default function Dashboard() {
               </>
             ) : (
               <div className="flex items-center justify-center h-[300px] text-white/90">
-                <p>No hay datos de pagos</p>
+                <p className={isRefreshingData || !secondaryEnabled ? 'animate-pulse text-emerald-300/90' : ''}>
+                  {isRefreshingData || !secondaryEnabled
+                    ? 'Esperando datos...'
+                    : 'No hay datos de pagos'}
+                </p>
               </div>
             )}
           </CardContent>
@@ -675,7 +696,7 @@ export default function Dashboard() {
       </div>
 
       {/* Top Productos — encima de Rendimiento por Sucursal */}
-      <TopProductsPanel products={dashboardData.topProducts} />
+      <TopProductsPanel products={dashboardData.topProducts} awaitingData={isRefreshingData} />
 
       {/* Tabla de Rendimiento por Sucursal */}
       <div className="mt-8">

@@ -19,7 +19,11 @@ export interface PaymentMethodsData {
 
 type PeriodType = 'today' | 'yesterday' | 'thisMonth';
 
-export function usePaymentMethodsData(selectedPeriod: PeriodType = 'today') {
+export function usePaymentMethodsData(
+  selectedPeriod: PeriodType = 'today',
+  options?: { enabled?: boolean }
+) {
+  const enabled = options?.enabled !== false;
   const { userProfile } = useAuth();
   const [data, setData] = useState<PaymentMethodsData>({
     totalUSD: 0,
@@ -31,6 +35,7 @@ export function usePaymentMethodsData(selectedPeriod: PeriodType = 'today') {
   });
 
   const fetchPaymentMethodsData = async () => {
+    if (!enabled) return;
     if (!userProfile?.company_id) {
       console.log('usePaymentMethodsData: No company_id, returning empty data');
       setData(prev => ({ ...prev, loading: false }));
@@ -174,8 +179,13 @@ export function usePaymentMethodsData(selectedPeriod: PeriodType = 'today') {
   };
 
   useEffect(() => {
+    if (!enabled) {
+      setData((prev) => ({ ...prev, loading: false }));
+      return;
+    }
     fetchPaymentMethodsData();
-  }, [userProfile?.company_id, selectedPeriod]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userProfile?.company_id, selectedPeriod, enabled]);
 
   return {
     data,

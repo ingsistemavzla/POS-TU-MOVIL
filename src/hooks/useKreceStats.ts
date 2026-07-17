@@ -295,8 +295,12 @@ const fetchKreceStatsData = async (companyId: string, selectedPeriod: PeriodType
   return stats;
 };
 
-export function useKreceStats(selectedPeriod: PeriodType = 'today') {
+export function useKreceStats(
+  selectedPeriod: PeriodType = 'today',
+  options?: { enabled?: boolean }
+) {
   const { userProfile } = useAuth();
+  const enabled = (options?.enabled !== false) && !!userProfile?.company_id;
 
   const {
     data,
@@ -311,10 +315,10 @@ export function useKreceStats(selectedPeriod: PeriodType = 'today') {
       }
       return fetchKreceStatsData(userProfile.company_id, selectedPeriod);
     },
-    enabled: !!userProfile?.company_id, // Solo ejecutar si hay company_id
+    enabled,
     staleTime: 1000 * 60 * 5, // 5 minutos
-    retry: 2, // Reintentar 2 veces en caso de error
-    retryDelay: 1000, // Esperar 1 segundo entre reintentos
+    retry: 2,
+    retryDelay: 1000,
   });
 
   // Retornar datos con valores por defecto si no hay datos

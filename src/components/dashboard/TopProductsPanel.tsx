@@ -13,11 +13,13 @@ interface TopProduct {
 
 interface TopProductsPanelProps {
   products: TopProduct[];
+  /** Mientras llegan/actualizan datos del dashboard */
+  awaitingData?: boolean;
 }
 
 const SCROLL_HEIGHT = 'h-[480px]';
 
-export function TopProductsPanel({ products }: TopProductsPanelProps) {
+export function TopProductsPanel({ products, awaitingData = false }: TopProductsPanelProps) {
   const uniqueProducts = products
     .filter((product, index, self) => index === self.findIndex((p) => p.id === product.id))
     .slice(0, 10);
@@ -79,7 +81,9 @@ export function TopProductsPanel({ products }: TopProductsPanelProps) {
           </div>
         ) : (
           <div className={`flex items-center justify-center text-white/90 ${SCROLL_HEIGHT}`}>
-            <p>No hay productos vendidos</p>
+            <p className={awaitingData ? 'animate-pulse text-emerald-300/90' : ''}>
+              {awaitingData ? 'Esperando datos...' : 'No hay productos vendidos'}
+            </p>
           </div>
         )}
       </CardContent>
