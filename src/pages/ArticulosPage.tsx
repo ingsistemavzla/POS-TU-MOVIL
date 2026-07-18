@@ -993,31 +993,35 @@ export const ArticulosPage: React.FC = () => {
       )}
 
 
-      {/* Confirmación centrada tras actualizar stock (no toast lateral) */}
+      {/* Confirmación centrada tras actualizar stock (fondo verde, letras blancas) */}
       <AlertDialog
         open={stockConfirm.open}
         onOpenChange={(open) => setStockConfirm((prev) => ({ ...prev, open }))}
       >
-        <AlertDialogContent className="glass-panel border border-emerald-500/40">
+        <AlertDialogContent className="!bg-emerald-700 !text-white border-2 border-emerald-500 shadow-xl shadow-emerald-900/40 sm:rounded-xl">
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-emerald-300">
-              <CheckCircle2 className="h-5 w-5" />
+            <AlertDialogTitle className="flex items-center gap-2 !text-white text-xl">
+              <CheckCircle2 className="h-6 w-6 text-white shrink-0" />
               Stock actualizado
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-white/80 space-y-2">
-              <span className="block">
-                <strong className="text-white">{stockConfirm.productName}</strong>
-              </span>
-              <span className="block">
-                Sucursal: <strong className="text-white">{stockConfirm.storeName}</strong>
-              </span>
-              <span className="block text-base text-emerald-200">
-                Nueva cantidad: <strong>{stockConfirm.newQty}</strong> unidades
-              </span>
+            <AlertDialogDescription asChild>
+              <div className="!text-white/95 space-y-2 text-sm text-left">
+                <p className="font-semibold text-white text-base leading-snug">
+                  {stockConfirm.productName}
+                </p>
+                <p>
+                  Sucursal:{' '}
+                  <span className="font-semibold text-white">{stockConfirm.storeName}</span>
+                </p>
+                <p className="text-base">
+                  Nueva cantidad:{' '}
+                  <span className="font-bold text-white">{stockConfirm.newQty}</span> unidades
+                </p>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction className="bg-emerald-600 hover:bg-emerald-500 text-white">
+            <AlertDialogAction className="bg-white text-emerald-800 hover:bg-emerald-50 font-semibold border-0">
               Entendido
             </AlertDialogAction>
           </AlertDialogFooter>
