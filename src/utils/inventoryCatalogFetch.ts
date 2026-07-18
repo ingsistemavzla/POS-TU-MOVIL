@@ -19,6 +19,12 @@ type InvMem = {
 let productsMem: ProductsMem | null = null;
 let inventoryMem: InvMem | null = null;
 
+/** Invalidar cache memoria tras mutar stock (evitar UI que “vuelve” al valor viejo). */
+export function invalidateInventoryCatalogMemory(): void {
+  productsMem = null;
+  inventoryMem = null;
+}
+
 export const PRODUCT_CATALOG_SELECT =
   'id, sku, barcode, name, category, cost_usd, sale_price_usd, tax_rate, active, created_at';
 

@@ -55,6 +55,7 @@ import {
   fetchAllActiveProducts,
   fetchInventoriesForProductIds,
   buildCatalogWithStock,
+  invalidateInventoryCatalogMemory,
 } from '@/utils/inventoryCatalogFetch';
 
 interface Product {
@@ -257,6 +258,7 @@ export const AlmacenPage: React.FC = () => {
     if (!inventory || inventory.tempQty === undefined) return;
 
     const newQty = Math.max(0, Math.floor(inventory.tempQty));
+    const oldQty = inventory.qty;
 
     try {
       const { error } = await (supabase as any).rpc('update_store_inventory', {
@@ -269,7 +271,7 @@ export const AlmacenPage: React.FC = () => {
         throw error;
       }
 
-      // Actualizar estado local
+      // Actualizar estado local de inmediato
       setStoreInventories(prev => {
         const updated = { ...prev };
         updated[productId] = updated[productId].map(inv => {
@@ -280,9 +282,19 @@ export const AlmacenPage: React.FC = () => {
         });
         return updated;
       });
+      setProducts((prev) =>
+        prev.map((p) => {
+          if (p.id !== productId) return p;
+          const nextByStore = { ...(p.stockByStore || {}) };
+          nextByStore[storeId] = newQty;
+          const total = Object.values(nextByStore).reduce((s, q) => s + (q || 0), 0);
+          return { ...p, stockByStore: nextByStore, total_stock: total };
+        })
+      );
 
-      // Recargar datos desde el backend para obtener total_stock actualizado
-      await fetchData();
+      clearInventoryPageCache();
+      invalidateInventoryCatalogMemory();
+      void fetchData();
 
       toast({
         variant: "success",
@@ -291,6 +303,16 @@ export const AlmacenPage: React.FC = () => {
       });
     } catch (error: any) {
       console.error('Error updating stock:', error);
+      setStoreInventories(prev => {
+        const updated = { ...prev };
+        updated[productId] = updated[productId].map(inv => {
+          if (inv.store_id === storeId) {
+            return { ...inv, qty: oldQty, editing: false, tempQty: undefined };
+          }
+          return inv;
+        });
+        return updated;
+      });
       toast({
         title: "Error",
         description: error.message || "No se pudo actualizar el stock",
@@ -351,6 +373,8 @@ export const AlmacenPage: React.FC = () => {
 
       // Cerrar modal y recargar datos
       setDeletingProduct(null);
+      clearInventoryPageCache();
+      invalidateInventoryCatalogMemory();
       await fetchData();
     } catch (error: any) {
       console.error('Error deleting product:', error);
@@ -437,6 +461,8 @@ export const AlmacenPage: React.FC = () => {
       });
 
       // Recargar datos
+      clearInventoryPageCache();
+      invalidateInventoryCatalogMemory();
       await fetchData();
     } catch (error: any) {
       console.error('Error transferring:', error);
@@ -995,6 +1021,8 @@ export const AlmacenPage: React.FC = () => {
             setEditingProduct(null);
           }}
           onSuccess={() => {
+            clearInventoryPageCache();
+            invalidateInventoryCatalogMemory();
             fetchData();
             setShowForm(false);
             setEditingProduct(null);

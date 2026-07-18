@@ -25,6 +25,7 @@ Fecha de cierre de esta tanda: **2026-07-16** (cierre UX + RPC Dashboard + cache
 | → Dashboard agregación + **RPC** | SQL **aplicado** + frontend + fallback | `sql/13_…` |
 | → Dashboard paralelo + Almacén/Artículos reopen | Frontend | |
 | Futuro (roadmap) | **Pendiente** | ver §17 |
+| RLS `web_product_metadata` + `admin_activity_log` | Script en repo; **aplicar en Supabase** | `sql/14_fix_rls_web_metadata_admin_log.sql` |
 | `process_sale` | **Pendiente (alto riesgo)** | último en la cola |
 
 ---

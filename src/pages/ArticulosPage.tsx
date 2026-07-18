@@ -23,6 +23,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -38,7 +47,9 @@ import {
   DollarSign,
   Save,
   X,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Loader2,
+  CheckCircle2,
 } from 'lucide-react';
 import { ProductForm } from '../components/pos/ProductForm';
 import { useToast } from '@/hooks/use-toast';
@@ -57,6 +68,7 @@ import {
   fetchAllActiveProducts,
   fetchInventoriesForProductIds,
   buildCatalogWithStock,
+  invalidateInventoryCatalogMemory,
 } from '@/utils/inventoryCatalogFetch';
 
 interface Product {
@@ -104,6 +116,13 @@ export const ArticulosPage: React.FC = () => {
   const [editingPopover, setEditingPopover] = useState<{ productId: string; storeId: string } | null>(null);
   const [transferPopover, setTransferPopover] = useState<{ productId: string; storeId: string } | null>(null);
   const [editQty, setEditQty] = useState<number>(0);
+  const [stockSaving, setStockSaving] = useState(false);
+  const [stockConfirm, setStockConfirm] = useState<{
+    open: boolean;
+    storeName: string;
+    newQty: number;
+    productName: string;
+  }>({ open: false, storeName: '', newQty: 0, productName: '' });
 
   // ✅ OPTIMIZACIÓN: Cache de productos e inventario con TTL
   const productsCache = useRef<{
@@ -258,14 +277,20 @@ export const ArticulosPage: React.FC = () => {
     setEditingPopover({ productId, storeId });
   };
 
-  // Guardar edición de stock - REUTILIZA LA MISMA FUNCIÓN DE AlmacenPage (LÓGICA INTACTA)
+  // Guardar edición de stock (feedback claro + invalidar cache memoria)
   const saveStock = async (productId: string, storeId: string) => {
     if (!editingPopover || editingPopover.productId !== productId || editingPopover.storeId !== storeId) {
       return;
     }
+    if (stockSaving) return;
 
     const newQty = Math.max(0, Math.floor(editQty));
+    const invRow = storeInventories[productId]?.find((inv) => inv.store_id === storeId);
+    const oldQty = invRow?.qty ?? 0;
+    const storeName = invRow?.store_name || 'Sucursal';
+    const productName = products.find((p) => p.id === productId)?.name || 'Producto';
 
+    setStockSaving(true);
     try {
       const { error } = await (supabase as any).rpc('update_store_inventory', {
         p_product_id: productId,
@@ -277,39 +302,59 @@ export const ArticulosPage: React.FC = () => {
         throw error;
       }
 
-      // Actualizar estado local
-      setStoreInventories(prev => {
+      // UI inmediata (no esperar refetch)
+      setStoreInventories((prev) => {
         const updated = { ...prev };
-        updated[productId] = updated[productId].map(inv => {
-          if (inv.store_id === storeId) {
-            return { ...inv, qty: newQty };
-          }
-          return inv;
-        });
+        if (!updated[productId]) return prev;
+        updated[productId] = updated[productId].map((inv) =>
+          inv.store_id === storeId ? { ...inv, qty: newQty } : inv
+        );
         return updated;
       });
+      setProducts((prev) =>
+        prev.map((p) => {
+          if (p.id !== productId) return p;
+          const nextByStore = { ...(p.stockByStore || {}) };
+          nextByStore[storeId] = newQty;
+          const total = Object.values(nextByStore).reduce((s, q) => s + (q || 0), 0);
+          return { ...p, stockByStore: nextByStore, total_stock: total };
+        })
+      );
 
-      // Cerrar popover
       setEditingPopover(null);
 
-      // ✅ OPTIMIZACIÓN: Invalidar cache antes de recargar
+      // Invalidar TODAS las caches (session + memoria compartida Almacén/Stats)
       productsCache.current = null;
       clearInventoryPageCache();
-      // Recargar datos desde el backend para obtener total_stock actualizado
-      await fetchData();
+      invalidateInventoryCatalogMemory();
 
-      toast({
-        title: "Stock actualizado",
-        description: `Stock actualizado a ${newQty} unidades`,
-        variant: "success",
+      // Refresco en background (con cache limpia) sin bloquear la confirmación
+      void fetchData();
+
+      setStockConfirm({
+        open: true,
+        storeName,
+        newQty,
+        productName,
       });
     } catch (error: any) {
       console.error('Error updating stock:', error);
-      toast({
-        title: "Error",
-        description: error.message || "No se pudo actualizar el stock",
-        variant: "destructive",
+      // Revertir si falló
+      setStoreInventories((prev) => {
+        const updated = { ...prev };
+        if (!updated[productId]) return prev;
+        updated[productId] = updated[productId].map((inv) =>
+          inv.store_id === storeId ? { ...inv, qty: oldQty } : inv
+        );
+        return updated;
       });
+      toast({
+        title: 'No se pudo actualizar el stock',
+        description: error.message || 'Revisa la conexión e intenta de nuevo',
+        variant: 'destructive',
+      });
+    } finally {
+      setStockSaving(false);
     }
   };
 
@@ -367,7 +412,7 @@ export const ArticulosPage: React.FC = () => {
       // ✅ OPTIMIZACIÓN: Invalidar cache antes de recargar
       productsCache.current = null;
       clearInventoryPageCache();
-      // Recargar datos
+      invalidateInventoryCatalogMemory();
       await fetchData();
     } catch (error: any) {
       console.error('Error transferring:', error);
@@ -408,6 +453,7 @@ export const ArticulosPage: React.FC = () => {
       // ✅ OPTIMIZACIÓN: Invalidar cache antes de recargar
       productsCache.current = null;
       clearInventoryPageCache();
+      invalidateInventoryCatalogMemory();
       // Cerrar modal y recargar datos
       setDeletingProduct(null);
       await fetchData();
@@ -661,15 +707,26 @@ export const ArticulosPage: React.FC = () => {
                                         <Button
                                           size="sm"
                                           className="flex-1 bg-primary-dark text-white hover:bg-primary-dark/90"
+                                          disabled={stockSaving}
                                           onClick={() => saveStock(product.id, inv.store_id)}
                                         >
-                                          <Save className="w-3 h-3 mr-1" />
-                                          Guardar
+                                          {stockSaving ? (
+                                            <>
+                                              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                              Actualizando stock…
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Save className="w-3 h-3 mr-1" />
+                                              Guardar
+                                            </>
+                                          )}
                                         </Button>
                                         <Button
                                           size="sm"
                                           variant="outline"
                                           className="flex-1 glass-input text-white hover:bg-white/10"
+                                          disabled={stockSaving}
                                           onClick={() => setEditingPopover(null)}
                                         >
                                           <X className="w-3 h-3 mr-1" />
@@ -926,7 +983,8 @@ export const ArticulosPage: React.FC = () => {
           onSuccess={() => {
             // ✅ OPTIMIZACIÓN: Invalidar cache antes de recargar
             productsCache.current = null;
-      clearInventoryPageCache();
+            clearInventoryPageCache();
+            invalidateInventoryCatalogMemory();
             fetchData();
             setShowForm(false);
             setEditingProduct(null);
@@ -934,6 +992,37 @@ export const ArticulosPage: React.FC = () => {
         />
       )}
 
+
+      {/* Confirmación centrada tras actualizar stock (no toast lateral) */}
+      <AlertDialog
+        open={stockConfirm.open}
+        onOpenChange={(open) => setStockConfirm((prev) => ({ ...prev, open }))}
+      >
+        <AlertDialogContent className="glass-panel border border-emerald-500/40">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-emerald-300">
+              <CheckCircle2 className="h-5 w-5" />
+              Stock actualizado
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-white/80 space-y-2">
+              <span className="block">
+                <strong className="text-white">{stockConfirm.productName}</strong>
+              </span>
+              <span className="block">
+                Sucursal: <strong className="text-white">{stockConfirm.storeName}</strong>
+              </span>
+              <span className="block text-base text-emerald-200">
+                Nueva cantidad: <strong>{stockConfirm.newQty}</strong> unidades
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction className="bg-emerald-600 hover:bg-emerald-500 text-white">
+              Entendido
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Modal de Confirmación de Eliminación */}
       <Dialog open={!!deletingProduct} onOpenChange={(open) => !open && setDeletingProduct(null)}>
