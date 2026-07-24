@@ -54,13 +54,13 @@ const IMEI_ROWS: { n: string; imei: string; factura: string; fecha: string; tien
 
 export const informeGerenteA16ImeiEmails: PublicInforme = {
   slug: SLUG_A16_IMEI_EMAILS,
-  titulo: 'Galaxy A16 — IMEI, emails y facturas (carga 15 → 20 jul)',
+  titulo: 'Galaxy A16 — IMEI y facturas (carga 15 → 20 jul)',
   subtitulo:
-    'Respuesta operativa: listado de IMEI vendidos desde la carga de 15 unidades hasta el 20 de julio, estado de emails en POS y anulaciones.',
+    'Listado de IMEI vendidos desde la carga de 15 unidades hasta el 20 de julio, con factura, tienda y revisión de anulaciones.',
   fecha: FECHA_INFORME,
   estado: 'aprobado',
   categoria: 'inventario',
-  tags: ['inventario', 'galaxy-a16', 'imei', 'emails', SKU],
+  tags: ['inventario', 'galaxy-a16', 'imei', SKU],
   relacionados: [
     INFORMES_CATALOGO_SLUG,
     SLUG_GERENTE_A16_CERO_CARGA,
@@ -80,99 +80,91 @@ export const informeGerenteA16ImeiEmails: PublicInforme = {
   sections: [
     {
       type: 'hero',
-      badge: 'Respuesta operativa · A16 128GB · IMEI / emails',
+      badge: 'Respuesta operativa · A16 128GB · IMEI',
     },
     {
       type: 'verdict',
-      titulo: 'Hay 27 IMEI en el sistema; 0 emails de cliente; 0 facturas anuladas en la ventana',
+      titulo: '27 IMEI registrados en ventas; 0 facturas anuladas en la ventana',
       detalle: [
-        'Se extrajo del POS el listado completo de ventas del A16 128 (SKU RF8YA0DK6ZF) **desde la carga de 15 en Zona Gamer (26-jun ~16:46) hasta el 20-jul-2026 inclusive**.',
-        'Resultado: **27 unidades vendidas** con IMEI registrado, **todas** en estado `completed`. **Ninguna** venta tiene email de cliente en el POS. **Ninguna** factura aparece anulada/reversada en esa ventana.',
-        'Los “15 emails de los 15 equipos” (cuenta de fábrica / proveedor) **no viven en el POS**. Hay que cruzarlos con este listado de IMEI cuando el proveedor los entregue.',
+        'Se consultó el POS (SKU **RF8YA0DK6ZF**) desde la carga de **15 unidades** en Zona Gamer (**26-jun ~16:46**) hasta el **20-jul-2026**.',
+        'Hay **27 ventas completed** con IMEI. **Ninguna** anulación/reverso en esa ventana. El detalle de cada equipo está en la tabla de abajo.',
       ].join('\n\n'),
       ok: true,
     },
     {
       type: 'text',
-      title: 'Qué preguntó gerencia (texto original)',
+      title: 'Qué se pidió (síntesis)',
       paragraphs: [
-        '«Necesito los IMEI de los A16 desde la carga de 15 unidades hasta el 20 de julio.»',
-        '«Que me saques un reporte de los que debe estar de los e-mails de los equipos vendidos, de los A16, o sea, de esos 15 que se cargaron… Los 15 e-mails de esos 15. Y si la factura a la cual se anuló (reverso) coincide al momento del e-mail que se registró… Tiene que coincidir. Ya estoy pidiendo los e-mails de los proveedores, porque necesito dar por finalizado lo de la A16.»',
+        'Se solicitó el listado de **IMEI** de los A16 vendidos **desde la carga de 15** hasta el **20 de julio**, para cerrar el caso: saber qué IMEI salieron en factura y, si hubo un **reverso**, confirmar que el IMEI de esa factura es el mismo que quedó registrado en el sistema en ese momento.',
       ],
     },
     {
       type: 'text',
-      title: 'Respuestas punto por punto',
+      title: 'Respuesta',
       paragraphs: [
-        '**1) IMEI desde la carga de 15 hasta el 20 de julio** — Sí. Tabla completa más abajo (27 filas). La carga de referencia es Zona Gamer **0 → 15** el **26-jun-2026 ~16:46**.',
-        '**2) Los 15 emails de esos 15 equipos** — En el POS **no hay** emails de equipo ni de cliente en esas ventas (`email_en_pos` = vacío en las 27). Lo que pediste al proveedor (emails de fábrica/proveedor) es el camino correcto: cuando lleguen, se cruzan **IMEI ↔ email**.',
-        '**3) Factura anulada / reverso y coincidencia con el email** — En la ventana consultada (**26-jun 16:46 → 20-jul**) hay **0** ventas con status distinto de `completed`. Si viste un reverso, está fuera de esta ventana, es otro producto, o hay que buscar por número de factura concreto.',
-        '**4) ¿Por qué 27 y no 15?** — La carga de 15 en Zona Gamer no es el único stock vendido en el período. Ese mismo día y después hubo más entradas / otras tiendas. El POS muestra **27 ventas completed con IMEI** hasta el 20-jul.',
+        '**IMEI del período** — Sí hay listado completo (tabla). Son **27** IMEI únicos ligados a factura, fecha y tienda. La carga de referencia sigue siendo Zona Gamer **0 → 15** el **26-jun ~16:46**.',
+        '**¿Por qué 27 y no solo 15?** — En esa ventana se facturó más de lo de esa sola carga (otras entradas / otras tiendas). El POS refleja **27 unidades vendidas** con IMEI hasta el 20-jul.',
+        '**Reverso / anulación** — En esta ventana **no hay** facturas con estado distinto de `completed`. Si existe un reverso concreto, hace falta el número **FAC-…** para buscarlo fuera de estas fechas.',
+        '**Coincidencia IMEI ↔ factura** — Cada fila de la tabla une **IMEI + factura + fecha + tienda**. Ese es el registro del momento de la venta en el POS.',
       ],
     },
     {
       type: 'table',
-      title: 'Resumen numérico (consulta Supabase 23-jul-2026)',
+      title: 'Resumen numérico (consulta 23-jul-2026)',
       headers: ['Métrica', 'Valor', 'Interpretación'],
       rows: [
-        { cells: ['Unidades en líneas de venta', '27', 'Facturado en la ventana'] },
+        { cells: ['Unidades facturadas (ventana)', '27', 'Ventas A16 en el período'] },
         { cells: ['Estado completed', '27', 'Todas vigentes'] },
-        { cells: ['Anuladas / no completed', '0', 'Nada que cruzar por reverso en esta ventana'] },
-        { cells: ['Líneas con IMEI', '27 / 27', 'Completo'] },
-        { cells: ['IMEI únicos', '27', 'Sin duplicados de IMEI'] },
-        { cells: ['Con email en POS', '0 / 27', 'No hay correo de cliente guardado'] },
-        { cells: ['Carga de referencia', '0→15 Zona Gamer 26-jun 16:46', 'La que recuerda gerencia'] },
+        { cells: ['Anuladas / reverso', '0', 'Ninguna en esta ventana'] },
+        { cells: ['Líneas con IMEI', '27 / 27', 'Todas tienen IMEI'] },
+        { cells: ['IMEI únicos', '27', 'Sin IMEI repetido'] },
+        { cells: ['Carga de referencia', '0→15 Zona Gamer 26-jun 16:46', 'Inicio de la ventana'] },
       ],
     },
     {
       type: 'table',
       title: 'Listado IMEI + factura + tienda + fecha (27)',
       description:
-        'Fuente: sale_items.imei + sales. Email en POS: ninguno. Todas completed. Fila 18 marcada por IMEI de 16 dígitos (revisar).',
-      headers: ['#', 'IMEI', 'Factura', 'Fecha (VE)', 'Tienda', 'Email POS', 'Nota'],
+        'Fuente: sale_items.imei + sales. Todas completed. Fila 18: IMEI con 16 dígitos (revisar).',
+      headers: ['#', 'IMEI', 'Factura', 'Fecha (VE)', 'Tienda', 'Nota'],
       rows: IMEI_ROWS.map((r) => ({
-        cells: [r.n, r.imei, r.factura, r.fecha, r.tienda, '—', r.nota || ''],
+        cells: [r.n, r.imei, r.factura, r.fecha, r.tienda, r.nota || ''],
       })),
     },
     {
       type: 'verdict',
-      titulo: 'Alerta operativa — IMEI fila 18',
+      titulo: 'Alerta — IMEI fila 18',
       detalle:
-        'Factura **FAC-20260716-05252** (Tu Móvil Marino, 16-jul): IMEI `3515777550333290` tiene **16 dígitos** (un IMEI estándar suele tener 15). Posible error de digitación. Revisar en la factura física / reingresar si aplica antes de cruzar con el proveedor.',
+        'Factura **FAC-20260716-05252** (Tu Móvil Marino, 16-jul): IMEI `3515777550333290` tiene **16 dígitos** (lo habitual es 15). Posible error de digitación; conviene validarlo antes de dar el caso por cerrado.',
       ok: false,
     },
     {
       type: 'steps',
-      title: 'Qué hacer ahora para dar por cerrado el A16',
+      title: 'Para dar por cerrado el A16',
       items: [
         {
           paso: '1',
-          accion: 'Usar esta tabla de 27 IMEI como lista maestra del POS',
-          resultado: 'Base para cruzar con proveedor',
+          accion: 'Usar esta tabla de 27 IMEI como listado oficial del POS',
+          resultado: 'Traza completa factura ↔ IMEI ↔ tienda',
         },
         {
           paso: '2',
-          accion: 'Cuando lleguen los emails del proveedor, cruzar IMEI ↔ email (Excel)',
-          resultado: 'Quedan cubiertos los “emails de equipos” que no están en el POS',
+          accion: 'Si hay un reverso pendiente, indicar el número de factura FAC-…',
+          resultado: 'Se verifica el IMEI de esa factura puntual',
         },
         {
           paso: '3',
-          accion: 'Si hay una factura de reverso concreta, enviar el número FAC-…',
-          resultado: 'Se busca fuera de esta ventana o por status histórico',
-        },
-        {
-          paso: '4',
-          accion: 'Corregir / validar IMEI de FAC-20260716-05252 si está mal digitado',
-          resultado: 'Evita descuadre al cruzar con proveedor',
+          accion: 'Validar o corregir el IMEI de FAC-20260716-05252 si está mal',
+          resultado: 'Evita un IMEI inválido en el cierre',
         },
       ],
     },
     {
       type: 'text',
-      title: 'SQL de respaldo (reproducible)',
+      title: 'SQL de respaldo',
       paragraphs: [
-        'Consulta en repo: `sql/gerente_a16_imei_emails_carga15_hasta_20jul.sql` (bloques 2–5).',
-        'Filtro: SKU RF8YA0DK6ZF, `created_at` desde `2026-06-26 16:46:00-04` hasta `2026-07-20 23:59:59-04`.',
+        'Repo: `sql/gerente_a16_imei_emails_carga15_hasta_20jul.sql`.',
+        'Filtro: SKU RF8YA0DK6ZF, desde `2026-06-26 16:46:00-04` hasta `2026-07-20 23:59:59-04`.',
       ],
     },
     {
@@ -180,19 +172,19 @@ export const informeGerenteA16ImeiEmails: PublicInforme = {
       title: 'Informes relacionados',
       items: [
         {
-          label: 'Respuesta gerente: cero, carga y facturas',
+          label: 'A16: cero, carga y facturas',
           href: `/informe/${SLUG_GERENTE_A16_CERO_CARGA}`,
         },
         {
-          label: 'Auditoría A16 — Parte 1 (detección)',
+          label: 'Auditoría A16 — Parte 1',
           href: `/informe/${SLUG_A16_PARTE_1}`,
         },
         {
-          label: 'Auditoría A16 — Parte 2 (SQL)',
+          label: 'Auditoría A16 — Parte 2',
           href: `/informe/${SLUG_A16_PARTE_2}`,
         },
         {
-          label: 'Auditoría A16 — Parte 3 (conclusión)',
+          label: 'Auditoría A16 — Parte 3',
           href: `/informe/${SLUG_A16_PARTE_3}`,
         },
         {
