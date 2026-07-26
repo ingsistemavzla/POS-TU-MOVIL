@@ -6,6 +6,7 @@ import { ALL_GERENTE_A16_IMEI_INFORMES } from './gerenteA16ImeiEmailsCarga15Hast
 import { ALL_A16_CARGA20_CENTRO_INFORMES } from './a16Carga20Centro17jul2026';
 import { ALL_A16_CALENDARIO_CARGAS_INFORMES } from './a16CalendarioCargas2026';
 import { ALL_A16_ULTIMA_CARGA_GERENTE_INFORMES } from './a16UltimaCargaGerenteVsSistema2026';
+import { ALL_A16_VENTAS_25JUN_16JUL_INFORMES } from './a16Ventas25jun16jul2026';
 import { ALL_INVESTIGACION_CIERRES_INFORMES } from './investigacionCierresEstadisticas2026';
 import { ALL_PUBLIC_INFORMES as MARINO_INFORMES } from './operacionSucursalMarino2026';
 import { informeRespuestaGerenteGalaxyA16CeroCarga } from './respuestaGerenteGalaxyA16CeroCarga2026';
@@ -19,6 +20,7 @@ const ALL_PUBLIC_INFORMES: PublicInforme[] = [
   ...ALL_A16_CARGA20_CENTRO_INFORMES,
   ...ALL_A16_CALENDARIO_CARGAS_INFORMES,
   ...ALL_A16_ULTIMA_CARGA_GERENTE_INFORMES,
+  ...ALL_A16_VENTAS_25JUN_16JUL_INFORMES,
   ...ALL_CIERRES_ESTADISTICAS_INFORMES,
   ...ALL_INVESTIGACION_CIERRES_INFORMES,
 ];
