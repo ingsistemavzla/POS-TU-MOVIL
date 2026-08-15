@@ -1,3 +1,4 @@
+/build-id.txt  200
 /informes    /index.html   200
 /informe/*   /index.html   200
 /*           /index.html   200

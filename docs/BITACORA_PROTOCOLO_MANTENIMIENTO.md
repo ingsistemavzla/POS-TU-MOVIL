@@ -24,11 +24,11 @@ Registro de lo implementado y del plan de prueba limpia (expulsión de sesión s
 
 **Síntoma:** parpadeo infinito “Cargando” ↔ Login.
 
-**Causa:** al expulsar se hacía `location.replace('/?maintenance=1')` aunque ya estabas en `/`, lo que recargaba la app una y otra vez.
+**Causa 1:** al expulsar se hacía `location.replace('/?maintenance=1')` en `/`.  
+**Fix:** sin reload si ya estás en login (`d6a87dc`).
 
-**Fix (commit `d6a87dc`):**
-- Si ya estás en login (`/`, `/auth`, `?maintenance=`), **solo se limpia la sesión** (sin reload).
-- El redirect duro solo aplica si estás **dentro del POS** (dashboard, etc.).
+**Causa 2 (post-apagado):** `DeployReloadWatchdog` pedía `/build-id.txt`, pero `_redirects` (`/* → index.html`) devolvía HTML ≠ build id → **recargas en bucle** aunque el mantenimiento estuviera OFF.  
+**Fix:** watchdog **desmontado de App**; validación anti-HTML si se reactiva; regla explícita en `_redirects` para `/build-id.txt`.
 
 ---
 

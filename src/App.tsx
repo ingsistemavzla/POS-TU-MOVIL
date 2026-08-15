@@ -8,7 +8,7 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { MaintenanceEnforcer } from "@/components/auth/MaintenanceEnforcer";
 import { MaintenanceLoginShell } from "@/components/auth/MaintenanceLoginShell";
 import { MaintenanceSessionWatchdog } from "@/components/auth/MaintenanceSessionWatchdog";
-import { DeployReloadWatchdog } from "@/components/system/DeployReloadWatchdog";
+// DeployReloadWatchdog: no montar hasta que /build-id.txt se sirva sin rewrite SPA
 import { useMaintenanceMode } from "@/hooks/useMaintenanceMode";
 import { isMaintenanceModeActive } from "@/config/maintenance";
 import { StoreProvider } from "@/contexts/StoreContext";
@@ -555,7 +555,7 @@ const App = () => (
           <TooltipProvider>
             <Toaster />
             <Sonner />
-            <DeployReloadWatchdog />
+            {/* DeployReloadWatchdog desactivado: /build-id.txt caía en rewrite SPA y provocaba recargas. */}
             <MaintenanceSessionWatchdog />
             <AppRouterShell />
           </TooltipProvider>

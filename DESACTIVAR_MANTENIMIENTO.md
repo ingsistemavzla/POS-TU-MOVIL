@@ -1,15 +1,16 @@
-# Mantenimiento — estado actual: APAGADO (Fase A — verificar sesión)
+# Mantenimiento — estado actual: APAGADO
 
-## Ahora
+Flags en `false`. Watchdog de deploy **desactivado** (causaba parpadeo del login).
 
-Flags en `false`. Debes poder **loguearte** y trabajar normal.
+## Qué hacer ahora
 
-Checklist: `docs/BITACORA_PROTOCOLO_MANTENIMIENTO.md` → **Fase A**.
+1. Espera el deploy.
+2. Cierra pestañas viejas del POS.
+3. Abre el sitio de nuevo (Ctrl+F5 una vez).
+4. Loguéate — debe entrar **sin** recargar 2–3 veces.
 
-## Cuando confirmes que la sesión abre bien
+Si aún parpadea: `localStorage.clear(); sessionStorage.clear(); location.href='/'`
 
-Avisar para **Fase B** (prender mantenimiento y probar expulsión limpia).
+## Luego
 
-## Protocolo completo
-
-`PROTOCOLO_SEGURO_RESTAURAR_MANTENIMIENTO.md`
+Cuando confirmes login estable → avisar para Fase B (prender mantenimiento y probar expulsión limpia).
