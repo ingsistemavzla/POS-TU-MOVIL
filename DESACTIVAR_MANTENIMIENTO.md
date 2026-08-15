@@ -1,16 +1,19 @@
-# Mantenimiento — estado actual: APAGADO
+# Mantenimiento — estado actual: ENCENDIDO (Fase B — prueba expulsión)
 
-Flags en `false`. Watchdog de deploy **desactivado** (causaba parpadeo del login).
+## Prueba ahora
 
-## Qué hacer ahora
+1. Quédate **logueado** en esta pestaña (no la cierres).
+2. Espera deploy Render (~1–3 min).
+3. Resultado esperado:
+   - Te saca al **login** (puede hacer **un** refresh; no debe parpadear en bucle).
+   - Login **estable**.
+   - Intentar entrar → **Failed to fetch**.
+4. Si a los 90 s sigues dentro: **un** Ctrl+F5. Si ahí sales limpio, anótalo.
 
-1. Espera el deploy.
-2. Cierra pestañas viejas del POS.
-3. Abre el sitio de nuevo (Ctrl+F5 una vez).
-4. Loguéate — debe entrar **sin** recargar 2–3 veces.
+## Si vuelve el parpadeo
 
-Si aún parpadea: `localStorage.clear(); sessionStorage.clear(); location.href='/'`
+Avisa de inmediato para apagar (flags `false` + push).
 
-## Luego
+## Apagar al terminar
 
-Cuando confirmes login estable → avisar para Fase B (prender mantenimiento y probar expulsión limpia).
+`PROTOCOLO_SEGURO_RESTAURAR_MANTENIMIENTO.md`
