@@ -31,6 +31,10 @@ Seguir el protocolo seguro:
 
 **`PROTOCOLO_SEGURO_RESTAURAR_MANTENIMIENTO.md`**
 
+Bitácora de cambios y checklist de prueba:
+
+**`docs/BITACORA_PROTOCOLO_MANTENIMIENTO.md`**
+
 (ambos flags en `false` + push + checklist de verificación)
 
 Documentación completa: `REPORTE_PROTOCOLO_MANTENIMIENTO.md`
