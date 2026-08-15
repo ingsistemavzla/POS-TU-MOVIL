@@ -1,22 +1,25 @@
-# Mantenimiento — estado actual: APAGADO
+# Mantenimiento — estado actual: ENCENDIDO
 
-El protocolo **no afecta** login, rutas ni transacciones mientras:
+## Apagar (restaurar login + POS)
+
+En `src/config/maintenance.ts`:
 
 ```ts
-// src/config/maintenance.ts
 export const MAINTENANCE_PROTOCOL_ENABLED = false;
 export const MAINTENANCE_FORCED_FROM_BUILD = false;
 ```
 
-## Limpiar navegador (local)
+Luego commit + push. Al cargar el build nuevo:
 
-En consola (F12):
+- Se limpia `pos_maintenance_mode` del navegador
+- El login vuelve a funcionar
+- Las rutas del POS se montan otra vez
+- No queda bloqueo residual
 
-```javascript
-localStorage.removeItem('pos_maintenance_mode')
-location.reload()
-```
+## Importante
+
+Con `MAINTENANCE_FORCED_FROM_BUILD = true` **no** basta con `window.posMaintenance.disable()` en la consola: hay que redesplegar con ambos flags en `false`.
 
 ## Activar de nuevo
 
-Ver **`ACTIVAR_MANTENIMIENTO.md`**.
+Ver `ACTIVAR_MANTENIMIENTO.md`.

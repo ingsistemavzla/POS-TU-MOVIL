@@ -2,16 +2,29 @@
  * =============================================================================
  * PROTOCOLO DE MANTENIMIENTO (solo frontend) — APAGADO por defecto
  * =============================================================================
- * Para ACTIVAR: MAINTENANCE_PROTOCOL_ENABLED = true y MAINTENANCE_FORCED_FROM_BUILD = true
- * Ver ACTIVAR_MANTENIMIENTO.md y REPORTE_PROTOCOLO_MANTENIMIENTO.md
+ * ACTIVAR (bote sesiones + bloquea login):
+ *   MAINTENANCE_PROTOCOL_ENABLED = true
+ *   MAINTENANCE_FORCED_FROM_BUILD = true
+ *   → commit + push (AppRouterShell ya está cableado de forma permanente)
+ *
+ * DESACTIVAR (login e interfaz vuelven a la normalidad):
+ *   MAINTENANCE_PROTOCOL_ENABLED = false
+ *   MAINTENANCE_FORCED_FROM_BUILD = false
+ *   → commit + push
+ *   Al arrancar con protocolo OFF se limpia localStorage y no queda bloqueo.
+ *
+ * Ver ACTIVAR_MANTENIMIENTO.md / DESACTIVAR_MANTENIMIENTO.md
  * =============================================================================
  */
 
 /** Interruptor maestro: false = el sistema opera normal (login, transacciones, rutas). */
-export const MAINTENANCE_PROTOCOL_ENABLED = false;
+export const MAINTENANCE_PROTOCOL_ENABLED = true;
 
-/** Solo aplica si MAINTENANCE_PROTOCOL_ENABLED es true. Forzar ON en deploy. */
-export const MAINTENANCE_FORCED_FROM_BUILD = false;
+/**
+ * Solo aplica si MAINTENANCE_PROTOCOL_ENABLED es true.
+ * true = ON en todos los clientes tras el deploy (no se puede apagar solo con localStorage).
+ */
+export const MAINTENANCE_FORCED_FROM_BUILD = true;
 
 export const MAINTENANCE_STORAGE_KEY = 'pos_maintenance_mode';
 export const MAINTENANCE_LOGIN_MESSAGE = 'Failed to fetch';
@@ -82,10 +95,20 @@ function syncMaintenanceFromUrl(): boolean {
 
 function bootstrapMaintenance(): void {
   if (typeof window === 'undefined') return;
+  // Protocolo OFF → limpiar residuos y nunca bloquear (restauración total).
   if (!MAINTENANCE_PROTOCOL_ENABLED) {
     localStorage.removeItem(MAINTENANCE_STORAGE_KEY);
     maintenanceActiveMemory = false;
     maintenanceUserDisabled = false;
+    notifyListeners();
+    return;
+  }
+  // Deploy forzado ON: ignorar overrides locales viejos.
+  if (MAINTENANCE_FORCED_FROM_BUILD) {
+    maintenanceUserDisabled = false;
+    maintenanceActiveMemory = true;
+    persistMaintenanceFlag(true);
+    notifyListeners();
     return;
   }
   const stored = localStorage.getItem(MAINTENANCE_STORAGE_KEY);
@@ -132,9 +155,11 @@ export function getMaintenanceSettings(): MaintenanceSettings {
 }
 
 export function isMaintenanceModeActive(): boolean {
+  // Maestro OFF = nunca bloquea (garantiza login + UI normal tras desactivar en código).
   if (!MAINTENANCE_PROTOCOL_ENABLED) return false;
-  if (maintenanceUserDisabled) return false;
+  // Deploy forzado: bota a todos; no se puede saltar con localStorage.
   if (MAINTENANCE_FORCED_FROM_BUILD) return true;
+  if (maintenanceUserDisabled) return false;
   if (readEnvMaintenance()) return true;
   if (maintenanceActiveMemory) return true;
   if (typeof window !== 'undefined' && readStorageMaintenance()) {
@@ -150,20 +175,37 @@ export async function enableMaintenanceMode(): Promise<void> {
   maintenanceActiveMemory = true;
   persistMaintenanceFlag(true);
   console.warn('[Maintenance] ACTIVADO — cerrando sesiones y bloqueando login.');
-  await evictActiveSessions();
   notifyListeners();
+  await evictActiveSessions();
 }
 
+/**
+ * Apaga mantenimiento en runtime (consola).
+ * Si MAINTENANCE_FORCED_FROM_BUILD=true, no tiene efecto hasta redesplegar con FORCED=false.
+ * Con protocolo OFF en el build, esta función solo limpia residuos locales.
+ */
 export function disableMaintenanceMode(): void {
   if (typeof window === 'undefined') return;
+  if (MAINTENANCE_PROTOCOL_ENABLED && MAINTENANCE_FORCED_FROM_BUILD) {
+    console.warn(
+      '[Maintenance] FORCED_FROM_BUILD=true — disable() no apaga el bloqueo. Redesplegar con ambos flags en false.',
+    );
+    return;
+  }
   maintenanceUserDisabled = true;
   maintenanceActiveMemory = false;
   persistMaintenanceFlag(false);
+  console.info('[Maintenance] DESACTIVADO — login e interfaz vuelven a la normalidad.');
   notifyListeners();
 }
 
 export function clearMaintenanceRuntimeOverride(): void {
   if (typeof window === 'undefined') return;
+  if (MAINTENANCE_PROTOCOL_ENABLED && MAINTENANCE_FORCED_FROM_BUILD) {
+    console.warn('[Maintenance] clearOverride ignorado: FORCED_FROM_BUILD=true.');
+    return;
+  }
+  maintenanceUserDisabled = false;
   maintenanceActiveMemory = false;
   localStorage.removeItem(MAINTENANCE_STORAGE_KEY);
   notifyListeners();

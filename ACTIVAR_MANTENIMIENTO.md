@@ -1,5 +1,7 @@
 # Activar protocolo de mantenimiento
 
+Bloquea login (simula "Failed to fetch"), cierra sesiones activas y deja solo la pantalla de login.
+
 ## 1. Flags en `src/config/maintenance.ts`
 
 ```ts
@@ -7,24 +9,23 @@ export const MAINTENANCE_PROTOCOL_ENABLED = true;
 export const MAINTENANCE_FORCED_FROM_BUILD = true;
 ```
 
-## 2. Rutas en `src/App.tsx`
+No hace falta tocar `App.tsx`: el `AppRouterShell` ya reacciona solo.
 
-Descomentar imports `[MANTENIMIENTO]` y usar `AppRouterShell` en lugar de `<BrowserRouter><AppRoutes /></BrowserRouter>` (ver bloque comentado al final de `App.tsx`).
-
-## 3. Opcional: `src/main.tsx`
-
-Descomentar bloque de auto-`enable()` en desarrollo.
-
-## 4. Deploy
+## 2. Deploy
 
 ```bash
-git add -A
+git add src/config/maintenance.ts
 git commit -m "chore: activar protocolo mantenimiento frontend"
 git push origin main
 ```
 
-## 5. Desactivar al terminar
+Tras el deploy, todos los clientes:
+- Pierden la sesión (expulsión)
+- No pueden entrar al POS
+- Ven el login; al intentar entrar aparece "Failed to fetch"
 
-Ver `DESACTIVAR_MANTENIMIENTO.md` (poner flags en `false`).
+## 3. Desactivar al terminar
+
+Ver `DESACTIVAR_MANTENIMIENTO.md` (ambos flags en `false` + push).
 
 Documentación completa: `REPORTE_PROTOCOLO_MANTENIMIENTO.md`

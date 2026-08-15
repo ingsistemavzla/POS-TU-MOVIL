@@ -5,11 +5,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-// [MANTENIMIENTO] Descomentar imports y AppRouterShell alternativo para activar protocolo:
-// import { MaintenanceEnforcer } from "@/components/auth/MaintenanceEnforcer";
-// import { MaintenanceLoginShell } from "@/components/auth/MaintenanceLoginShell";
-// import { useMaintenanceMode } from "@/hooks/useMaintenanceMode";
-// import { isMaintenanceModeActive } from "@/config/maintenance";
+import { MaintenanceEnforcer } from "@/components/auth/MaintenanceEnforcer";
+import { MaintenanceLoginShell } from "@/components/auth/MaintenanceLoginShell";
+import { useMaintenanceMode } from "@/hooks/useMaintenanceMode";
+import { isMaintenanceModeActive } from "@/config/maintenance";
 import { StoreProvider } from "@/contexts/StoreContext";
 import { BcvProvider } from "@/contexts/BcvContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
@@ -518,27 +517,33 @@ const AppRoutes = () => {
   );
 };
 
-/* [MANTENIMIENTO] Sustituir el <BrowserRouter> de App por AppRouterShell cuando el protocolo esté ON:
+/**
+ * Shell reactivo: con mantenimiento ON bota al login y bloquea el POS;
+ * con OFF (o protocolo deshabilitado en maintenance.ts) monta rutas normales.
+ */
 const AppRouterShell = () => {
   const { active: hookMaintenance } = useMaintenanceMode();
   const maintenanceBlocked = hookMaintenance || isMaintenanceModeActive();
+
   if (maintenanceBlocked) {
     return (
       <BrowserRouter>
+        <InventorySystemDocumentMeta />
         <Routes>
           <Route path="*" element={<MaintenanceLoginShell />} />
         </Routes>
       </BrowserRouter>
     );
   }
+
   return (
     <BrowserRouter>
+      <InventorySystemDocumentMeta />
       <MaintenanceEnforcer />
       <AppRoutes />
     </BrowserRouter>
   );
 };
-*/
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -548,10 +553,7 @@ const App = () => (
           <TooltipProvider>
             <Toaster />
             <Sonner />
-            <BrowserRouter>
-              <InventorySystemDocumentMeta />
-              <AppRoutes />
-            </BrowserRouter>
+            <AppRouterShell />
           </TooltipProvider>
         </BcvProvider>
       </StoreProvider>
