@@ -1,90 +1,32 @@
 # Bitácora — Protocolo de mantenimiento (cambios y verificación)
 
-Registro de lo implementado y del plan de prueba limpia (expulsión de sesión sin bucles).
+Ver archivo maestro consolidado: **`docs/ARCHIVO_PROTOCOLO_MANTENIMIENTO.md`**
 
 ---
 
-## 1. Qué se construyó (resumen)
+## Ciclo ago 2026 — cierre
 
-| Pieza | Archivo(s) | Función |
-|-------|------------|---------|
-| Flags ON/OFF | `src/config/maintenance.ts` | Maestro + forzado en deploy |
-| Shell de rutas | `src/App.tsx` (`AppRouterShell`) | Mantenimiento → solo login; OFF → POS normal |
-| Auth bloqueado | `src/contexts/AuthContext.tsx` | No login; expulsión de sesión |
-| UI login | `GlassLoginForm`, `MaintenanceBanner` | Simula “Failed to fetch” |
-| Enforcer | `MaintenanceEnforcer.tsx` | Expulsa si hay user en rutas normales |
-| Shell login | `MaintenanceLoginShell.tsx` | AuthPage durante mantenimiento |
-| Watchdog sesión | `MaintenanceSessionWatchdog.tsx` | Detecta sesión residual y limpia |
-| Auto-reload deploy | `DeployReloadWatchdog.tsx` + `vite.config.ts` (`build-id`) | Pestañas toman el build nuevo |
-| Docs | `ACTIVAR_…`, `DESACTIVAR_…`, `PROTOCOLO_SEGURO_…`, este archivo | Operación segura |
+| Fase | Acción | Estado |
+|------|--------|--------|
+| A | Apagar → login estable | OK (operador logueado) |
+| B | Prender → expulsión | Probado; bugs A/B corregidos |
+| Cierre | Documentar + apagar | Hecho en commit de archivo + flags OFF |
 
----
+### Bugs registrados
 
-## 2. Bug del bucle (registrado y corregido)
+1. **Bucle login** por `replace('/?maintenance=1')` en `/` → fix sin reload en login.  
+2. **Parpadeo con OFF** por `DeployReloadWatchdog` + rewrite SPA → watchdog desmontado.
 
-**Síntoma:** parpadeo infinito “Cargando” ↔ Login.
+### Commits útiles
 
-**Causa 1:** al expulsar se hacía `location.replace('/?maintenance=1')` en `/`.  
-**Fix:** sin reload si ya estás en login (`d6a87dc`).
-
-**Causa 2 (post-apagado):** `DeployReloadWatchdog` pedía `/build-id.txt`, pero `_redirects` (`/* → index.html`) devolvía HTML ≠ build id → **recargas en bucle** aunque el mantenimiento estuviera OFF.  
-**Fix:** watchdog **desmontado de App**; validación anti-HTML si se reactiva; regla explícita en `_redirects` para `/build-id.txt`.
+- `d6a87dc` — evitar bucle expulsión  
+- `e9c0580` — quitar DeployReloadWatchdog del App  
+- Activaciones/apagados operativos posteriores  
 
 ---
 
-## 3. Plan de verificación (este ciclo)
+## Cómo usar de aquí en adelante
 
-### Fase A — Apagado (ahora)
-
-```ts
-MAINTENANCE_PROTOCOL_ENABLED = false
-MAINTENANCE_FORCED_FROM_BUILD = false
-```
-
-Deploy → comprobar:
-
-- [ ] Login con usuario real funciona
-- [ ] Dashboard / POS cargan
-- [ ] No hay parpadeo
-- [ ] La sesión permanece abierta (no te expulsa)
-
-### Fase B — Prendido (cuando Fase A OK)
-
-```ts
-MAINTENANCE_PROTOCOL_ENABLED = true
-MAINTENANCE_FORCED_FROM_BUILD = true
-```
-
-Deploy → dejar pestaña **logueada** y comprobar:
-
-- [ ] En ≤ ~30–60 s te saca al login **o** auto-reload y quedas en login
-- [ ] Login estable (sin bucle carga/login)
-- [ ] Intentar entrar → “Failed to fetch”
-- [ ] No vuelves al dashboard
-
-### Fase C — Cierre
-
-Volver a Fase A (ambos flags `false`) con  
-`PROTOCOLO_SEGURO_RESTAURAR_MANTENIMIENTO.md`.
-
----
-
-## 4. Commits relevantes (referencia)
-
-- Activación / cableado reactivo + docs
-- `fix(maintenance): expulsar sesiones…` (watchdog + build-id)
-- `fix(maintenance): evitar bucle infinito…` (`d6a87dc`)
-- Apagados / encendidos operativos según pruebas
-
----
-
-## 5. Regla operativa
-
-1. **Probar normalidad** siempre con flags en `false`.  
-2. **Probar expulsión** con flags en `true` y pestaña ya logueada.  
-3. Si hay bucle → no insistir: apagar flags y revisar redirect (no reload en login).  
-4. Cerrar siempre con el protocolo seguro de restauración.
-
----
-
-*Actualizado: ciclo de verificación post-fix de bucle (ago 2026).*
+1. Activar → `ACTIVAR_MANTENIMIENTO.md`  
+2. Desactivar → `DESACTIVAR_MANTENIMIENTO.md` + `PROTOCOLO_SEGURO_RESTAURAR_MANTENIMIENTO.md`  
+3. Detalle completo → `docs/ARCHIVO_PROTOCOLO_MANTENIMIENTO.md`

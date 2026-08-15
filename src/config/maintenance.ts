@@ -13,18 +13,19 @@
  *   → commit + push
  *   Al arrancar con protocolo OFF se limpia localStorage y no queda bloqueo.
  *
- * Ver ACTIVAR_MANTENIMIENTO.md / DESACTIVAR_MANTENIMIENTO.md
+ * Ver **`ACTIVAR_MANTENIMIENTO.md`**, **`DESACTIVAR_MANTENIMIENTO.md`**
+ * y el archivo maestro **`docs/ARCHIVO_PROTOCOLO_MANTENIMIENTO.md`**.
  * =============================================================================
  */
 
 /** Interruptor maestro: false = el sistema opera normal (login, transacciones, rutas). */
-export const MAINTENANCE_PROTOCOL_ENABLED = true;
+export const MAINTENANCE_PROTOCOL_ENABLED = false;
 
 /**
  * Solo aplica si MAINTENANCE_PROTOCOL_ENABLED es true.
  * true = ON en todos los clientes tras el deploy (no se puede apagar solo con localStorage).
  */
-export const MAINTENANCE_FORCED_FROM_BUILD = true;
+export const MAINTENANCE_FORCED_FROM_BUILD = false;
 
 export const MAINTENANCE_STORAGE_KEY = 'pos_maintenance_mode';
 export const MAINTENANCE_LOGIN_MESSAGE = 'Failed to fetch';

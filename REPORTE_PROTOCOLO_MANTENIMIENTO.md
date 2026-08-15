@@ -1,6 +1,10 @@
 # Reporte: Protocolo de mantenimiento (solo frontend)
 
-Documento de referencia para **revertir**, **desactivar** o **mantener** el modo mantenimiento del POS.  
+> **Archivo maestro actualizado (ago 2026):**  
+> [`docs/ARCHIVO_PROTOCOLO_MANTENIMIENTO.md`](docs/ARCHIVO_PROTOCOLO_MANTENIMIENTO.md)  
+> Activar/desactivar día a día: `ACTIVAR_MANTENIMIENTO.md` · `DESACTIVAR_MANTENIMIENTO.md`
+
+Documento de referencia técnica para **revertir**, **desactivar** o **mantener** el modo mantenimiento del POS.  
 **No usa Supabase** — todo el comportamiento está en el cliente (React/Vite).
 
 ---

@@ -127,7 +127,9 @@ Commit + push. Tras el deploy:
 - Login bloqueado con “Failed to fetch”
 - Pestañas abiertas: auto-reload por `build-id` (~20 s) o refresh
 
-Luego **siempre** cerrar con este documento (Paso A).
+Luego **siempre** cerrar con este documento (Paso A) o el archivo maestro:
+
+**`docs/ARCHIVO_PROTOCOLO_MANTENIMIENTO.md`**
 
 ---
 
