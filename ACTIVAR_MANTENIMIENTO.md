@@ -20,12 +20,17 @@ git push origin main
 ```
 
 Tras el deploy, todos los clientes:
-- Pierden la sesión (expulsión)
+- Pierden la sesión (expulsión / watchdog)
 - No pueden entrar al POS
 - Ven el login; al intentar entrar aparece "Failed to fetch"
+- Pestañas abiertas suelen auto-recargar por `build-id` (~20 s)
 
-## 3. Desactivar al terminar
+## 3. Desactivar al terminar (obligatorio)
 
-Ver `DESACTIVAR_MANTENIMIENTO.md` (ambos flags en `false` + push).
+Seguir el protocolo seguro:
+
+**`PROTOCOLO_SEGURO_RESTAURAR_MANTENIMIENTO.md`**
+
+(ambos flags en `false` + push + checklist de verificación)
 
 Documentación completa: `REPORTE_PROTOCOLO_MANTENIMIENTO.md`
