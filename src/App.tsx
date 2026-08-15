@@ -7,6 +7,8 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-route
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { MaintenanceEnforcer } from "@/components/auth/MaintenanceEnforcer";
 import { MaintenanceLoginShell } from "@/components/auth/MaintenanceLoginShell";
+import { MaintenanceSessionWatchdog } from "@/components/auth/MaintenanceSessionWatchdog";
+import { DeployReloadWatchdog } from "@/components/system/DeployReloadWatchdog";
 import { useMaintenanceMode } from "@/hooks/useMaintenanceMode";
 import { isMaintenanceModeActive } from "@/config/maintenance";
 import { StoreProvider } from "@/contexts/StoreContext";
@@ -553,6 +555,8 @@ const App = () => (
           <TooltipProvider>
             <Toaster />
             <Sonner />
+            <DeployReloadWatchdog />
+            <MaintenanceSessionWatchdog />
             <AppRouterShell />
           </TooltipProvider>
         </BcvProvider>

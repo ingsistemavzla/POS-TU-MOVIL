@@ -29,6 +29,9 @@ dist-ssr
 .env.production
 .env.development
 
+# Build stamp (generado por vite en cada build)
+public/build-id.txt
+
 # Scripts SQL sensibles (con credenciales)
 SCRIPT_CAMBIO_CREDENCIALES*.sql
 DIAGNOSTICO_USUARIO*.sql

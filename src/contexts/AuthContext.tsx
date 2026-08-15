@@ -803,15 +803,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const evictSessionForMaintenance = async () => {
     try {
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: 'local' });
     } catch (error) {
       console.error('[Maintenance] Error en signOut:', error);
     }
     clearBrowserAuthStorage();
     resetAuthState();
     const path = window.location.pathname;
-    if (!isPublicAppPath(path)) {
-      window.location.replace('/');
+    if (!isPublicAppPath(path) || path === '/' || path === '') {
+      window.location.replace('/?maintenance=1');
     }
   };
 

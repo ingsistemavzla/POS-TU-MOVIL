@@ -3,6 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL?: string;
   readonly VITE_SUPABASE_ANON_KEY?: string;
+  readonly VITE_BUILD_ID?: string;
   readonly VITE_MAINTENANCE_MODE?: string;
   readonly VITE_MAINTENANCE_MESSAGE?: string;
   readonly VITE_MAINTENANCE_BYPASS_EMAILS?: string;
