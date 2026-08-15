@@ -11,10 +11,21 @@ import { supabase } from '@/integrations/supabase/client';
 
 const WATCHDOG_MS = 8_000;
 
+function isAlreadyOnLoginShell(): boolean {
+  const path = window.location.pathname || '/';
+  const search = window.location.search || '';
+  return (
+    path === '/' ||
+    path === '' ||
+    path.startsWith('/auth') ||
+    search.includes('maintenance=')
+  );
+}
+
 /**
- * Si el mantenimiento está ON y aún hay sesión/UI logueada, expulsa de inmediato
- * y vuelve a comprobar cada pocos segundos + al volver a la pestaña.
- * Cubre el caso "seguía dentro del POS hasta refrescar".
+ * Si el mantenimiento está ON y aún hay sesión en una ruta del POS, expulsa.
+ * En la pantalla de login solo limpia sesión (sin reload) para evitar el bucle
+ * “Cargando ↔ Login”.
  */
 export function MaintenanceSessionWatchdog() {
   if (!MAINTENANCE_PROTOCOL_ENABLED) return null;
@@ -46,9 +57,11 @@ function MaintenanceSessionWatchdogInner() {
       } catch {
         /* ignore */
       }
+
+      // Ya en login: no hacer location.replace (evita parpadeo infinito).
+      if (isAlreadyOnLoginShell()) return;
+
       if (!isPublicAppPath(window.location.pathname)) {
-        window.location.replace('/?maintenance=1');
-      } else if (!window.location.search.includes('maintenance=')) {
         window.location.replace('/?maintenance=1');
       }
     } finally {
@@ -68,12 +81,8 @@ function MaintenanceSessionWatchdogInner() {
     const onVisible = () => {
       if (document.visibilityState === 'visible') void kick();
     };
-    const onFocus = () => {
-      void kick();
-    };
 
     document.addEventListener('visibilitychange', onVisible);
-    window.addEventListener('focus', onFocus);
 
     const unsub = subscribeMaintenanceMode(() => {
       void kick();
@@ -82,7 +91,6 @@ function MaintenanceSessionWatchdogInner() {
     return () => {
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', onVisible);
-      window.removeEventListener('focus', onFocus);
       unsub();
     };
   }, [user, session, active]);

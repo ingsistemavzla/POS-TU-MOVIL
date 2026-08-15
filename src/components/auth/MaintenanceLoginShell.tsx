@@ -1,7 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import {
-  enableMaintenanceMode,
   isMaintenanceModeActive,
   MAINTENANCE_PROTOCOL_ENABLED,
 } from '@/config/maintenance';
@@ -13,12 +12,8 @@ const AuthPage = lazy(() => import('@/pages/AuthPage'));
 export function MaintenanceLoginShell() {
   useEffect(() => {
     if (!MAINTENANCE_PROTOCOL_ENABLED || !isMaintenanceModeActive()) return;
+    // Solo limpiar sesión residual. NO enable() + replace: provoca bucle de carga.
     void (async () => {
-      try {
-        await enableMaintenanceMode();
-      } catch {
-        /* ignore */
-      }
       try {
         const { data } = await supabase.auth.getSession();
         if (data.session) {

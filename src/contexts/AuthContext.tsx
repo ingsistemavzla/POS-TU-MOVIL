@@ -809,8 +809,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     clearBrowserAuthStorage();
     resetAuthState();
-    const path = window.location.pathname;
-    if (!isPublicAppPath(path) || path === '/' || path === '') {
+
+    // No recargar si ya estamos en login: eso provoca bucle carga ↔ login.
+    const path = window.location.pathname || '/';
+    const search = window.location.search || '';
+    const alreadyOnLogin =
+      path === '/' ||
+      path === '' ||
+      path.startsWith('/auth') ||
+      search.includes('maintenance=');
+    if (alreadyOnLogin) return;
+
+    if (!isPublicAppPath(path)) {
       window.location.replace('/?maintenance=1');
     }
   };
