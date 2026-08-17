@@ -13,9 +13,11 @@ import {
 export {
   STOCK_OUT_OF_STOCK_QTY,
   STOCK_CRITICAL_MIN_QTY,
-  STOCK_CRITICAL_MAX_QTY,
+  STOCK_CRITICAL_MAX_EXCLUSIVE,
   STOCK_WARNING_MIN_QTY,
-  STOCK_WARNING_MAX_QTY,
+  STOCK_WARNING_MAX_EXCLUSIVE,
+  STOCK_NORMAL_MIN_QTY,
+  isGlobalNonNormalStock,
   type StockAlertMode,
   type DashboardStockAlertItem,
 } from '@/constants/stockAlerts';

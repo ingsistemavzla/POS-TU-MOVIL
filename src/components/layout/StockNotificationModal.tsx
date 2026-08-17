@@ -25,9 +25,9 @@ interface StockNotificationModalProps {
 }
 
 const MODE_OPTIONS: Array<{ value: StockAlertMode; label: string }> = [
-  { value: 'warning', label: 'Stock bajo (3–9 uds)' },
-  { value: 'critical', label: 'Stock crítico (1–3 uds)' },
-  { value: 'out_of_stock', label: 'Sin stock (0 uds)' },
+  { value: 'warning', label: 'Stock bajo global (3–4 uds)' },
+  { value: 'critical', label: 'Stock crítico global (1–2 uds)' },
+  { value: 'out_of_stock', label: 'Sin stock global (0 uds)' },
 ];
 
 /** max-w-2xl (672px) + 20% ≈ 806px */

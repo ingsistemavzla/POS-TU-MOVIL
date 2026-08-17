@@ -1,11 +1,11 @@
 import { StockAlertMode } from '@/constants/stockAlerts';
 
+/** Clave por producto (inventario global consolidado, sin duplicar por sucursal). */
 export function buildStockAlertItemKey(
   productId: string,
-  storeId: string,
   mode: StockAlertMode
 ): string {
-  return `${mode}:${productId}:${storeId}`;
+  return `${mode}:${productId}`;
 }
 
 export function getStockAlertsStorageKey(companyId: string, userId: string): string {

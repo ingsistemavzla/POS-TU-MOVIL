@@ -25,7 +25,7 @@ const REALTIME_DEBOUNCE_MS = 1500;
 const POLL_INTERVAL_MS = 60_000;
 
 interface StockNotificationContextValue {
-  /** Filas compartidas qty 0–9 (fuente única navbar + dashboard). */
+  /** Filas compartidas por producto (suma global < 5 uds; fuente única navbar + dashboard). */
   alertRows: StockAlertInventoryRow[];
   totalWarningCount: number;
   unreviewedCount: number;

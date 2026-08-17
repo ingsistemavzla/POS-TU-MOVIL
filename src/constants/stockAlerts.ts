@@ -1,13 +1,20 @@
-/** Sin stock: 0 unidades */
+/** Sin stock (rojo): suma global = 0 */
 export const STOCK_OUT_OF_STOCK_QTY = 0;
 
-/** Stock crítico (naranja): 1 a 3 unidades */
+/** Stock crítico (naranja): suma global 1–2 uds (< 3) */
 export const STOCK_CRITICAL_MIN_QTY = 1;
-export const STOCK_CRITICAL_MAX_QTY = 3;
+export const STOCK_CRITICAL_MAX_EXCLUSIVE = 3;
 
-/** Stock bajo (amarillo): 3 a 9 unidades */
+/** Stock bajo (amarillo): suma global 3–4 uds (< 5) */
 export const STOCK_WARNING_MIN_QTY = 3;
-export const STOCK_WARNING_MAX_QTY = 10;
+export const STOCK_WARNING_MAX_EXCLUSIVE = 5;
+
+/** Normal (verde): suma global >= 5 */
+export const STOCK_NORMAL_MIN_QTY = 5;
+
+/** Identificador sintético para alertas consolidadas entre sucursales */
+export const GLOBAL_STOCK_STORE_ID = 'global';
+export const GLOBAL_STOCK_STORE_LABEL = 'Total global (todas las sucursales)';
 
 export type StockAlertMode = 'out_of_stock' | 'critical' | 'warning';
 
@@ -17,9 +24,28 @@ export interface DashboardStockAlertItem {
   name: string;
   sku: string;
   category: string;
+  /** Suma de inventario en todas las sucursales */
   currentStock: number;
   storeId: string;
   storeName: string;
+}
+
+export function rowMatchesStockAlertMode(
+  totalQty: number,
+  mode: StockAlertMode
+): boolean {
+  if (mode === 'out_of_stock') return totalQty === STOCK_OUT_OF_STOCK_QTY;
+  if (mode === 'critical') {
+    return (
+      totalQty >= STOCK_CRITICAL_MIN_QTY && totalQty < STOCK_CRITICAL_MAX_EXCLUSIVE
+    );
+  }
+  return totalQty >= STOCK_WARNING_MIN_QTY && totalQty < STOCK_WARNING_MAX_EXCLUSIVE;
+}
+
+/** Productos por debajo del umbral normal (alerta roja, naranja o amarilla). */
+export function isGlobalNonNormalStock(totalQty: number): boolean {
+  return totalQty < STOCK_NORMAL_MIN_QTY;
 }
 
 export const STOCK_ALERT_ROW_HEIGHT_PX = 68;
@@ -37,8 +63,8 @@ export const STOCK_ALERT_SCROLLABLE_LIST_CLASS =
 export const STOCK_ALERT_VARIANT_CONFIG = {
   out_of_stock: {
     title: 'Sin Stock',
-    rangeLabel: '0 uds',
-    emptyLabel: 'No hay artículos sin stock',
+    rangeLabel: '0 uds (global)',
+    emptyLabel: 'No hay artículos sin stock a nivel global',
     statusLabel: 'Agotado',
     cardClass: 'border-red-500/40 border-t-red-500 shadow-red-500/10',
     titleClass: 'text-red-400',
@@ -55,8 +81,8 @@ export const STOCK_ALERT_VARIANT_CONFIG = {
   },
   critical: {
     title: 'Stock Crítico',
-    rangeLabel: '1–3 uds',
-    emptyLabel: 'No hay artículos con entre 1 y 3 unidades',
+    rangeLabel: '1–2 uds (global)',
+    emptyLabel: 'No hay artículos con entre 1 y 2 unidades en total',
     statusLabel: 'Crítico',
     cardClass: 'border-orange-500/40 border-t-orange-500 shadow-orange-500/10',
     titleClass: 'text-orange-400',
@@ -73,8 +99,8 @@ export const STOCK_ALERT_VARIANT_CONFIG = {
   },
   warning: {
     title: 'Artículos con Stock Bajo',
-    rangeLabel: '3–9 uds',
-    emptyLabel: 'No hay artículos con entre 3 y 9 unidades',
+    rangeLabel: '3–4 uds (global)',
+    emptyLabel: 'No hay artículos con entre 3 y 4 unidades en total',
     statusLabel: 'Bajo Stock',
     cardClass: 'border-yellow-500/40 border-t-yellow-500 shadow-yellow-500/10',
     titleClass: 'text-yellow-400',

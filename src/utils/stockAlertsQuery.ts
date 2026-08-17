@@ -1,16 +1,15 @@
 import { supabase } from '@/integrations/supabase/client';
 import {
   DashboardStockAlertItem,
-  STOCK_CRITICAL_MAX_QTY,
-  STOCK_CRITICAL_MIN_QTY,
-  STOCK_OUT_OF_STOCK_QTY,
-  STOCK_WARNING_MAX_QTY,
-  STOCK_WARNING_MIN_QTY,
+  GLOBAL_STOCK_STORE_ID,
+  GLOBAL_STOCK_STORE_LABEL,
+  STOCK_NORMAL_MIN_QTY,
   StockAlertMode,
+  rowMatchesStockAlertMode,
 } from '@/constants/stockAlerts';
 import { buildStockAlertItemKey } from '@/utils/stockAlertKeys';
 
-/** Fila cruda de inventario relevante para alertas (qty 0–9). */
+/** Fila agregada por producto (suma global entre sucursales). */
 export interface StockAlertInventoryRow {
   productId: string;
   name: string;
@@ -21,77 +20,103 @@ export interface StockAlertInventoryRow {
   storeName: string;
 }
 
-const SELECT =
-  'qty, product_id, store_id, products!inner(id, name, sku, category, active), stores(id, name)';
+const PAGE_SIZE = 1000;
 
-function mapRows(data: unknown[] | null): StockAlertInventoryRow[] {
-  return (data ?? [])
-    .filter((row: any) => row.products && row.stores)
-    .map((row: any) => ({
-      productId: row.products.id as string,
-      name: row.products.name as string,
-      sku: row.products.sku as string,
-      category: row.products.category as string,
-      currentStock: Math.max(0, row.qty ?? 0),
-      storeId: row.store_id as string,
-      storeName: row.stores.name as string,
-    }));
+const SELECT = 'qty, product_id, products!inner(id, name, sku, category, active)';
+
+interface RawInventoryRow {
+  qty: number | null;
+  product_id: string;
+  products: {
+    id: string;
+    name: string;
+    sku: string;
+    category: string;
+    active: boolean;
+  } | null;
 }
 
-function mergeUnique(rows: StockAlertInventoryRow[]): StockAlertInventoryRow[] {
-  const map = new Map<string, StockAlertInventoryRow>();
-  for (const row of rows) {
-    map.set(`${row.productId}:${row.storeId}`, row);
+async function fetchInventoryPages(companyId: string): Promise<RawInventoryRow[]> {
+  const all: RawInventoryRow[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('inventories')
+      .select(SELECT)
+      .eq('company_id', companyId)
+      .eq('products.active', true)
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) throw error;
+
+    const rows = (data ?? []) as RawInventoryRow[];
+    if (rows.length === 0) break;
+
+    all.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
   }
-  return Array.from(map.values()).sort((a, b) => a.currentStock - b.currentStock);
+
+  return all;
+}
+
+function aggregateGlobalStock(rows: RawInventoryRow[]): StockAlertInventoryRow[] {
+  const byProduct = new Map<
+    string,
+    Omit<StockAlertInventoryRow, 'currentStock' | 'storeId' | 'storeName'> & {
+      totalStock: number;
+    }
+  >();
+
+  for (const row of rows) {
+    if (!row.products) continue;
+
+    const productId = row.products.id;
+    const qty = Math.max(0, row.qty ?? 0);
+    const existing = byProduct.get(productId);
+
+    if (existing) {
+      existing.totalStock += qty;
+      continue;
+    }
+
+    byProduct.set(productId, {
+      productId,
+      name: row.products.name,
+      sku: row.products.sku,
+      category: row.products.category,
+      totalStock: qty,
+    });
+  }
+
+  return Array.from(byProduct.values())
+    .filter((row) => row.totalStock < STOCK_NORMAL_MIN_QTY)
+    .map((row) => ({
+      productId: row.productId,
+      name: row.name,
+      sku: row.sku,
+      category: row.category,
+      currentStock: row.totalStock,
+      storeId: GLOBAL_STOCK_STORE_ID,
+      storeName: GLOBAL_STOCK_STORE_LABEL,
+    }))
+    .sort((a, b) => a.currentStock - b.currentStock);
 }
 
 /**
- * Tres consultas por rango (no una sola 0–9).
- * Motivo: el límite ~1000 de Supabase, si se pide qty<10 ordenado ASC,
- * se llena de ceros y nunca llegan qty 1–9.
+ * Inventario activo agrupado por producto (GROUP BY product_id).
+ * Una fila por producto con SUM(qty) global; solo incluye totales < 5 uds.
  */
 export async function fetchAllStockAlertRows(
   companyId: string
 ): Promise<StockAlertInventoryRow[]> {
-  const base = () =>
-    supabase
-      .from('inventories')
-      .select(SELECT)
-      .eq('company_id', companyId)
-      .eq('products.active', true);
-
-  const [warningRes, criticalRes, outRes] = await Promise.all([
-    base()
-      .gte('qty', STOCK_WARNING_MIN_QTY)
-      .lt('qty', STOCK_WARNING_MAX_QTY)
-      .order('qty', { ascending: true }),
-    base()
-      .gte('qty', STOCK_CRITICAL_MIN_QTY)
-      .lte('qty', STOCK_CRITICAL_MAX_QTY)
-      .order('qty', { ascending: true }),
-    base()
-      .eq('qty', STOCK_OUT_OF_STOCK_QTY)
-      .order('qty', { ascending: true }),
-  ]);
-
-  if (warningRes.error) throw warningRes.error;
-  if (criticalRes.error) throw criticalRes.error;
-  if (outRes.error) throw outRes.error;
-
-  return mergeUnique([
-    ...mapRows(warningRes.data),
-    ...mapRows(criticalRes.data),
-    ...mapRows(outRes.data),
-  ]);
+  const rows = await fetchInventoryPages(companyId);
+  return aggregateGlobalStock(rows);
 }
 
 export function rowMatchesMode(qty: number, mode: StockAlertMode): boolean {
-  if (mode === 'out_of_stock') return qty === STOCK_OUT_OF_STOCK_QTY;
-  if (mode === 'critical') {
-    return qty >= STOCK_CRITICAL_MIN_QTY && qty <= STOCK_CRITICAL_MAX_QTY;
-  }
-  return qty >= STOCK_WARNING_MIN_QTY && qty < STOCK_WARNING_MAX_QTY;
+  return rowMatchesStockAlertMode(qty, mode);
 }
 
 export function filterStockAlertItems(
@@ -101,13 +126,13 @@ export function filterStockAlertItems(
   keyStyle: 'dashboard' | 'notification' = 'dashboard'
 ): DashboardStockAlertItem[] {
   return rows
-    .filter((row) => rowMatchesMode(row.currentStock, mode))
+    .filter((row) => rowMatchesStockAlertMode(row.currentStock, mode))
     .filter((row) => !category || row.category === category)
     .map((row) => ({
       key:
         keyStyle === 'notification'
-          ? buildStockAlertItemKey(row.productId, row.storeId, mode)
-          : `${row.productId}-${row.storeId}`,
+          ? buildStockAlertItemKey(row.productId, mode)
+          : row.productId,
       productId: row.productId,
       name: row.name,
       sku: row.sku,

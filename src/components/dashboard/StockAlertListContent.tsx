@@ -58,7 +58,7 @@ function ScrollableStockList({
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-white">{item.name}</p>
                 <p className="truncate text-xs text-white/80">
-                  SKU: {item.sku} • {item.storeName}
+                  SKU: {item.sku} • Total global
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-3">

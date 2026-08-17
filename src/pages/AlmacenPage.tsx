@@ -39,6 +39,7 @@ import {
 import { ProductForm } from '../components/pos/ProductForm';
 import { useToast } from '@/hooks/use-toast';
 import { PRODUCT_CATEGORIES, getCategoryLabel } from '@/constants/categories';
+import { isGlobalNonNormalStock } from '@/constants/stockAlerts';
 import { BranchStockMatrix } from '@/components/inventory/BranchStockMatrix';
 import { InventoryDashboardHeader } from '@/components/inventory/InventoryDashboardHeader';
 import { StoreFilterBar } from '@/components/inventory/StoreFilterBar';
@@ -494,7 +495,8 @@ export const AlmacenPage: React.FC = () => {
         
         const matchesCategory = categoryFilter === 'all' || product.category === categoryFilter;
 
-        const matchesLowStock = !lowStockOnly || (product.total_stock || 0) < 5;
+        const matchesLowStock =
+          !lowStockOnly || isGlobalNonNormalStock(product.total_stock || 0);
 
         return matchesSearch && matchesCategory && matchesLowStock;
       })
