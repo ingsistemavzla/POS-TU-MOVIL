@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,6 +61,16 @@ export const ProductForm: React.FC<ProductFormProps> = ({
   onSuccess,
 }) => {
   const { userProfile } = useAuth();
+  const { activeStoreId, selectedStore } = useStore();
+  const inventoryStores = useMemo(() => {
+    if (!activeStoreId) return [];
+    const fromProps = stores.filter((store) => store.id === activeStoreId);
+    if (fromProps.length > 0) return fromProps;
+    if (selectedStore?.id === activeStoreId) {
+      return [{ id: selectedStore.id, name: selectedStore.name }];
+    }
+    return [];
+  }, [stores, activeStoreId, selectedStore]);
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -110,19 +121,25 @@ export const ProductForm: React.FC<ProductFormProps> = ({
         category: prev.category || defaultCategory,
       }));
       // Initialize store inventories for new product
-      setStoreInventories(stores.map(store => ({
+      setStoreInventories(inventoryStores.map(store => ({
         store_id: store.id,
         qty: 0,
       })));
     }
-  }, [product, stores]);
+  }, [product, inventoryStores]);
 
   const fetchProductInventories = async (productId: string) => {
+    if (!activeStoreId) {
+      setStoreInventories([]);
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from('inventories')
         .select('store_id, qty')
-        .eq('product_id', productId);
+        .eq('product_id', productId)
+        .eq('store_id', activeStoreId);
 
       if (error) {
         console.error('Error fetching inventories:', error);
@@ -132,7 +149,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
       const inventoryMap = new Map(data.map(inv => [inv.store_id, inv]));
       
       // CRÍTICO: Corregir y detectar stock negativo al cargar
-      const inventoriesWithFix = stores.map(store => {
+      const inventoriesWithFix = inventoryStores.map(store => {
         const inv = inventoryMap.get(store.id);
         const rawQty = inv?.qty || 0;
         

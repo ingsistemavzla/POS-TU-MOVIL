@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { isConcreteStoreId } from '@/contexts/StoreContext';
 import { sanitizeInventoryData } from '@/utils/inventoryValidation';
 
 /** Tamaño de página PostgREST (límite por defecto ~1000). */
@@ -40,6 +41,8 @@ export interface CatalogProductRow {
   active: boolean;
   created_at: string;
 }
+
+export type StockPresence = 'all' | 'in_stock' | 'out_of_stock';
 
 export interface CatalogStoreRow {
   id: string;
@@ -109,18 +112,22 @@ export async function fetchAllActiveProducts(options?: {
 }
 
 /**
- * Inventario solo de los product_id dados (sin JOIN a products).
- * Chunk + range para no saturar PostgREST.
- * Cache memoria ~90s (misma clave de tienda + cantidad de IDs).
+ * Inventario de los product_id dados.
+ * storeId UUID: solo esa sucursal. 'all': existencias de todas las sucursales (catálogo admin).
  */
 export async function fetchInventoriesForProductIds(
   productIds: string[],
-  options?: { storeId?: string | null; bypassCache?: boolean }
+  storeId: string,
+  options?: { bypassCache?: boolean; stockStatus?: StockPresence }
 ): Promise<Array<{ product_id: string; store_id: string; qty: number; min_qty: number }>> {
+  const allStores = storeId === 'all';
+  if (!allStores && !isConcreteStoreId(storeId)) {
+    throw new Error('STORE_ID_REQUIRED');
+  }
   if (productIds.length === 0) return [];
 
-  const storeId = options?.storeId ?? null;
-  const cacheKey = `inv:${storeId ?? 'all'}:${productIds.length}:${productIds[0]}:${productIds[productIds.length - 1]}`;
+  const stockStatus: StockPresence = allStores ? 'all' : (options?.stockStatus ?? 'all');
+  const cacheKey = `inv:${storeId}:${stockStatus}:${productIds.length}:${productIds[0]}:${productIds[productIds.length - 1]}`;
 
   if (!options?.bypassCache && inventoryMem && inventoryMem.key === cacheKey) {
     if (Date.now() - inventoryMem.at < MEMORY_TTL_MS) {
@@ -140,8 +147,14 @@ export async function fetchInventoriesForProductIds(
         .in('product_id', chunk)
         .range(from, from + PAGE_SIZE - 1);
 
-      if (storeId) {
+      if (!allStores) {
         query = query.eq('store_id', storeId);
+      }
+
+      if (stockStatus === 'in_stock') {
+        query = query.gt('qty', 0);
+      } else if (stockStatus === 'out_of_stock') {
+        query = query.eq('qty', 0);
       }
 
       const { data, error } = await query;
@@ -169,6 +182,17 @@ export async function fetchInventoriesForProductIds(
 
   inventoryMem = { at: Date.now(), key: cacheKey, data: all };
   return all;
+}
+
+/** Deja solo los productos cuya fila de inventario coincide con el filtro de cantidad. */
+export function productsForStockPresence<T extends { id: string }>(
+  products: T[],
+  inventoryData: Array<{ product_id: string }>,
+  stockStatus: StockPresence
+): T[] {
+  if (stockStatus === 'all') return products;
+  const matchingIds = new Set(inventoryData.map((row) => row.product_id));
+  return products.filter((product) => matchingIds.has(product.id));
 }
 
 /** Arma total_stock + matriz por tienda (mismas reglas que Almacén/Artículos). */

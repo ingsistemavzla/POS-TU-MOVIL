@@ -25,19 +25,26 @@ import { useInventoryFinancialSummary } from '@/hooks/useInventoryFinancialSumma
 import { useStore } from '@/contexts/StoreContext';
 import { formatCurrency } from '@/utils/currency';
 import { getCategoryLabel } from '@/constants/categories';
+import type { StockPresence } from '@/utils/inventoryCatalogFetch';
 
 interface InventoryDashboardHeaderProps {
   searchTerm: string;
   onSearchChange: (value: string) => void;
   categoryFilter: string;
   onCategoryFilterChange: (value: string) => void;
+  stockStatus: StockPresence;
+  onStockStatusChange: (value: StockPresence) => void;
+  stockStatusDisabled?: boolean;
 }
 
 export const InventoryDashboardHeader: React.FC<InventoryDashboardHeaderProps> = ({
   searchTerm,
   onSearchChange,
   categoryFilter,
-  onCategoryFilterChange
+  onCategoryFilterChange,
+  stockStatus,
+  onStockStatusChange,
+  stockStatusDisabled = false,
 }) => {
   const { availableStores, selectedStoreId } = useStore();
   const { data, loading, error } = useInventoryFinancialSummary(selectedStoreId);
@@ -290,6 +297,23 @@ export const InventoryDashboardHeader: React.FC<InventoryDashboardHeaderProps> =
                   className="pl-10 glass-input border-white/20 text-white"
                 />
               </div>
+            </div>
+
+            <div className="w-full md:w-[160px]">
+              <Select
+                value={stockStatus}
+                onValueChange={(value) => onStockStatusChange(value as StockPresence)}
+                disabled={stockStatusDisabled}
+              >
+                <SelectTrigger className="glass-input border-white/20 text-white">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="in_stock">Con Stock</SelectItem>
+                  <SelectItem value="out_of_stock">Sin Stock</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Filtro por Categoría */}

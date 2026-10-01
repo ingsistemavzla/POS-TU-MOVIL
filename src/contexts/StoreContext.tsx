@@ -12,9 +12,16 @@ interface Store {
   email_fiscal?: string;
 }
 
+/** UUID de sucursal. Rechaza null, vacío y el centinela 'all'. */
+export function isConcreteStoreId(id: string | null | undefined): id is string {
+  return typeof id === 'string' && id.length > 0 && id !== 'all';
+}
+
 interface StoreContextType {
   selectedStore: Store | null;
   selectedStoreId: string | null;
+  /** Sucursal concreta para lecturas de stock. null si el admin está en «Todas». */
+  activeStoreId: string | null;
   availableStores: Store[];
   setSelectedStore: (store: Store | null) => void;
   setSelectedStoreId: (id: string | null) => void;
@@ -176,9 +183,12 @@ export const StoreProvider: React.FC<StoreProviderProps> = ({ children }) => {
     }
   };
 
+  const activeStoreId = isConcreteStoreId(selectedStoreId) ? selectedStoreId : null;
+
   const contextValue: StoreContextType = {
     selectedStore,
     selectedStoreId,
+    activeStoreId,
     availableStores,
     setSelectedStore,
     setSelectedStoreId,

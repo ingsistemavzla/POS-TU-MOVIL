@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'pos_inventory_page_cache_v2';
+const STORAGE_KEY = 'pos_inventory_page_cache_v4';
 /** Cache fresca: se puede mostrar sin forzar sensación de “viejo”. */
 const TTL_MS = 5 * 60 * 1000;
 /** Cache stale: pintar al instante y refrescar en segundo plano. */
@@ -9,8 +9,11 @@ export interface InventoryPageCachePayload {
   storeInventories: Record<string, unknown[]>;
   timestamp: number;
   companyId: string;
+  storeId: string;
   /** Filtro de categoría usado al cargar (`all` = sin filtro). */
   categoryScope: string;
+  /** Todos / con stock / sin stock. */
+  stockPresence: string;
 }
 
 function scopeKey(category?: string | null): string {
@@ -19,16 +22,20 @@ function scopeKey(category?: string | null): string {
 
 export function readInventoryPageCache(
   companyId: string,
-  category?: string | null,
+  storeId: string,
+  category: string | null | undefined,
+  stockPresence: string,
   options?: { allowStale?: boolean }
 ): InventoryPageCachePayload | null {
-  if (typeof window === 'undefined' || !companyId) return null;
+  if (typeof window === 'undefined' || !companyId || !storeId) return null;
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as InventoryPageCachePayload;
     if (parsed.companyId !== companyId) return null;
+    if (parsed.storeId !== storeId) return null;
     if ((parsed.categoryScope ?? 'all') !== scopeKey(category)) return null;
+    if ((parsed.stockPresence ?? 'all') !== (stockPresence || 'all')) return null;
     const age = Date.now() - parsed.timestamp;
     const maxAge = options?.allowStale ? STALE_TTL_MS : TTL_MS;
     if (age > maxAge) return null;
@@ -40,18 +47,22 @@ export function readInventoryPageCache(
 
 export function writeInventoryPageCache(
   companyId: string,
+  storeId: string,
   products: unknown[],
   storeInventories: Record<string, unknown[]>,
-  category?: string | null
+  category: string | null | undefined,
+  stockPresence: string
 ): void {
-  if (typeof window === 'undefined' || !companyId) return;
+  if (typeof window === 'undefined' || !companyId || !storeId) return;
   try {
     const payload: InventoryPageCachePayload = {
       products,
       storeInventories,
       timestamp: Date.now(),
       companyId,
+      storeId,
       categoryScope: scopeKey(category),
+      stockPresence: stockPresence || 'all',
     };
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   } catch {

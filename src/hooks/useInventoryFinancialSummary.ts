@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { isConcreteStoreId } from '@/contexts/StoreContext';
 
 export interface CategoryBreakdown {
   category_name: string;
@@ -36,8 +37,9 @@ export function useInventoryFinancialSummary(
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!enabled) {
+    if (!enabled || !isConcreteStoreId(storeId)) {
       setLoading(false);
+      setData(null);
       return;
     }
 
@@ -52,22 +54,12 @@ export function useInventoryFinancialSummary(
         setError(null);
 
         const companyId = company?.id || userProfile?.company_id;
-        
-        // 🔥 FILTRO DE SUCURSAL: Pasar storeId solo si no es 'all' ni null
-        const storeIdParam = storeId && storeId !== 'all' ? storeId : null;
-
-        // 🔥 DEBUG: Log para verificar parámetros
-        console.log('[useInventoryFinancialSummary] Fetching data:', {
-          companyId,
-          storeId,
-          storeIdParam
-        });
 
         const { data: result, error: rpcError } = await supabase.rpc(
           'get_inventory_financial_summary',
           {
             p_company_id: companyId || null,
-            p_store_id: storeIdParam || null
+            p_store_id: storeId
           }
         );
 

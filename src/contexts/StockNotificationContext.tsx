@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { supabase } from '@/integrations/supabase/client';
 import { DashboardStockAlertItem } from '@/constants/stockAlerts';
 import {
@@ -25,7 +26,7 @@ const REALTIME_DEBOUNCE_MS = 1500;
 const POLL_INTERVAL_MS = 60_000;
 
 interface StockNotificationContextValue {
-  /** Filas compartidas por producto (suma global < 5 uds; fuente única navbar + dashboard). */
+  /** Filas de stock bajo de la sucursal activa (fuente única navbar + dashboard). */
   alertRows: StockAlertInventoryRow[];
   totalWarningCount: number;
   unreviewedCount: number;
@@ -45,6 +46,7 @@ const STOCK_NOTIFICATION_ROLES = new Set(['admin', 'manager', 'master_admin']);
 
 export function StockNotificationProvider({ children }: { children: ReactNode }) {
   const { userProfile } = useAuth();
+  const { activeStoreId, selectedStore } = useStore();
   const [alertRows, setAlertRows] = useState<StockAlertInventoryRow[]>([]);
   const [acknowledgedKeys, setAcknowledgedKeys] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -67,10 +69,14 @@ export function StockNotificationProvider({ children }: { children: ReactNode })
   }, [userProfile?.company_id, userProfile?.id]);
 
   const refresh = useCallback(async () => {
-    if (!enabled || !companyId || refreshInFlight.current) return;
+    if (!enabled || !companyId || !activeStoreId || refreshInFlight.current) return;
     refreshInFlight.current = true;
     try {
-      const rows = await fetchAllStockAlertRows(companyId);
+      const rows = await fetchAllStockAlertRows(
+        companyId,
+        activeStoreId,
+        selectedStore?.name || 'Sucursal'
+      );
       const warningItems = filterStockAlertItems(rows, 'warning', null, 'notification');
       const currentKeys = new Set(warningItems.map((item) => item.key));
       const ack = loadAcknowledgedKeys(userProfile!.company_id, userProfile!.id);
@@ -90,7 +96,7 @@ export function StockNotificationProvider({ children }: { children: ReactNode })
       setLoading(false);
       refreshInFlight.current = false;
     }
-  }, [enabled, companyId, userProfile?.company_id, userProfile?.id]);
+  }, [enabled, companyId, activeStoreId, selectedStore?.name, userProfile?.company_id, userProfile?.id]);
 
   const scheduleRefresh = useCallback(() => {
     if (debounceTimerRef.current != null) {
@@ -107,7 +113,7 @@ export function StockNotificationProvider({ children }: { children: ReactNode })
   }, [loadAckState]);
 
   useEffect(() => {
-    if (!enabled || !companyId) {
+    if (!enabled || !companyId || !activeStoreId) {
       setAlertRows([]);
       setLoading(false);
       return;
@@ -121,14 +127,14 @@ export function StockNotificationProvider({ children }: { children: ReactNode })
     }, POLL_INTERVAL_MS);
 
     const channel = supabase
-      .channel(`stock-notifications-${companyId}`)
+      .channel(`stock-notifications-${companyId}-${activeStoreId}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'inventories',
-          filter: `company_id=eq.${companyId}`,
+          filter: `store_id=eq.${activeStoreId}`,
         },
         () => {
           scheduleRefresh();

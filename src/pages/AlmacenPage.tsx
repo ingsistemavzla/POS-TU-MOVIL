@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useDebounce } from '@/hooks/useDebounce';
 import { Button } from '@/components/ui/button';
@@ -56,7 +57,9 @@ import {
   fetchAllActiveProducts,
   fetchInventoriesForProductIds,
   buildCatalogWithStock,
+  productsForStockPresence,
   invalidateInventoryCatalogMemory,
+  type StockPresence,
 } from '@/utils/inventoryCatalogFetch';
 
 interface Product {
@@ -89,6 +92,7 @@ interface StoreInventory {
 
 export const AlmacenPage: React.FC = () => {
   const { userProfile } = useAuth();
+  const { activeStoreId, availableStores, selectedStore } = useStore();
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
@@ -98,6 +102,7 @@ export const AlmacenPage: React.FC = () => {
   // ✅ OPTIMIZACIÓN: Debounce en búsqueda (espera 300ms después de que usuario deje de escribir)
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [stockStatus, setStockStatus] = useState<StockPresence>('all');
   const [sortBy, setSortBy] = useState<string>('name');
   const [sortOrder, setSortOrder] = useState<string>('asc');
   const [lowStockOnly, setLowStockOnly] = useState<boolean>(false);
@@ -126,7 +131,10 @@ export const AlmacenPage: React.FC = () => {
       }
 
       const companyId = userProfile.company_id;
-      const sessionCached = readInventoryPageCache(companyId, categoryFilter, {
+      const catalogStoreId = activeStoreId ?? 'all';
+      const catalogStockStatus: StockPresence = activeStoreId ? stockStatus : 'all';
+
+      const sessionCached = readInventoryPageCache(companyId, catalogStoreId, categoryFilter, catalogStockStatus, {
         allowStale: true,
       });
       const hasLocalData = products.length > 0;
@@ -178,7 +186,9 @@ export const AlmacenPage: React.FC = () => {
       const productIds = productsData.map((p) => p.id);
       let inventoryData: Array<{ product_id: string; store_id: string; qty: number }> = [];
       try {
-        inventoryData = await fetchInventoriesForProductIds(productIds);
+        inventoryData = await fetchInventoriesForProductIds(productIds, catalogStoreId, {
+          stockStatus: catalogStockStatus,
+        });
       } catch (inventoryError: any) {
         console.error('Error fetching inventory:', inventoryError);
         toast({
@@ -188,12 +198,28 @@ export const AlmacenPage: React.FC = () => {
         });
       }
 
+      const activeStoreRow =
+        availableStores.find((store) => store.id === activeStoreId) ??
+        (selectedStore?.id === activeStoreId
+          ? { id: selectedStore.id, name: selectedStore.name }
+          : null);
+      const visibleProducts = productsForStockPresence(productsData, inventoryData, catalogStockStatus);
+      const catalogStores = activeStoreId
+        ? (activeStoreRow ? [{ id: activeStoreRow.id, name: activeStoreRow.name }] : [])
+        : ((storesData || []) as Store[]);
       const { products: productsWithStock, storeInventories: inventoriesByProduct } =
-        buildCatalogWithStock(productsData, inventoryData, (storesData || []) as Store[]);
+        buildCatalogWithStock(visibleProducts, inventoryData, catalogStores);
 
       setProducts(productsWithStock as Product[]);
       setStoreInventories(inventoriesByProduct as Record<string, StoreInventory[]>);
-      writeInventoryPageCache(companyId, productsWithStock, inventoriesByProduct, categoryFilter);
+      writeInventoryPageCache(
+        companyId,
+        catalogStoreId,
+        productsWithStock,
+        inventoriesByProduct,
+        categoryFilter,
+        catalogStockStatus
+      );
     } catch (error) {
       console.error('Error in fetchData:', error);
       toast({
@@ -211,19 +237,21 @@ export const AlmacenPage: React.FC = () => {
   useLayoutEffect(() => {
     const companyId = userProfile?.company_id;
     if (!companyId) return;
-    const cached = readInventoryPageCache(companyId, categoryFilter, { allowStale: true });
+    const catalogStoreId = activeStoreId ?? 'all';
+    const catalogStockStatus: StockPresence = activeStoreId ? stockStatus : 'all';
+    const cached = readInventoryPageCache(companyId, catalogStoreId, categoryFilter, catalogStockStatus, { allowStale: true });
     if (!cached) return;
     setProducts(cached.products as Product[]);
     setStoreInventories(cached.storeInventories as Record<string, StoreInventory[]>);
     setLoading(false);
-  }, [userProfile?.company_id, categoryFilter]);
+  }, [userProfile?.company_id, categoryFilter, activeStoreId, stockStatus]);
 
   useEffect(() => {
     if (userProfile?.company_id) {
       fetchData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userProfile?.company_id, categoryFilter]);
+  }, [userProfile?.company_id, categoryFilter, activeStoreId, stockStatus]);
   // Toggle expandir producto
   const toggleExpand = (productId: string) => {
     setExpandedProducts(prev => {
@@ -522,11 +550,11 @@ export const AlmacenPage: React.FC = () => {
       
       return sortOrder === 'asc' ? comparison : -comparison;
     });
-  }, [products, debouncedSearchTerm, categoryFilter, lowStockOnly, sortBy, sortOrder]);
+  }, [products, debouncedSearchTerm, categoryFilter, lowStockOnly, sortBy, sortOrder, activeStoreId]);
 
   const isFilterPending = searchTerm !== debouncedSearchTerm;
 
-  const paginationResetKey = `${debouncedSearchTerm}|${categoryFilter}|${lowStockOnly}|${sortBy}|${sortOrder}`;
+  const paginationResetKey = `${debouncedSearchTerm}|${categoryFilter}|${stockStatus}|${lowStockOnly}|${sortBy}|${sortOrder}`;
   const {
     paginatedItems,
     currentPage,
@@ -572,13 +600,15 @@ export const AlmacenPage: React.FC = () => {
       </div>
 
       <StoreFilterBar pageTitle="Almacén" />
-
       {/* Header del Dashboard de Inventario */}
       <InventoryDashboardHeader
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
         categoryFilter={categoryFilter}
         onCategoryFilterChange={setCategoryFilter}
+        stockStatus={stockStatus}
+        onStockStatusChange={setStockStatus}
+        stockStatusDisabled={!activeStoreId}
       />
 
       {/* Tabla de Productos */}

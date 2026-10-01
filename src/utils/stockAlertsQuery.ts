@@ -1,15 +1,14 @@
 import { supabase } from '@/integrations/supabase/client';
+import { isConcreteStoreId } from '@/contexts/StoreContext';
 import {
   DashboardStockAlertItem,
-  GLOBAL_STOCK_STORE_ID,
-  GLOBAL_STOCK_STORE_LABEL,
   STOCK_NORMAL_MIN_QTY,
   StockAlertMode,
   rowMatchesStockAlertMode,
 } from '@/constants/stockAlerts';
 import { buildStockAlertItemKey } from '@/utils/stockAlertKeys';
 
-/** Fila agregada por producto (suma global entre sucursales). */
+/** Fila de stock bajo de una sucursal concreta. */
 export interface StockAlertInventoryRow {
   productId: string;
   name: string;
@@ -36,7 +35,7 @@ interface RawInventoryRow {
   } | null;
 }
 
-async function fetchInventoryPages(companyId: string): Promise<RawInventoryRow[]> {
+async function fetchInventoryPages(companyId: string, storeId: string): Promise<RawInventoryRow[]> {
   const all: RawInventoryRow[] = [];
   let from = 0;
 
@@ -45,6 +44,7 @@ async function fetchInventoryPages(companyId: string): Promise<RawInventoryRow[]
       .from('inventories')
       .select(SELECT)
       .eq('company_id', companyId)
+      .eq('store_id', storeId)
       .eq('products.active', true)
       .range(from, from + PAGE_SIZE - 1);
 
@@ -61,58 +61,37 @@ async function fetchInventoryPages(companyId: string): Promise<RawInventoryRow[]
   return all;
 }
 
-function aggregateGlobalStock(rows: RawInventoryRow[]): StockAlertInventoryRow[] {
-  const byProduct = new Map<
-    string,
-    Omit<StockAlertInventoryRow, 'currentStock' | 'storeId' | 'storeName'> & {
-      totalStock: number;
-    }
-  >();
-
-  for (const row of rows) {
-    if (!row.products) continue;
-
-    const productId = row.products.id;
-    const qty = Math.max(0, row.qty ?? 0);
-    const existing = byProduct.get(productId);
-
-    if (existing) {
-      existing.totalStock += qty;
-      continue;
-    }
-
-    byProduct.set(productId, {
-      productId,
-      name: row.products.name,
-      sku: row.products.sku,
-      category: row.products.category,
-      totalStock: qty,
-    });
-  }
-
-  return Array.from(byProduct.values())
-    .filter((row) => row.totalStock < STOCK_NORMAL_MIN_QTY)
+function rowsForStore(
+  rows: RawInventoryRow[],
+  storeId: string,
+  storeName: string
+): StockAlertInventoryRow[] {
+  return rows
+    .filter((row) => row.products)
     .map((row) => ({
-      productId: row.productId,
-      name: row.name,
-      sku: row.sku,
-      category: row.category,
-      currentStock: row.totalStock,
-      storeId: GLOBAL_STOCK_STORE_ID,
-      storeName: GLOBAL_STOCK_STORE_LABEL,
+      productId: row.products!.id,
+      name: row.products!.name,
+      sku: row.products!.sku,
+      category: row.products!.category,
+      currentStock: Math.max(0, row.qty ?? 0),
+      storeId,
+      storeName,
     }))
+    .filter((row) => row.currentStock < STOCK_NORMAL_MIN_QTY)
     .sort((a, b) => a.currentStock - b.currentStock);
 }
 
-/**
- * Inventario activo agrupado por producto (GROUP BY product_id).
- * Una fila por producto con SUM(qty) global; solo incluye totales < 5 uds.
- */
+/** Stock bajo de una sucursal. No suma cantidades entre tiendas. */
 export async function fetchAllStockAlertRows(
-  companyId: string
+  companyId: string,
+  storeId: string,
+  storeName: string
 ): Promise<StockAlertInventoryRow[]> {
-  const rows = await fetchInventoryPages(companyId);
-  return aggregateGlobalStock(rows);
+  if (!isConcreteStoreId(storeId)) {
+    throw new Error('STORE_ID_REQUIRED');
+  }
+  const rows = await fetchInventoryPages(companyId, storeId);
+  return rowsForStore(rows, storeId, storeName);
 }
 
 export function rowMatchesMode(qty: number, mode: StockAlertMode): boolean {

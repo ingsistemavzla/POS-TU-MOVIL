@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { readDashboardPageCache, writeDashboardPageCache } from '@/utils/dashboardPageCache';
 
 /**
@@ -478,6 +479,7 @@ const getEmptyData = getEmptyDashboardData;
 export function useDashboardData(options?: { enabled?: boolean }) {
   const enabled = options?.enabled !== false;
   const { userProfile, company } = useAuth();
+  const { activeStoreId } = useStore();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -489,13 +491,13 @@ export function useDashboardData(options?: { enabled?: boolean }) {
 
   // Pintar cache stale/fresca ANTES del paint cuando ya hay company
   useLayoutEffect(() => {
-    if (!companyId) return;
-    const cached = readDashboardPageCache(companyId, { allowStale: true });
+    if (!companyId || !activeStoreId) return;
+    const cached = readDashboardPageCache(companyId, activeStoreId, { allowStale: true });
     if (cached) {
       setData(cached);
       setLoading(false);
     }
-  }, [companyId]);
+  }, [companyId, activeStoreId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -517,7 +519,9 @@ export function useDashboardData(options?: { enabled?: boolean }) {
       }
 
       const cid = company.id;
-      const cached = readDashboardPageCache(cid, { allowStale: true });
+      const cached = activeStoreId
+        ? readDashboardPageCache(cid, activeStoreId, { allowStale: true })
+        : null;
       const hasCachedData = !!cached;
 
       if (cached && !cancelled) {
@@ -759,8 +763,6 @@ export function useDashboardData(options?: { enabled?: boolean }) {
         // ============================================
         // 4-6. DATOS ADICIONALES (paralelizados; daily ya viene de allSalesRows)
         // ============================================
-        const storeIds = stores.map(s => s.id);
-
         const [
           recentSalesResult,
           topProductsResult,
@@ -845,10 +847,12 @@ export function useDashboardData(options?: { enabled?: boolean }) {
           // 6. Stock crítico (tope para no bajar todo el inventario)
           (async () => {
             try {
+              if (!activeStoreId) return [];
+
               const { data: stockData, error: stockError } = await supabase
                 .from('inventories')
                 .select('qty, min_qty, products!inner(id, name, sku, active), stores(id, name)')
-                .in('store_id', storeIds)
+                .eq('store_id', activeStoreId)
                 .eq('products.active', true)
                 .limit(500);
 
@@ -1009,7 +1013,9 @@ export function useDashboardData(options?: { enabled?: boolean }) {
 
         if (!cancelled) {
           setData(dashboardData);
-          writeDashboardPageCache(cid, dashboardData);
+          if (activeStoreId) {
+            writeDashboardPageCache(cid, activeStoreId, dashboardData);
+          }
         }
         clearTimeout(timeoutId);
       } catch (err) {
@@ -1031,7 +1037,7 @@ export function useDashboardData(options?: { enabled?: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [userProfileId, companyId, userCompanyId, enabled, refreshKey]);
+  }, [userProfileId, companyId, userCompanyId, enabled, refreshKey, activeStoreId]);
 
   const refetch = () => setRefreshKey((k) => k + 1);
 

@@ -68,7 +68,9 @@ import {
   fetchAllActiveProducts,
   fetchInventoriesForProductIds,
   buildCatalogWithStock,
+  productsForStockPresence,
   invalidateInventoryCatalogMemory,
+  type StockPresence,
 } from '@/utils/inventoryCatalogFetch';
 
 interface Product {
@@ -97,7 +99,7 @@ interface StoreInventory {
 
 export const ArticulosPage: React.FC = () => {
   const { userProfile } = useAuth();
-  const { availableStores } = useStore();
+  const { activeStoreId, availableStores, selectedStore } = useStore();
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
@@ -108,6 +110,7 @@ export const ArticulosPage: React.FC = () => {
   const deferredSearchTerm = useDeferredValue(debouncedSearchTerm);
   const isSearchPending = debouncedSearchTerm !== deferredSearchTerm;
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [stockStatus, setStockStatus] = useState<StockPresence>('all');
   const [showForm, setShowForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [storeInventories, setStoreInventories] = useState<Record<string, StoreInventory[]>>({});
@@ -130,6 +133,8 @@ export const ArticulosPage: React.FC = () => {
     storeInventories: Record<string, StoreInventory[]>;
     timestamp: number;
     categoryScope: string;
+    storeId: string;
+    stockPresence: StockPresence;
   } | null>(null);
   const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 
@@ -143,8 +148,10 @@ export const ArticulosPage: React.FC = () => {
       }
 
       const companyId = userProfile.company_id;
+      const catalogStoreId = activeStoreId ?? 'all';
+      const catalogStockStatus: StockPresence = activeStoreId ? stockStatus : 'all';
 
-      const sessionCached = readInventoryPageCache(companyId, categoryFilter, {
+      const sessionCached = readInventoryPageCache(companyId, catalogStoreId, categoryFilter, catalogStockStatus, {
         allowStale: true,
       });
       if (sessionCached && products.length === 0) {
@@ -155,6 +162,8 @@ export const ArticulosPage: React.FC = () => {
           storeInventories: sessionCached.storeInventories as Record<string, StoreInventory[]>,
           timestamp: sessionCached.timestamp,
           categoryScope: categoryFilter,
+          storeId: catalogStoreId,
+          stockPresence: catalogStockStatus,
         };
         setLoading(false);
       }
@@ -162,6 +171,8 @@ export const ArticulosPage: React.FC = () => {
       const cached = productsCache.current;
       const cacheFresh =
         cached &&
+        cached.storeId === catalogStoreId &&
+        cached.stockPresence === catalogStockStatus &&
         cached.categoryScope === categoryFilter &&
         Date.now() - cached.timestamp < CACHE_TTL;
 
@@ -184,11 +195,19 @@ export const ArticulosPage: React.FC = () => {
         return;
       }
 
-      const storesData = availableStores;
+      const activeStoreRow =
+        availableStores.find((store) => store.id === activeStoreId) ??
+        (selectedStore?.id === activeStoreId
+          ? { id: selectedStore.id, name: selectedStore.name }
+          : null);
 
       let inventoryData: Array<{ product_id: string; store_id: string; qty: number }> = [];
       try {
-        inventoryData = await fetchInventoriesForProductIds(productsData.map((p) => p.id));
+        inventoryData = await fetchInventoriesForProductIds(
+          productsData.map((p) => p.id),
+          catalogStoreId,
+          { stockStatus: catalogStockStatus }
+        );
       } catch (inventoryError: any) {
         console.error('Error fetching inventory:', inventoryError);
         toast({
@@ -198,27 +217,31 @@ export const ArticulosPage: React.FC = () => {
         });
       }
 
+      const visibleProducts = productsForStockPresence(productsData, inventoryData, catalogStockStatus);
+      const catalogStores = activeStoreId
+        ? (activeStoreRow ? [{ id: activeStoreRow.id, name: activeStoreRow.name }] : [])
+        : availableStores.map((store) => ({ id: store.id, name: store.name }));
       const { products: productsWithStock, storeInventories: inventoriesByProduct } =
-        buildCatalogWithStock(
-          productsData,
-          inventoryData,
-          (storesData || []).map((s) => ({ id: s.id, name: s.name }))
-        );
+        buildCatalogWithStock(visibleProducts, inventoryData, catalogStores);
 
       productsCache.current = {
         products: productsWithStock as Product[],
         storeInventories: inventoriesByProduct as Record<string, StoreInventory[]>,
         timestamp: Date.now(),
         categoryScope: categoryFilter,
+        storeId: catalogStoreId,
+        stockPresence: catalogStockStatus,
       };
 
       setProducts(productsWithStock as Product[]);
       setStoreInventories(inventoriesByProduct as Record<string, StoreInventory[]>);
       writeInventoryPageCache(
         companyId,
+        catalogStoreId,
         productsWithStock,
         inventoriesByProduct,
-        categoryFilter
+        categoryFilter,
+        catalogStockStatus
       );
     } catch (error: any) {
       console.error('Error in fetchData:', error);
@@ -238,7 +261,9 @@ export const ArticulosPage: React.FC = () => {
   useLayoutEffect(() => {
     const companyId = userProfile?.company_id;
     if (!companyId) return;
-    const cached = readInventoryPageCache(companyId, categoryFilter, { allowStale: true });
+    const catalogStoreId = activeStoreId ?? 'all';
+    const catalogStockStatus: StockPresence = activeStoreId ? stockStatus : 'all';
+    const cached = readInventoryPageCache(companyId, catalogStoreId, categoryFilter, catalogStockStatus, { allowStale: true });
     if (!cached) return;
     setProducts(cached.products as Product[]);
     setStoreInventories(cached.storeInventories as Record<string, StoreInventory[]>);
@@ -247,16 +272,18 @@ export const ArticulosPage: React.FC = () => {
       storeInventories: cached.storeInventories as Record<string, StoreInventory[]>,
       timestamp: cached.timestamp,
       categoryScope: categoryFilter,
+      storeId: catalogStoreId,
+      stockPresence: catalogStockStatus,
     };
     setLoading(false);
-  }, [userProfile?.company_id, categoryFilter]);
+  }, [userProfile?.company_id, categoryFilter, activeStoreId, stockStatus]);
 
   useEffect(() => {
     if (userProfile?.company_id) {
       fetchData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userProfile?.company_id, categoryFilter]);
+  }, [userProfile?.company_id, categoryFilter, activeStoreId, stockStatus]);
 
   // ✅ OPTIMIZACIÓN: Limpiar solo cache de memoria expirado (no session al montar)
   useEffect(() => {
@@ -480,7 +507,7 @@ export const ArticulosPage: React.FC = () => {
     });
   }, [products, deferredSearchTerm, categoryFilter]);
 
-  const paginationResetKey = `${deferredSearchTerm}|${categoryFilter}`;
+  const paginationResetKey = `${deferredSearchTerm}|${categoryFilter}|${stockStatus}`;
   const {
     paginatedItems,
     currentPage,
@@ -518,7 +545,6 @@ export const ArticulosPage: React.FC = () => {
 
       {/* 🔥 SÚPER FILTRO GLOBAL DE SUCURSAL - Barra Dominante */}
       <StoreFilterBar pageTitle="Artículos" />
-
       {/* Barra de Estadísticas Superior (KPIs) */}
       <ArticlesStatsRow />
 
@@ -542,6 +568,20 @@ export const ArticulosPage: React.FC = () => {
                 )}
               </div>
             </div>
+            <Select
+              value={stockStatus}
+              onValueChange={(value) => setStockStatus(value as StockPresence)}
+              disabled={!activeStoreId}
+            >
+              <SelectTrigger className="w-full md:w-[180px] glass-input">
+                <SelectValue placeholder="Todos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="in_stock">Con Stock</SelectItem>
+                <SelectItem value="out_of_stock">Sin Stock</SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
               <SelectTrigger className="w-full md:w-[200px] glass-input">
                 <SelectValue placeholder="Todas las categorías" />

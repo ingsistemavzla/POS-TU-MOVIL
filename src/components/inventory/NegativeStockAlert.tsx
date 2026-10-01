@@ -5,6 +5,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle, X } from 'lucide-react';
@@ -21,13 +22,17 @@ interface NegativeStockItem {
 
 export const NegativeStockAlert: React.FC = () => {
   const { userProfile } = useAuth();
+  const { activeStoreId } = useStore();
   const [negativeItems, setNegativeItems] = useState<NegativeStockItem[]>([]);
   const [dismissed, setDismissed] = useState(false);
   const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     // Solo verificar si es admin
-    if (userProfile?.role !== 'admin' || dismissed) return;
+    if (userProfile?.role !== 'admin' || dismissed || !activeStoreId) {
+      if (!activeStoreId) setNegativeItems([]);
+      return;
+    }
 
     checkNegativeStock();
     
@@ -38,10 +43,10 @@ export const NegativeStockAlert: React.FC = () => {
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [userProfile?.role, userProfile?.company_id, dismissed]);
+  }, [userProfile?.role, userProfile?.company_id, dismissed, activeStoreId]);
 
   const checkNegativeStock = async () => {
-    if (!userProfile?.company_id || checking) return;
+    if (!userProfile?.company_id || !activeStoreId || checking) return;
 
     setChecking(true);
     try {
@@ -55,6 +60,7 @@ export const NegativeStockAlert: React.FC = () => {
           stores!inner(name)
         `)
         .eq('company_id', userProfile.company_id)
+        .eq('store_id', activeStoreId)
         .lt('qty', 0)
         .limit(10); // Limitar a 10 para no sobrecargar
 

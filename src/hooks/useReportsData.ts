@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { supabase } from '@/integrations/supabase/client';
 import { SalesReportData, ProfitabilityReportData, InventoryReportData, PeriodType, DateRange } from '@/types/reports';
 
 export function useReportsData(period: PeriodType = 'today', customRange?: DateRange) {
   const { userProfile } = useAuth();
+  const { activeStoreId } = useStore();
   const [salesData, setSalesData] = useState<SalesReportData | null>(null);
   const [profitabilityData, setProfitabilityData] = useState<ProfitabilityReportData | null>(null);
   const [inventoryData, setInventoryData] = useState<InventoryReportData | null>(null);
@@ -321,9 +323,20 @@ export function useReportsData(period: PeriodType = 'today', customRange?: DateR
 
   const fetchInventoryReportData = async (): Promise<InventoryReportData> => {
     if (!userProfile?.company_id) throw new Error('No company ID available');
+
+    if (!activeStoreId) {
+      return {
+        totalProducts: 0,
+        totalStockValue: 0,
+        lowStockProducts: 0,
+        outOfStockProducts: 0,
+        storeInventory: [],
+        productBreakdown: [],
+      };
+    }
     
     // Fetch inventory data with product and store information
-    // ⚠️ FILTRO CRÍTICO: Solo productos activos para reportes precisos
+    // ⚠️ FILTRO CRÍTICO: Solo productos activos de la sucursal activa
     const { data: inventoryData, error: inventoryError } = await (supabase as any)
       .from('inventories')
       .select(`
@@ -346,7 +359,8 @@ export function useReportsData(period: PeriodType = 'today', customRange?: DateR
         )
       `)
       .eq('products.company_id', userProfile.company_id)
-      .eq('products.active', true)  // ⚠️ Solo productos activos
+      .eq('products.active', true)
+      .eq('store_id', activeStoreId)
       .limit(50);
 
     if (inventoryError) throw inventoryError;
@@ -455,7 +469,7 @@ export function useReportsData(period: PeriodType = 'today', customRange?: DateR
 
   useEffect(() => {
     fetchReports();
-  }, [userProfile?.company_id, period, customRange]);
+  }, [userProfile?.company_id, period, customRange, activeStoreId]);
 
   // Función para obtener rendimiento de cajeros
   const getCashierPerformance = async () => {

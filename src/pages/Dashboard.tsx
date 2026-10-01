@@ -19,6 +19,7 @@ import { useDashboardData, getEmptyDashboardData } from '@/hooks/useDashboardDat
 import { useKreceStats } from '@/hooks/useKreceStats';
 import { usePaymentMethodsData } from '@/hooks/usePaymentMethodsData';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { formatCurrency } from '@/utils/currency';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { LiquidityDonutChart } from '@/components/charts/LiquidityDonutChart';
@@ -39,16 +40,17 @@ const DASHBOARD_SPLASH_MS = 300;
 export default function Dashboard() {
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('today');
   const { company, userProfile } = useAuth();
+  const { activeStoreId } = useStore();
   const { data: dashboardDataRaw, loading: dashboardLoading, error, refetch } = useDashboardData();
 
   const [showBriefSplash, setShowBriefSplash] = useState(true);
 
   // Si hay cache, no mostrar splash (panel inmediato)
   useLayoutEffect(() => {
-    if (!company?.id) return;
-    const cached = readDashboardPageCache(company.id, { allowStale: true });
+    if (!company?.id || !activeStoreId) return;
+    const cached = readDashboardPageCache(company.id, activeStoreId, { allowStale: true });
     if (cached) setShowBriefSplash(false);
-  }, [company?.id]);
+  }, [company?.id, activeStoreId]);
 
   useEffect(() => {
     if (!showBriefSplash) return;

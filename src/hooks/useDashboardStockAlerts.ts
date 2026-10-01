@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { useStockNotifications } from '@/contexts/StockNotificationContext';
 import {
   DashboardStockAlertItem,
@@ -29,6 +30,7 @@ export {
  */
 export function useDashboardStockAlerts(category: string, mode: StockAlertMode) {
   const { userProfile } = useAuth();
+  const { activeStoreId, selectedStore } = useStore();
   const shared = useStockNotifications();
   const [fallbackItems, setFallbackItems] = useState<DashboardStockAlertItem[]>([]);
   const [fallbackLoading, setFallbackLoading] = useState(true);
@@ -42,7 +44,7 @@ export function useDashboardStockAlerts(category: string, mode: StockAlertMode) 
   }, [shared, category, mode]);
 
   const fetchFallback = useCallback(async () => {
-    if (useShared || !userProfile?.company_id || !category) {
+    if (useShared || !userProfile?.company_id || !category || !activeStoreId) {
       setFallbackItems([]);
       setFallbackLoading(false);
       return;
@@ -51,7 +53,11 @@ export function useDashboardStockAlerts(category: string, mode: StockAlertMode) 
     try {
       setFallbackLoading(true);
       setError(null);
-      const rows = await fetchAllStockAlertRows(userProfile.company_id);
+      const rows = await fetchAllStockAlertRows(
+        userProfile.company_id,
+        activeStoreId,
+        selectedStore?.name || 'Sucursal'
+      );
       setFallbackItems(filterStockAlertItems(rows, mode, category, 'dashboard'));
     } catch (err) {
       console.error('Error fetching dashboard stock alerts:', err);
@@ -60,7 +66,7 @@ export function useDashboardStockAlerts(category: string, mode: StockAlertMode) 
     } finally {
       setFallbackLoading(false);
     }
-  }, [useShared, userProfile?.company_id, category, mode]);
+  }, [useShared, userProfile?.company_id, category, mode, activeStoreId, selectedStore?.name]);
 
   useEffect(() => {
     if (useShared) {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -127,10 +128,11 @@ const EMPTY_CATEGORY_CARDS: CategoryStats[] = [
 
 export const EstadisticasPage: React.FC = () => {
   const { userProfile } = useAuth();
+  const { activeStoreId } = useStore();
   // Diferir dashboard + RPC financiera: primero inventario; no saturan la red al abrir
   const [financeEnabled, setFinanceEnabled] = useState(false);
   const { data: dashboardData } = useDashboardData({ enabled: financeEnabled });
-  const { data: financialSummary } = useInventoryFinancialSummary(null, {
+  const { data: financialSummary } = useInventoryFinancialSummary(activeStoreId, {
     enabled: financeEnabled,
   });
   const [showBriefSplash, setShowBriefSplash] = useState(true);
@@ -185,8 +187,8 @@ export const EstadisticasPage: React.FC = () => {
   // Pintar cache ANTES del paint → evita “Cargando estadísticas…” largo al reabrir
   useLayoutEffect(() => {
     const companyId = userProfile?.company_id;
-    if (!companyId) return;
-    const cached = readEstadisticasPageCache(companyId, { allowStale: true });
+    if (!companyId || !activeStoreId) return;
+    const cached = readEstadisticasPageCache(companyId, activeStoreId, { allowStale: true });
     if (!cached) return;
     setStoreStats(cached.storeStats as Record<string, StoreStats>);
     setInventorySummary(cached.inventorySummary as InventorySummary);
@@ -196,7 +198,7 @@ export const EstadisticasPage: React.FC = () => {
     hasLoadedOnceRef.current = true;
     setLoading(false);
     setFinanceEnabled(true);
-  }, [userProfile?.company_id]);
+  }, [userProfile?.company_id, activeStoreId]);
 
   const fetchStatistics = async (opts?: { background?: boolean; forceRefresh?: boolean }) => {
     try {
@@ -232,12 +234,16 @@ export const EstadisticasPage: React.FC = () => {
         storesQuery = storesQuery.eq('id', userProfile.assigned_store_id);
       }
 
-      const isRestricted =
-        (userProfile?.role === 'cashier' || userProfile?.role === 'manager') &&
-        !!userProfile?.assigned_store_id;
-      const restrictedStoreId = isRestricted ? userProfile!.assigned_store_id! : null;
+      if (!activeStoreId) {
+        setStoreStats({});
+        setUncategorizedProducts([]);
+        setLoading(false);
+        setIsRefreshing(false);
+        setFinanceEnabled(true);
+        return;
+      }
 
-      // Como Almacén: productos paginados + inventario por IDs (sin JOIN pesado)
+      // Como Almacén: productos paginados + inventario de la sucursal activa
       const bypassCache = !!opts?.forceRefresh;
       const [storesResult, productsData] = await Promise.all([
         storesQuery,
@@ -259,8 +265,7 @@ export const EstadisticasPage: React.FC = () => {
         min_qty: number;
       }> = [];
       try {
-        inventoryRows = await fetchInventoriesForProductIds(productIds, {
-          storeId: restrictedStoreId,
+        inventoryRows = await fetchInventoriesForProductIds(productIds, activeStoreId, {
           bypassCache,
         });
       } catch (inventoryError) {
@@ -272,7 +277,7 @@ export const EstadisticasPage: React.FC = () => {
 
       console.timeLog('📊 EstadisticasPage - fetchStatistics', 'Consultas completadas');
 
-      const stores = storesResult.data || [];
+      const stores = (storesResult.data || []).filter((store: { id: string }) => store.id === activeStoreId);
       const storeMap = new Map<string, string>();
       stores.forEach((store: any) => {
         storeMap.set(store.id, store.name);
@@ -647,7 +652,7 @@ export const EstadisticasPage: React.FC = () => {
       setCategoryStats(categoryStatsArray);
 
       if (userProfile?.company_id) {
-        writeEstadisticasPageCache(userProfile.company_id, {
+        writeEstadisticasPageCache(userProfile.company_id, activeStoreId, {
           storeStats: statsByStore,
           inventorySummary: {
             totalValue: Math.round(totalValue * 100) / 100,
@@ -695,7 +700,7 @@ export const EstadisticasPage: React.FC = () => {
     const hadCache = hasLoadedOnceRef.current;
     // Con cache: refresh en background. Sin cache: fetch (panel ya visible tras splash)
     fetchStatistics({ background: hadCache });
-  }, [userProfile?.company_id]);
+  }, [userProfile?.company_id, activeStoreId]);
 
   // AUTO-REFRESH cada 3 min (antes 30s): menos saturación al cambiar de pantallas
   useEffect(() => {
@@ -707,7 +712,7 @@ export const EstadisticasPage: React.FC = () => {
     }, 180000);
 
     return () => clearInterval(interval);
-  }, [userProfile?.company_id]);
+  }, [userProfile?.company_id, activeStoreId]);
 
   if (showBriefSplash) {
     return (
@@ -765,6 +770,11 @@ export const EstadisticasPage: React.FC = () => {
             </Badge>
           </div>
           <p className="text-white/70">Resumen completo del inventario y productos</p>
+          {!activeStoreId && (
+            <p className="text-sm text-amber-200 mt-2">
+              Selecciona una sucursal para ver el stock. El inventario no se carga de todas las tiendas a la vez.
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
