@@ -46,6 +46,7 @@ import {
   readEstadisticasPageCache,
   writeEstadisticasPageCache,
 } from '@/utils/estadisticasPageCache';
+import { StoreFilterBar } from '@/components/inventory/StoreFilterBar';
 
 /** Splash: mínimo breve; máximo 5s o hasta que haya datos (lo que ocurra primero). */
 const STATS_SPLASH_MIN_MS = 400;
@@ -187,8 +188,9 @@ export const EstadisticasPage: React.FC = () => {
   // Pintar cache ANTES del paint → evita “Cargando estadísticas…” largo al reabrir
   useLayoutEffect(() => {
     const companyId = userProfile?.company_id;
-    if (!companyId || !activeStoreId) return;
-    const cached = readEstadisticasPageCache(companyId, activeStoreId, { allowStale: true });
+    if (!companyId) return;
+    const catalogStoreId = activeStoreId ?? 'all';
+    const cached = readEstadisticasPageCache(companyId, catalogStoreId, { allowStale: true });
     if (!cached) return;
     setStoreStats(cached.storeStats as Record<string, StoreStats>);
     setInventorySummary(cached.inventorySummary as InventorySummary);
@@ -234,16 +236,9 @@ export const EstadisticasPage: React.FC = () => {
         storesQuery = storesQuery.eq('id', userProfile.assigned_store_id);
       }
 
-      if (!activeStoreId) {
-        setStoreStats({});
-        setUncategorizedProducts([]);
-        setLoading(false);
-        setIsRefreshing(false);
-        setFinanceEnabled(true);
-        return;
-      }
+      const catalogStoreId = activeStoreId ?? 'all';
 
-      // Como Almacén: productos paginados + inventario de la sucursal activa
+      // Como Almacén: una sucursal o el catálogo de todas
       const bypassCache = !!opts?.forceRefresh;
       const [storesResult, productsData] = await Promise.all([
         storesQuery,
@@ -265,7 +260,7 @@ export const EstadisticasPage: React.FC = () => {
         min_qty: number;
       }> = [];
       try {
-        inventoryRows = await fetchInventoriesForProductIds(productIds, activeStoreId, {
+        inventoryRows = await fetchInventoriesForProductIds(productIds, catalogStoreId, {
           bypassCache,
         });
       } catch (inventoryError) {
@@ -277,7 +272,9 @@ export const EstadisticasPage: React.FC = () => {
 
       console.timeLog('📊 EstadisticasPage - fetchStatistics', 'Consultas completadas');
 
-      const stores = (storesResult.data || []).filter((store: { id: string }) => store.id === activeStoreId);
+      const stores = activeStoreId
+        ? (storesResult.data || []).filter((store: { id: string }) => store.id === activeStoreId)
+        : (storesResult.data || []);
       const storeMap = new Map<string, string>();
       stores.forEach((store: any) => {
         storeMap.set(store.id, store.name);
@@ -652,7 +649,7 @@ export const EstadisticasPage: React.FC = () => {
       setCategoryStats(categoryStatsArray);
 
       if (userProfile?.company_id) {
-        writeEstadisticasPageCache(userProfile.company_id, activeStoreId, {
+        writeEstadisticasPageCache(userProfile.company_id, catalogStoreId, {
           storeStats: statsByStore,
           inventorySummary: {
             totalValue: Math.round(totalValue * 100) / 100,
@@ -770,11 +767,6 @@ export const EstadisticasPage: React.FC = () => {
             </Badge>
           </div>
           <p className="text-white/70">Resumen completo del inventario y productos</p>
-          {!activeStoreId && (
-            <p className="text-sm text-amber-200 mt-2">
-              Selecciona una sucursal para ver el stock. El inventario no se carga de todas las tiendas a la vez.
-            </p>
-          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -815,6 +807,8 @@ export const EstadisticasPage: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      <StoreFilterBar pageTitle="Estadísticas" />
 
       {showCostValue && (
         <p className="text-sm text-amber-200/90 bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-2">

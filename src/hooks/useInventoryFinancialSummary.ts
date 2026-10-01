@@ -37,7 +37,8 @@ export function useInventoryFinancialSummary(
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!enabled || !isConcreteStoreId(storeId)) {
+    const allStores = !storeId || storeId === 'all';
+    if (!enabled || (!allStores && !isConcreteStoreId(storeId))) {
       setLoading(false);
       setData(null);
       return;
@@ -59,7 +60,7 @@ export function useInventoryFinancialSummary(
           'get_inventory_financial_summary',
           {
             p_company_id: companyId || null,
-            p_store_id: storeId
+            p_store_id: allStores ? null : storeId
           }
         );
 

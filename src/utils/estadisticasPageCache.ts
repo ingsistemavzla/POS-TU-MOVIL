@@ -24,7 +24,7 @@ export function readEstadisticasPageCache(
   storeId: string,
   options?: { allowStale?: boolean }
 ): EstadisticasCachePayload | null {
-  if (typeof window === 'undefined' || !companyId || !storeId || storeId === 'all') return null;
+  if (typeof window === 'undefined' || !companyId || !storeId) return null;
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
@@ -45,7 +45,7 @@ export function writeEstadisticasPageCache(
   storeId: string,
   payload: Omit<EstadisticasCachePayload, 'companyId' | 'storeId' | 'timestamp'>
 ): void {
-  if (typeof window === 'undefined' || !companyId || !storeId || storeId === 'all') return;
+  if (typeof window === 'undefined' || !companyId || !storeId) return;
   try {
     const full: EstadisticasCachePayload = {
       ...payload,
