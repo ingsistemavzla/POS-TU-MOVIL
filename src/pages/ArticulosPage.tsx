@@ -70,6 +70,7 @@ import {
   buildCatalogWithStock,
   productsForStockPresence,
   invalidateInventoryCatalogMemory,
+  isAbortError,
   type StockPresence,
 } from '@/utils/inventoryCatalogFetch';
 
@@ -137,13 +138,21 @@ export const ArticulosPage: React.FC = () => {
     stockPresence: StockPresence;
   } | null>(null);
   const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+  const fetchGenRef = useRef(0);
+  const fetchAbortRef = useRef<AbortController | null>(null);
 
   // Cargar productos e inventario - misma estrategia que Almacén (paginado + inventario por IDs)
-  const fetchData = async () => {
+  const fetchData = async (opts?: { signal?: AbortSignal; gen?: number }) => {
+    const gen = opts?.gen ?? ++fetchGenRef.current;
+    const signal = opts?.signal;
+    const isCurrent = () => gen === fetchGenRef.current && !signal?.aborted;
+
     try {
       if (!userProfile?.company_id) {
-        setProducts([]);
-        setLoading(false);
+        if (isCurrent()) {
+          setProducts([]);
+          setLoading(false);
+        }
         return;
       }
 
@@ -154,7 +163,7 @@ export const ArticulosPage: React.FC = () => {
       const sessionCached = readInventoryPageCache(companyId, catalogStoreId, categoryFilter, catalogStockStatus, {
         allowStale: true,
       });
-      if (sessionCached && products.length === 0) {
+      if (isCurrent() && sessionCached && products.length === 0) {
         setProducts(sessionCached.products as Product[]);
         setStoreInventories(sessionCached.storeInventories as Record<string, StoreInventory[]>);
         productsCache.current = {
@@ -176,18 +185,22 @@ export const ArticulosPage: React.FC = () => {
         cached.categoryScope === categoryFilter &&
         Date.now() - cached.timestamp < CACHE_TTL;
 
-      // Cache fresca: pintar y refrescar en background (no return temprano que deje datos viejos eternos)
-      if (cacheFresh && products.length > 0) {
-        setIsRefetching(true);
-      } else if (products.length === 0 && !sessionCached) {
-        setLoading(true);
-      } else {
-        setIsRefetching(true);
+      if (isCurrent()) {
+        if (cacheFresh && products.length > 0) {
+          setIsRefetching(true);
+        } else if (products.length === 0 && !sessionCached) {
+          setLoading(true);
+        } else {
+          setIsRefetching(true);
+        }
       }
 
       const productsData = await fetchAllActiveProducts({
         category: categoryFilter !== 'all' ? categoryFilter : null,
+        signal,
       });
+
+      if (!isCurrent()) return;
 
       if (!productsData) {
         setProducts([]);
@@ -206,16 +219,21 @@ export const ArticulosPage: React.FC = () => {
         inventoryData = await fetchInventoriesForProductIds(
           productsData.map((p) => p.id),
           catalogStoreId,
-          { stockStatus: catalogStockStatus }
+          { stockStatus: catalogStockStatus, signal }
         );
       } catch (inventoryError: any) {
+        if (isAbortError(inventoryError) || signal?.aborted) return;
         console.error('Error fetching inventory:', inventoryError);
-        toast({
-          title: 'Advertencia',
-          description: 'No se pudo cargar el inventario completo',
-          variant: 'warning',
-        });
+        if (isCurrent()) {
+          toast({
+            title: 'Advertencia',
+            description: 'No se pudo cargar el inventario completo',
+            variant: 'warning',
+          });
+        }
       }
+
+      if (!isCurrent()) return;
 
       const visibleProducts = productsForStockPresence(productsData, inventoryData, catalogStockStatus);
       const catalogStores = activeStoreId
@@ -223,6 +241,8 @@ export const ArticulosPage: React.FC = () => {
         : availableStores.map((store) => ({ id: store.id, name: store.name }));
       const { products: productsWithStock, storeInventories: inventoriesByProduct } =
         buildCatalogWithStock(visibleProducts, inventoryData, catalogStores);
+
+      if (!isCurrent()) return;
 
       productsCache.current = {
         products: productsWithStock as Product[],
@@ -244,15 +264,20 @@ export const ArticulosPage: React.FC = () => {
         catalogStockStatus
       );
     } catch (error: any) {
+      if (isAbortError(error) || signal?.aborted) return;
       console.error('Error in fetchData:', error);
-      toast({
-        title: 'Error',
-        description: error?.message || 'Error al cargar los datos',
-        variant: 'destructive',
-      });
+      if (isCurrent()) {
+        toast({
+          title: 'Error',
+          description: error?.message || 'Error al cargar los datos',
+          variant: 'destructive',
+        });
+      }
     } finally {
-      setLoading(false);
-      setIsRefetching(false);
+      if (isCurrent()) {
+        setLoading(false);
+        setIsRefetching(false);
+      }
     }
   };
 
@@ -279,9 +304,16 @@ export const ArticulosPage: React.FC = () => {
   }, [userProfile?.company_id, categoryFilter, activeStoreId, stockStatus]);
 
   useEffect(() => {
-    if (userProfile?.company_id) {
-      fetchData();
-    }
+    if (!userProfile?.company_id) return;
+    const gen = ++fetchGenRef.current;
+    const ac = new AbortController();
+    fetchAbortRef.current?.abort();
+    fetchAbortRef.current = ac;
+    void fetchData({ signal: ac.signal, gen });
+    return () => {
+      fetchGenRef.current += 1;
+      ac.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userProfile?.company_id, categoryFilter, activeStoreId, stockStatus]);
 

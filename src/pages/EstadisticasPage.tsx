@@ -41,6 +41,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import {
   fetchAllActiveProducts,
   fetchInventoriesForProductIds,
+  isAbortError,
 } from '@/utils/inventoryCatalogFetch';
 import {
   readEstadisticasPageCache,
@@ -141,6 +142,8 @@ export const EstadisticasPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const hasLoadedOnceRef = React.useRef(false);
+  const fetchGenRef = React.useRef(0);
+  const fetchAbortRef = React.useRef<AbortController | null>(null);
   const [storeStats, setStoreStats] = useState<Record<string, StoreStats>>({});
   const [inventorySummary, setInventorySummary] = useState<InventorySummary>({
     totalValue: 0,
@@ -203,6 +206,13 @@ export const EstadisticasPage: React.FC = () => {
   }, [userProfile?.company_id, activeStoreId]);
 
   const fetchStatistics = async (opts?: { background?: boolean; forceRefresh?: boolean }) => {
+    const gen = ++fetchGenRef.current;
+    fetchAbortRef.current?.abort();
+    const ac = new AbortController();
+    fetchAbortRef.current = ac;
+    const signal = ac.signal;
+    const isCurrent = () => gen === fetchGenRef.current && !signal.aborted;
+
     try {
       // MASTER_ADMIN puede ver todo sin company_id
       // Otros roles requieren company_id
@@ -210,11 +220,11 @@ export const EstadisticasPage: React.FC = () => {
       
       if (!isMasterAdmin && !userProfile?.company_id) {
         console.log('No company_id found for non-master user');
-        setLoading(false);
+        if (isCurrent()) setLoading(false);
         return;
       }
 
-      if (opts?.background && hasLoadedOnceRef.current) {
+      if (isCurrent() && opts?.background && hasLoadedOnceRef.current) {
         setIsRefreshing(true);
       }
       // No forzar pantalla completa de loading: el panel ya está visible
@@ -242,13 +252,17 @@ export const EstadisticasPage: React.FC = () => {
       const bypassCache = !!opts?.forceRefresh;
       const [storesResult, productsData] = await Promise.all([
         storesQuery,
-        fetchAllActiveProducts({ bypassCache }),
+        fetchAllActiveProducts({ bypassCache, signal }),
       ]);
+
+      if (!isCurrent()) return;
 
       if (storesResult.error) {
         console.error('Error fetching stores:', storesResult.error);
-        setLoading(false);
-        setIsRefreshing(false);
+        if (isCurrent()) {
+          setLoading(false);
+          setIsRefreshing(false);
+        }
         return;
       }
 
@@ -262,13 +276,19 @@ export const EstadisticasPage: React.FC = () => {
       try {
         inventoryRows = await fetchInventoriesForProductIds(productIds, catalogStoreId, {
           bypassCache,
+          signal,
         });
       } catch (inventoryError) {
+        if (isAbortError(inventoryError) || signal.aborted) return;
         console.error('Error fetching inventory:', inventoryError);
-        setLoading(false);
-        setIsRefreshing(false);
+        if (isCurrent()) {
+          setLoading(false);
+          setIsRefreshing(false);
+        }
         return;
       }
+
+      if (!isCurrent()) return;
 
       console.timeLog('📊 EstadisticasPage - fetchStatistics', 'Consultas completadas');
 
@@ -478,6 +498,8 @@ export const EstadisticasPage: React.FC = () => {
         'Zona Gamer Margarita': totalsByStore['Zona Gamer Margarita'] === 71
       });
 
+      if (!isCurrent()) return;
+
       setStoreStats(statsByStore);
       setGlobalCategoryTotals(finalGlobalTotals);
 
@@ -540,6 +562,8 @@ export const EstadisticasPage: React.FC = () => {
         totalCostValue += qty * costUsd;
         totalUnits += qty;
       });
+
+      if (!isCurrent()) return;
 
       setInventorySummary({
         totalValue: Math.round(totalValue * 100) / 100,
@@ -633,6 +657,8 @@ export const EstadisticasPage: React.FC = () => {
         }))
         .sort((a, b) => b.totalValue - a.totalValue || a.name.localeCompare(b.name));
 
+      if (!isCurrent()) return;
+
       setUncategorizedProducts(uncategorizedRows);
 
       const categoryStatsArray: CategoryStats[] = Array.from(categoryMap.entries()).map(([category, data]) => ({
@@ -646,9 +672,11 @@ export const EstadisticasPage: React.FC = () => {
         costPercentage: totalCostValue > 0 ? Math.round((data.totalCostValue / totalCostValue) * 100 * 10) / 10 : 0,
       })).sort((a, b) => b.totalValue - a.totalValue);
 
+      if (!isCurrent()) return;
+
       setCategoryStats(categoryStatsArray);
 
-      if (userProfile?.company_id) {
+      if (userProfile?.company_id && isCurrent()) {
         writeEstadisticasPageCache(userProfile.company_id, catalogStoreId, {
           storeStats: statsByStore,
           inventorySummary: {
@@ -681,13 +709,16 @@ export const EstadisticasPage: React.FC = () => {
       });
 
     } catch (error) {
+      if (isAbortError(error) || signal.aborted) return;
       console.error('Error fetching statistics:', error);
     } finally {
-      hasLoadedOnceRef.current = true;
-      setLoading(false);
-      setIsRefreshing(false);
-      // Cargar bloque de financiamiento en segundo plano (no bloquea UI)
-      setFinanceEnabled(true);
+      if (isCurrent()) {
+        hasLoadedOnceRef.current = true;
+        setLoading(false);
+        setIsRefreshing(false);
+        // Cargar bloque de financiamiento en segundo plano (no bloquea UI)
+        setFinanceEnabled(true);
+      }
     }
   };
 
@@ -696,7 +727,12 @@ export const EstadisticasPage: React.FC = () => {
 
     const hadCache = hasLoadedOnceRef.current;
     // Con cache: refresh en background. Sin cache: fetch (panel ya visible tras splash)
-    fetchStatistics({ background: hadCache });
+    void fetchStatistics({ background: hadCache });
+    return () => {
+      fetchGenRef.current += 1;
+      fetchAbortRef.current?.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userProfile?.company_id, activeStoreId]);
 
   // AUTO-REFRESH cada 3 min (antes 30s): menos saturación al cambiar de pantallas
@@ -705,10 +741,14 @@ export const EstadisticasPage: React.FC = () => {
 
     const interval = setInterval(() => {
       if (document.visibilityState !== 'visible') return;
-      fetchStatistics({ background: true });
+      void fetchStatistics({ background: true });
     }, 180000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      fetchAbortRef.current?.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userProfile?.company_id, activeStoreId]);
 
   if (showBriefSplash) {

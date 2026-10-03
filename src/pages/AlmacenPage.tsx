@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -59,6 +59,7 @@ import {
   buildCatalogWithStock,
   productsForStockPresence,
   invalidateInventoryCatalogMemory,
+  isAbortError,
   type StockPresence,
 } from '@/utils/inventoryCatalogFetch';
 
@@ -119,14 +120,22 @@ export const AlmacenPage: React.FC = () => {
 
   // 🛡️ Privacidad: solo admin y master_admin pueden ver costo/utilidad
   const canSeeCosts = userProfile?.role === 'admin' || userProfile?.role === 'master_admin';
+  const fetchGenRef = useRef(0);
+  const fetchAbortRef = useRef<AbortController | null>(null);
 
   // Cargar productos e inventario (productos paginados + inventario solo de esos IDs)
-  const fetchData = async () => {
+  const fetchData = async (opts?: { signal?: AbortSignal; gen?: number }) => {
+    const gen = opts?.gen ?? ++fetchGenRef.current;
+    const signal = opts?.signal;
+    const isCurrent = () => gen === fetchGenRef.current && !signal?.aborted;
+
     try {
       if (!userProfile?.company_id) {
-        setProducts([]);
-        setLoading(false);
-        setIsRefetching(false);
+        if (isCurrent()) {
+          setProducts([]);
+          setLoading(false);
+          setIsRefetching(false);
+        }
         return;
       }
 
@@ -139,16 +148,18 @@ export const AlmacenPage: React.FC = () => {
       });
       const hasLocalData = products.length > 0;
 
-      if (sessionCached && !hasLocalData) {
+      if (isCurrent() && sessionCached && !hasLocalData) {
         setProducts(sessionCached.products as Product[]);
         setStoreInventories(sessionCached.storeInventories as Record<string, StoreInventory[]>);
         setLoading(false);
       }
 
-      if (!hasLocalData && !sessionCached) {
-        setLoading(true);
-      } else {
-        setIsRefetching(true);
+      if (isCurrent()) {
+        if (!hasLocalData && !sessionCached) {
+          setLoading(true);
+        } else {
+          setIsRefetching(true);
+        }
       }
 
       const storesQuery = (supabase.from('stores') as any)
@@ -159,9 +170,12 @@ export const AlmacenPage: React.FC = () => {
       const [productsData, storesResult] = await Promise.all([
         fetchAllActiveProducts({
           category: categoryFilter !== 'all' ? categoryFilter : null,
+          signal,
         }),
         storesQuery,
       ]);
+
+      if (!isCurrent()) return;
 
       if (!productsData) {
         setProducts([]);
@@ -173,13 +187,15 @@ export const AlmacenPage: React.FC = () => {
 
       if (storesError) {
         console.error('Error fetching stores:', storesError);
-        toast({
-          title: 'Advertencia',
-          description: 'No se pudieron cargar las tiendas',
-          variant: 'warning',
-        });
-        setStores([]);
-      } else {
+        if (isCurrent()) {
+          toast({
+            title: 'Advertencia',
+            description: 'No se pudieron cargar las tiendas',
+            variant: 'warning',
+          });
+          setStores([]);
+        }
+      } else if (isCurrent()) {
         setStores(storesData || []);
       }
 
@@ -188,15 +204,21 @@ export const AlmacenPage: React.FC = () => {
       try {
         inventoryData = await fetchInventoriesForProductIds(productIds, catalogStoreId, {
           stockStatus: catalogStockStatus,
+          signal,
         });
       } catch (inventoryError: any) {
+        if (isAbortError(inventoryError) || signal?.aborted) return;
         console.error('Error fetching inventory:', inventoryError);
-        toast({
-          title: 'Advertencia',
-          description: 'No se pudo cargar el inventario completo',
-          variant: 'warning',
-        });
+        if (isCurrent()) {
+          toast({
+            title: 'Advertencia',
+            description: 'No se pudo cargar el inventario completo',
+            variant: 'warning',
+          });
+        }
       }
+
+      if (!isCurrent()) return;
 
       const activeStoreRow =
         availableStores.find((store) => store.id === activeStoreId) ??
@@ -210,6 +232,8 @@ export const AlmacenPage: React.FC = () => {
       const { products: productsWithStock, storeInventories: inventoriesByProduct } =
         buildCatalogWithStock(visibleProducts, inventoryData, catalogStores);
 
+      if (!isCurrent()) return;
+
       setProducts(productsWithStock as Product[]);
       setStoreInventories(inventoriesByProduct as Record<string, StoreInventory[]>);
       writeInventoryPageCache(
@@ -221,15 +245,20 @@ export const AlmacenPage: React.FC = () => {
         catalogStockStatus
       );
     } catch (error) {
+      if (isAbortError(error) || signal?.aborted) return;
       console.error('Error in fetchData:', error);
-      toast({
-        title: 'Error',
-        description: 'Error al cargar los datos',
-        variant: 'destructive',
-      });
+      if (isCurrent()) {
+        toast({
+          title: 'Error',
+          description: 'Error al cargar los datos',
+          variant: 'destructive',
+        });
+      }
     } finally {
-      setLoading(false);
-      setIsRefetching(false);
+      if (isCurrent()) {
+        setLoading(false);
+        setIsRefetching(false);
+      }
     }
   };
 
@@ -247,9 +276,16 @@ export const AlmacenPage: React.FC = () => {
   }, [userProfile?.company_id, categoryFilter, activeStoreId, stockStatus]);
 
   useEffect(() => {
-    if (userProfile?.company_id) {
-      fetchData();
-    }
+    if (!userProfile?.company_id) return;
+    const gen = ++fetchGenRef.current;
+    const ac = new AbortController();
+    fetchAbortRef.current?.abort();
+    fetchAbortRef.current = ac;
+    void fetchData({ signal: ac.signal, gen });
+    return () => {
+      fetchGenRef.current += 1;
+      ac.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userProfile?.company_id, categoryFilter, activeStoreId, stockStatus]);
   // Toggle expandir producto

@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'pos_inventory_page_cache_v4';
+const STORAGE_KEY = 'pos_inventory_page_cache_v5';
 /** Cache fresca: se puede mostrar sin forzar sensación de “viejo”. */
 const TTL_MS = 5 * 60 * 1000;
 /** Cache stale: pintar al instante y refrescar en segundo plano. */
@@ -16,8 +16,60 @@ export interface InventoryPageCachePayload {
   stockPresence: string;
 }
 
+/** Dual-slot: ALL y última sucursal concreta (no se pisan entre sí). */
+interface InventoryDualCache {
+  companyId: string;
+  all: InventoryPageCachePayload | null;
+  concrete: InventoryPageCachePayload | null;
+}
+
 function scopeKey(category?: string | null): string {
   return category && category !== 'all' ? category : 'all';
+}
+
+function isAllStoreId(storeId: string): boolean {
+  return storeId === 'all';
+}
+
+function readDual(companyId: string): InventoryDualCache | null {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as InventoryDualCache;
+    if (!parsed || parsed.companyId !== companyId) return null;
+    return {
+      companyId,
+      all: parsed.all ?? null,
+      concrete: parsed.concrete ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeDual(dual: InventoryDualCache): void {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(dual));
+  } catch {
+    // quota / private mode
+  }
+}
+
+function payloadMatches(
+  parsed: InventoryPageCachePayload,
+  companyId: string,
+  storeId: string,
+  category: string | null | undefined,
+  stockPresence: string,
+  options?: { allowStale?: boolean }
+): boolean {
+  if (parsed.companyId !== companyId) return false;
+  if (parsed.storeId !== storeId) return false;
+  if ((parsed.categoryScope ?? 'all') !== scopeKey(category)) return false;
+  if ((parsed.stockPresence ?? 'all') !== (stockPresence || 'all')) return false;
+  const age = Date.now() - parsed.timestamp;
+  const maxAge = options?.allowStale ? STALE_TTL_MS : TTL_MS;
+  return age <= maxAge;
 }
 
 export function readInventoryPageCache(
@@ -28,21 +80,12 @@ export function readInventoryPageCache(
   options?: { allowStale?: boolean }
 ): InventoryPageCachePayload | null {
   if (typeof window === 'undefined' || !companyId || !storeId) return null;
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as InventoryPageCachePayload;
-    if (parsed.companyId !== companyId) return null;
-    if (parsed.storeId !== storeId) return null;
-    if ((parsed.categoryScope ?? 'all') !== scopeKey(category)) return null;
-    if ((parsed.stockPresence ?? 'all') !== (stockPresence || 'all')) return null;
-    const age = Date.now() - parsed.timestamp;
-    const maxAge = options?.allowStale ? STALE_TTL_MS : TTL_MS;
-    if (age > maxAge) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+  const dual = readDual(companyId);
+  if (!dual) return null;
+  const slot = isAllStoreId(storeId) ? dual.all : dual.concrete;
+  if (!slot) return null;
+  if (!payloadMatches(slot, companyId, storeId, category, stockPresence, options)) return null;
+  return slot;
 }
 
 export function writeInventoryPageCache(
@@ -54,19 +97,20 @@ export function writeInventoryPageCache(
   stockPresence: string
 ): void {
   if (typeof window === 'undefined' || !companyId || !storeId) return;
-  try {
-    const payload: InventoryPageCachePayload = {
-      products,
-      storeInventories,
-      timestamp: Date.now(),
-      companyId,
-      storeId,
-      categoryScope: scopeKey(category),
-      stockPresence: stockPresence || 'all',
-    };
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-  } catch {
-    // quota / private mode
+  const payload: InventoryPageCachePayload = {
+    products,
+    storeInventories,
+    timestamp: Date.now(),
+    companyId,
+    storeId,
+    categoryScope: scopeKey(category),
+    stockPresence: stockPresence || 'all',
+  };
+  const prev = readDual(companyId) ?? { companyId, all: null, concrete: null };
+  if (isAllStoreId(storeId)) {
+    writeDual({ companyId, all: payload, concrete: prev.concrete });
+  } else {
+    writeDual({ companyId, all: prev.all, concrete: payload });
   }
 }
 

@@ -17,13 +17,100 @@ type InvMem = {
   data: Array<{ product_id: string; store_id: string; qty: number; min_qty: number }>;
 };
 
+type InflightEntry<T> = {
+  promise: Promise<T>;
+  refCount: number;
+  controller: AbortController;
+};
+
 let productsMem: ProductsMem | null = null;
 let inventoryMem: InvMem | null = null;
+const productsInflight = new Map<string, InflightEntry<CatalogProductRow[]>>();
+const inventoryInflight = new Map<
+  string,
+  InflightEntry<Array<{ product_id: string; store_id: string; qty: number; min_qty: number }>>
+>();
+
+function isAbortError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { name?: string; message?: string };
+  return e.name === 'AbortError' || /abort/i.test(e.message || '');
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
+  }
+}
+
+/**
+ * Comparte una Promise por clave. Abort del consumidor solo cancela HTTP
+ * cuando su refCount llega a 0 (no rompe a otro consumidor de la misma clave).
+ */
+async function joinInflight<T>(
+  map: Map<string, InflightEntry<T>>,
+  key: string,
+  start: (signal: AbortSignal) => Promise<T>,
+  consumerSignal?: AbortSignal
+): Promise<T> {
+  throwIfAborted(consumerSignal);
+
+  let entry = map.get(key);
+  if (!entry) {
+    const controller = new AbortController();
+    const created: InflightEntry<T> = {
+      promise: start(controller.signal).finally(() => {
+        if (map.get(key) === created) {
+          map.delete(key);
+        }
+      }),
+      refCount: 0,
+      controller,
+    };
+    entry = created;
+    map.set(key, created);
+  }
+
+  entry.refCount += 1;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    entry!.refCount -= 1;
+    if (entry!.refCount <= 0) {
+      entry!.controller.abort();
+      if (map.get(key) === entry) {
+        map.delete(key);
+      }
+    }
+  };
+
+  const onConsumerAbort = () => release();
+  consumerSignal?.addEventListener('abort', onConsumerAbort);
+
+  try {
+    throwIfAborted(consumerSignal);
+    return await entry.promise;
+  } finally {
+    consumerSignal?.removeEventListener('abort', onConsumerAbort);
+    if (!consumerSignal?.aborted) {
+      release();
+    }
+  }
+}
 
 /** Invalidar cache memoria tras mutar stock (evitar UI que “vuelve” al valor viejo). */
 export function invalidateInventoryCatalogMemory(): void {
   productsMem = null;
   inventoryMem = null;
+  for (const entry of productsInflight.values()) {
+    entry.controller.abort();
+  }
+  for (const entry of inventoryInflight.values()) {
+    entry.controller.abort();
+  }
+  productsInflight.clear();
+  inventoryInflight.clear();
 }
 
 export const PRODUCT_CATALOG_SELECT =
@@ -65,39 +152,29 @@ export interface CatalogBuildResult {
   storeInventories: Record<string, CatalogStoreInventory[]>;
 }
 
-/**
- * Productos activos con paginación por rango (evita truncar en ~1000).
- * Categoría opcional filtrada en servidor.
- * Cache memoria ~90s para reabrir Estadísticas / Almacén sin repetir red.
- */
-export async function fetchAllActiveProducts(options?: {
-  category?: string | null;
-  bypassCache?: boolean;
-}): Promise<CatalogProductRow[]> {
-  const category = options?.category;
-  const cacheKey = `cat:${category ?? 'all'}`;
-
-  if (!options?.bypassCache && productsMem && productsMem.key === cacheKey) {
-    if (Date.now() - productsMem.at < MEMORY_TTL_MS) {
-      return productsMem.data;
-    }
-  }
-
+async function loadAllActiveProducts(
+  category: string | null | undefined,
+  signal: AbortSignal
+): Promise<CatalogProductRow[]> {
   const all: CatalogProductRow[] = [];
   let from = 0;
 
   while (true) {
+    throwIfAborted(signal);
+
     let query = (supabase.from('products') as any)
       .select(PRODUCT_CATALOG_SELECT)
       .eq('active', true)
       .order('created_at', { ascending: false })
-      .range(from, from + PAGE_SIZE - 1);
+      .range(from, from + PAGE_SIZE - 1)
+      .abortSignal(signal);
 
     if (category && category !== 'all') {
       query = query.eq('category', category);
     }
 
     const { data, error } = await query;
+    throwIfAborted(signal);
     if (error) throw error;
 
     const rows = (data ?? []) as CatalogProductRow[];
@@ -107,45 +184,73 @@ export async function fetchAllActiveProducts(options?: {
     from += PAGE_SIZE;
   }
 
-  productsMem = { at: Date.now(), key: cacheKey, data: all };
   return all;
 }
 
 /**
- * Inventario de los product_id dados.
- * storeId UUID: solo esa sucursal. 'all': existencias de todas las sucursales (catálogo admin).
+ * Productos activos con paginación por rango (evita truncar en ~1000).
+ * Categoría opcional filtrada en servidor.
+ * Cache memoria + dedup in-flight por clave de categoría.
  */
-export async function fetchInventoriesForProductIds(
-  productIds: string[],
-  storeId: string,
-  options?: { bypassCache?: boolean; stockStatus?: StockPresence }
-): Promise<Array<{ product_id: string; store_id: string; qty: number; min_qty: number }>> {
-  const allStores = storeId === 'all';
-  if (!allStores && !isConcreteStoreId(storeId)) {
-    throw new Error('STORE_ID_REQUIRED');
-  }
-  if (productIds.length === 0) return [];
+export async function fetchAllActiveProducts(options?: {
+  category?: string | null;
+  bypassCache?: boolean;
+  signal?: AbortSignal;
+}): Promise<CatalogProductRow[]> {
+  const category = options?.category;
+  const cacheKey = `cat:${category ?? 'all'}`;
+  const signal = options?.signal;
 
-  const stockStatus: StockPresence = allStores ? 'all' : (options?.stockStatus ?? 'all');
-  const cacheKey = `inv:${storeId}:${stockStatus}:${productIds.length}:${productIds[0]}:${productIds[productIds.length - 1]}`;
-
-  if (!options?.bypassCache && inventoryMem && inventoryMem.key === cacheKey) {
-    if (Date.now() - inventoryMem.at < MEMORY_TTL_MS) {
-      return inventoryMem.data;
+  if (!options?.bypassCache && productsMem && productsMem.key === cacheKey) {
+    if (Date.now() - productsMem.at < MEMORY_TTL_MS) {
+      return productsMem.data;
     }
   }
 
+  if (options?.bypassCache) {
+    const existing = productsInflight.get(cacheKey);
+    if (existing) {
+      existing.controller.abort();
+      productsInflight.delete(cacheKey);
+    }
+  }
+
+  const data = await joinInflight(
+    productsInflight,
+    cacheKey,
+    async (sharedSignal) => {
+      const rows = await loadAllActiveProducts(category, sharedSignal);
+      productsMem = { at: Date.now(), key: cacheKey, data: rows };
+      return rows;
+    },
+    signal
+  );
+
+  return data;
+}
+
+async function loadInventoriesForProductIds(
+  productIds: string[],
+  storeId: string,
+  stockStatus: StockPresence,
+  signal: AbortSignal
+): Promise<Array<{ product_id: string; store_id: string; qty: number; min_qty: number }>> {
+  const allStores = storeId === 'all';
   const all: Array<{ product_id: string; store_id: string; qty: number; min_qty: number }> = [];
 
   for (let i = 0; i < productIds.length; i += PRODUCT_ID_CHUNK) {
+    throwIfAborted(signal);
     const chunk = productIds.slice(i, i + PRODUCT_ID_CHUNK);
     let from = 0;
 
     while (true) {
+      throwIfAborted(signal);
+
       let query = (supabase.from('inventories') as any)
         .select('product_id, store_id, qty, min_qty')
         .in('product_id', chunk)
-        .range(from, from + PAGE_SIZE - 1);
+        .range(from, from + PAGE_SIZE - 1)
+        .abortSignal(signal);
 
       if (!allStores) {
         query = query.eq('store_id', storeId);
@@ -158,6 +263,7 @@ export async function fetchInventoriesForProductIds(
       }
 
       const { data, error } = await query;
+      throwIfAborted(signal);
       if (error) throw error;
 
       const rows = (data ?? []) as Array<{
@@ -180,9 +286,65 @@ export async function fetchInventoriesForProductIds(
     }
   }
 
-  inventoryMem = { at: Date.now(), key: cacheKey, data: all };
   return all;
 }
+
+/**
+ * Inventario de los product_id dados.
+ * storeId UUID: solo esa sucursal. 'all': existencias de todas las sucursales (catálogo admin).
+ * Dedup in-flight por storeId + stockStatus + huella de IDs (ALL / A / B no se mezclan).
+ */
+export async function fetchInventoriesForProductIds(
+  productIds: string[],
+  storeId: string,
+  options?: { bypassCache?: boolean; stockStatus?: StockPresence; signal?: AbortSignal }
+): Promise<Array<{ product_id: string; store_id: string; qty: number; min_qty: number }>> {
+  const allStores = storeId === 'all';
+  if (!allStores && !isConcreteStoreId(storeId)) {
+    throw new Error('STORE_ID_REQUIRED');
+  }
+  if (productIds.length === 0) return [];
+
+  const stockStatus: StockPresence = allStores ? 'all' : (options?.stockStatus ?? 'all');
+  // Identidad del conjunto completo (orden-independiente): evita colisión length+first+last.
+  const productSetKey = [...productIds].sort().join(',');
+  const cacheKey = `inv:${storeId}:${stockStatus}:${productSetKey}`;
+  const signal = options?.signal;
+
+  if (!options?.bypassCache && inventoryMem && inventoryMem.key === cacheKey) {
+    if (Date.now() - inventoryMem.at < MEMORY_TTL_MS) {
+      return inventoryMem.data;
+    }
+  }
+
+  if (options?.bypassCache) {
+    const existing = inventoryInflight.get(cacheKey);
+    if (existing) {
+      existing.controller.abort();
+      inventoryInflight.delete(cacheKey);
+    }
+  }
+
+  const data = await joinInflight(
+    inventoryInflight,
+    cacheKey,
+    async (sharedSignal) => {
+      const rows = await loadInventoriesForProductIds(
+        productIds,
+        storeId,
+        stockStatus,
+        sharedSignal
+      );
+      inventoryMem = { at: Date.now(), key: cacheKey, data: rows };
+      return rows;
+    },
+    signal
+  );
+
+  return data;
+}
+
+export { isAbortError };
 
 /** Deja solo los productos cuya fila de inventario coincide con el filtro de cantidad. */
 export function productsForStockPresence<T extends { id: string }>(
