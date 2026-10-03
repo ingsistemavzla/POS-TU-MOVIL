@@ -62,6 +62,17 @@ import {
   type StockPresence,
 } from '@/utils/inventoryCatalogFetch';
 import { invalidateInventoryDerivedCaches } from '@/utils/invalidateInventoryDerivedCaches';
+import {
+  createPageLoadDiagState,
+  isInventoryLoadDiagEnabled,
+  logAbortRequested,
+  logInventoryLoadEvent,
+  logLoadEnd,
+  logLoadStart,
+  logRenderReady,
+  toDiagContext,
+  type PageLoadDiagState,
+} from '@/utils/inventoryLoadDiagnostics';
 
 interface Product {
   id: string;
@@ -122,11 +133,26 @@ export const AlmacenPage: React.FC = () => {
   const canSeeCosts = userProfile?.role === 'admin' || userProfile?.role === 'master_admin';
   const fetchGenRef = useRef(0);
   const fetchAbortRef = useRef<AbortController | null>(null);
+  const activeLoadIdRef = useRef<string | null>(null);
+  const prevStoreForDiagRef = useRef<string | null | undefined>(undefined);
+  const pageMountedRef = useRef(true);
+
+  useEffect(() => {
+    pageMountedRef.current = true;
+    return () => {
+      pageMountedRef.current = false;
+    };
+  }, []);
 
   // Cargar productos e inventario (productos paginados + inventario solo de esos IDs)
-  const fetchData = async (opts?: { signal?: AbortSignal; gen?: number }) => {
+  const fetchData = async (opts?: {
+    signal?: AbortSignal;
+    gen?: number;
+    diag?: PageLoadDiagState;
+  }) => {
     const gen = opts?.gen ?? ++fetchGenRef.current;
     const signal = opts?.signal;
+    const diag = opts?.diag;
     const isCurrent = () => gen === fetchGenRef.current && !signal?.aborted;
 
     try {
@@ -136,6 +162,7 @@ export const AlmacenPage: React.FC = () => {
           setLoading(false);
           setIsRefetching(false);
         }
+        if (diag) logLoadEnd(diag, 'no_company');
         return;
       }
 
@@ -167,19 +194,23 @@ export const AlmacenPage: React.FC = () => {
         .eq('active', true)
         .order('name');
 
+      const productsT0 = Date.now();
       const [productsData, storesResult] = await Promise.all([
         fetchAllActiveProducts({
           category: categoryFilter !== 'all' ? categoryFilter : null,
           signal,
+          diag: diag ? toDiagContext(diag) : undefined,
         }),
         storesQuery,
       ]);
+      if (diag) diag.productsMs = Date.now() - productsT0;
 
       if (!isCurrent()) return;
 
       if (!productsData) {
         setProducts([]);
         setLoading(false);
+        if (diag) logLoadEnd(diag, 'no_products');
         return;
       }
 
@@ -202,12 +233,21 @@ export const AlmacenPage: React.FC = () => {
       const productIds = productsData.map((p) => p.id);
       let inventoryData: Array<{ product_id: string; store_id: string; qty: number }> = [];
       try {
+        const invT0 = Date.now();
         inventoryData = await fetchInventoriesForProductIds(productIds, catalogStoreId, {
           stockStatus: catalogStockStatus,
           signal,
+          diag: diag ? toDiagContext(diag) : undefined,
         });
+        if (diag) {
+          diag.inventoryMs = Date.now() - invT0;
+          diag.serverFetchEndAt = Date.now();
+        }
       } catch (inventoryError: any) {
-        if (isAbortError(inventoryError) || signal?.aborted) return;
+        if (isAbortError(inventoryError) || signal?.aborted) {
+          if (diag) logLoadEnd(diag, 'aborted');
+          return;
+        }
         console.error('Error fetching inventory:', inventoryError);
         if (isCurrent()) {
           toast({
@@ -219,6 +259,15 @@ export const AlmacenPage: React.FC = () => {
       }
 
       if (!isCurrent()) return;
+
+      const postT0 = Date.now();
+      if (diag && isInventoryLoadDiagEnabled()) {
+        logInventoryLoadEvent('POST_PROCESS_START', {
+          LOAD_ID: diag.loadId,
+          MODULE: diag.module,
+          STORE_ID: diag.storeId,
+        });
+      }
 
       const activeStoreRow =
         availableStores.find((store) => store.id === activeStoreId) ??
@@ -232,10 +281,31 @@ export const AlmacenPage: React.FC = () => {
       const { products: productsWithStock, storeInventories: inventoriesByProduct } =
         buildCatalogWithStock(visibleProducts, inventoryData, catalogStores);
 
+      if (diag) {
+        diag.postProcessMs = Date.now() - postT0;
+        if (isInventoryLoadDiagEnabled()) {
+          logInventoryLoadEvent('POST_PROCESS_END', {
+            LOAD_ID: diag.loadId,
+            MODULE: diag.module,
+            STORE_ID: diag.storeId,
+            DURATION: diag.postProcessMs,
+          });
+        }
+      }
+
       if (!isCurrent()) return;
 
       setProducts(productsWithStock as Product[]);
       setStoreInventories(inventoriesByProduct as Record<string, StoreInventory[]>);
+
+      const cacheT0 = Date.now();
+      if (diag && isInventoryLoadDiagEnabled()) {
+        logInventoryLoadEvent('PAGE_CACHE_WRITE_START', {
+          LOAD_ID: diag.loadId,
+          MODULE: diag.module,
+          STORE_ID: diag.storeId,
+        });
+      }
       writeInventoryPageCache(
         companyId,
         catalogStoreId,
@@ -244,9 +314,29 @@ export const AlmacenPage: React.FC = () => {
         categoryFilter,
         catalogStockStatus
       );
+      if (diag) {
+        diag.cacheWriteMs = Date.now() - cacheT0;
+        if (isInventoryLoadDiagEnabled()) {
+          logInventoryLoadEvent('PAGE_CACHE_WRITE_END', {
+            LOAD_ID: diag.loadId,
+            MODULE: diag.module,
+            STORE_ID: diag.storeId,
+            DURATION: diag.cacheWriteMs,
+          });
+        }
+      }
+
+      if (diag && isCurrent()) {
+        logRenderReady(diag);
+        logLoadEnd(diag, 'success');
+      }
     } catch (error) {
-      if (isAbortError(error) || signal?.aborted) return;
+      if (isAbortError(error) || signal?.aborted) {
+        if (diag) logLoadEnd(diag, 'aborted');
+        return;
+      }
       console.error('Error in fetchData:', error);
+      if (diag) logLoadEnd(diag, 'error');
       if (isCurrent()) {
         toast({
           title: 'Error',
@@ -279,6 +369,12 @@ export const AlmacenPage: React.FC = () => {
     if (!userProfile?.company_id) return;
     const catalogStoreId = activeStoreId ?? 'all';
     const catalogStockStatus: StockPresence = activeStoreId ? stockStatus : 'all';
+    const prevLoadId = activeLoadIdRef.current;
+    const storeChanged =
+      prevStoreForDiagRef.current !== undefined &&
+      prevStoreForDiagRef.current !== catalogStoreId;
+    prevStoreForDiagRef.current = catalogStoreId;
+
     const { status } = inspectInventoryPageCache(
       userProfile.company_id,
       catalogStoreId,
@@ -287,17 +383,49 @@ export const AlmacenPage: React.FC = () => {
     );
     // FRESH exact-key: layout ya pintó ese payload; no relanzar catálogo.
     if (status === 'fresh') {
+      const diag = createPageLoadDiagState('Almacen', catalogStoreId, 'PAGE_CACHE');
+      activeLoadIdRef.current = diag.loadId;
+      logLoadStart(diag, { prevLoadId });
       setLoading(false);
       setIsRefetching(false);
+      logRenderReady(diag);
+      logLoadEnd(diag, 'success_page_cache');
       return;
     }
 
+    const diag = createPageLoadDiagState('Almacen', catalogStoreId, 'SERVER_FETCH');
+    activeLoadIdRef.current = diag.loadId;
+    logLoadStart(diag, { prevLoadId });
+
     const gen = ++fetchGenRef.current;
     const ac = new AbortController();
-    fetchAbortRef.current?.abort();
+    if (fetchAbortRef.current) {
+      logAbortRequested(
+        prevLoadId,
+        'Almacen',
+        catalogStoreId,
+        storeChanged ? 'STORE_CHANGE' : 'NEW_GENERATION',
+        prevLoadId
+      );
+      fetchAbortRef.current.abort();
+    }
     fetchAbortRef.current = ac;
-    void fetchData({ signal: ac.signal, gen });
+    void fetchData({ signal: ac.signal, gen, diag });
     return () => {
+      const reason = !pageMountedRef.current
+        ? 'UNMOUNT'
+        : storeChanged
+          ? 'STORE_CHANGE'
+          : 'NEW_GENERATION';
+      logAbortRequested(diag.loadId, 'Almacen', catalogStoreId, reason, prevLoadId);
+      if (!pageMountedRef.current && isInventoryLoadDiagEnabled()) {
+        logInventoryLoadEvent('UNMOUNT', {
+          LOAD_ID: diag.loadId,
+          MODULE: 'Almacen',
+          STORE_ID: catalogStoreId,
+          REASON: 'UNMOUNT',
+        });
+      }
       fetchGenRef.current += 1;
       ac.abort();
     };

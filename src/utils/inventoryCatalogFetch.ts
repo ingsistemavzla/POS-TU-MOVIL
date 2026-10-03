@@ -1,6 +1,15 @@
 import { supabase } from '@/integrations/supabase/client';
 import { isConcreteStoreId } from '@/contexts/StoreContext';
 import { sanitizeInventoryData } from '@/utils/inventoryValidation';
+import {
+  diagInventoryRequestEnd,
+  diagInventoryRequestStart,
+  diagSweepEnd,
+  diagSweepStart,
+  isInventoryLoadDiagEnabled,
+  logInventoryLoadEvent,
+  type InventoryLoadDiagContext,
+} from '@/utils/inventoryLoadDiagnostics';
 
 /** Tamaño de página PostgREST (límite por defecto ~1000). */
 const PAGE_SIZE = 1000;
@@ -100,11 +109,13 @@ async function joinInflight<T>(
   map: Map<string, InflightEntry<T>>,
   key: string,
   start: (signal: AbortSignal) => Promise<T>,
-  consumerSignal?: AbortSignal
+  consumerSignal?: AbortSignal,
+  diag?: { ctx: InventoryLoadDiagContext; kind: 'products' | 'inventory' }
 ): Promise<T> {
   throwIfAborted(consumerSignal);
 
   let entry = map.get(key);
+  const createdNow = !entry;
   if (!entry) {
     const controller = new AbortController();
     const created: InflightEntry<T> = {
@@ -118,7 +129,28 @@ async function joinInflight<T>(
     };
     entry = created;
     map.set(key, created);
+    if (diag && isInventoryLoadDiagEnabled()) {
+      logInventoryLoadEvent('INFLIGHT_CREATE', {
+        LOAD_ID: diag.ctx.loadId,
+        MODULE: diag.ctx.module,
+        STORE_ID: diag.ctx.storeId,
+        KIND: diag.kind,
+        REF_COUNT: 0,
+      });
+    }
+  } else if (diag && isInventoryLoadDiagEnabled()) {
+    logInventoryLoadEvent('INFLIGHT_JOIN', {
+      LOAD_ID: diag.ctx.loadId,
+      MODULE: diag.ctx.module,
+      STORE_ID: diag.ctx.storeId,
+      KIND: diag.kind,
+      REF_COUNT: entry.refCount,
+      SOURCE: 'INFLIGHT_JOIN',
+    });
   }
+
+  // createdNow reserved for future diag asymmetry; keep for readability.
+  void createdNow;
 
   entry.refCount += 1;
   let released = false;
@@ -245,13 +277,36 @@ export async function fetchAllActiveProducts(options?: {
   category?: string | null;
   bypassCache?: boolean;
   signal?: AbortSignal;
+  diag?: InventoryLoadDiagContext;
 }): Promise<CatalogProductRow[]> {
   const category = options?.category;
   const cacheKey = `cat:${category ?? 'all'}`;
   const signal = options?.signal;
+  const diag = options?.diag;
+  const t0 = Date.now();
+
+  if (diag && isInventoryLoadDiagEnabled()) {
+    logInventoryLoadEvent('PRODUCTS_START', {
+      LOAD_ID: diag.loadId,
+      MODULE: diag.module,
+      STORE_ID: diag.storeId,
+      START: t0,
+    });
+  }
 
   if (!options?.bypassCache && productsMem && productsMem.key === cacheKey) {
     if (Date.now() - productsMem.at < MEMORY_TTL_MS) {
+      if (diag && isInventoryLoadDiagEnabled()) {
+        logInventoryLoadEvent('PRODUCTS_END', {
+          LOAD_ID: diag.loadId,
+          MODULE: diag.module,
+          STORE_ID: diag.storeId,
+          SOURCE: 'PRODUCTS_MEM',
+          DURATION: Date.now() - t0,
+          STATUS: 'success',
+          PRODUCT_COUNT: productsMem.data.length,
+        });
+      }
       return productsMem.data;
     }
   }
@@ -264,18 +319,43 @@ export async function fetchAllActiveProducts(options?: {
     }
   }
 
-  const data = await joinInflight(
-    productsInflight,
-    cacheKey,
-    async (sharedSignal) => {
-      const rows = await loadAllActiveProducts(category, sharedSignal);
-      productsMem = { at: Date.now(), key: cacheKey, data: rows };
-      return rows;
-    },
-    signal
-  );
+  try {
+    const data = await joinInflight(
+      productsInflight,
+      cacheKey,
+      async (sharedSignal) => {
+        const rows = await loadAllActiveProducts(category, sharedSignal);
+        productsMem = { at: Date.now(), key: cacheKey, data: rows };
+        return rows;
+      },
+      signal,
+      diag ? { ctx: diag, kind: 'products' } : undefined
+    );
 
-  return data;
+    if (diag && isInventoryLoadDiagEnabled()) {
+      logInventoryLoadEvent('PRODUCTS_END', {
+        LOAD_ID: diag.loadId,
+        MODULE: diag.module,
+        STORE_ID: diag.storeId,
+        DURATION: Date.now() - t0,
+        STATUS: 'success',
+        PRODUCT_COUNT: data.length,
+      });
+    }
+
+    return data;
+  } catch (err) {
+    if (diag && isInventoryLoadDiagEnabled()) {
+      logInventoryLoadEvent('PRODUCTS_END', {
+        LOAD_ID: diag.loadId,
+        MODULE: diag.module,
+        STORE_ID: diag.storeId,
+        DURATION: Date.now() - t0,
+        STATUS: isAbortError(err) ? 'aborted' : 'error',
+      });
+    }
+    throw err;
+  }
 }
 
 /** Ejecuta tareas con tope de concurrencia; preserva orden de resultados por índice. */
@@ -308,61 +388,107 @@ async function loadInventoryChunk(
   storeId: string,
   stockStatus: StockPresence,
   allStores: boolean,
-  signal: AbortSignal
+  signal: AbortSignal,
+  diagMeta?: {
+    ctx: InventoryLoadDiagContext;
+    chunkIndex: number;
+    totalChunks: number;
+  }
 ): Promise<InventoryRow[]> {
   const chunkRows: InventoryRow[] = [];
   let from = 0;
+  const t0 = Date.now();
+  const baseFields = diagMeta
+    ? {
+        LOAD_ID: diagMeta.ctx.loadId,
+        MODULE: diagMeta.ctx.module,
+        STORE_ID: diagMeta.ctx.storeId,
+        CHUNK_INDEX: diagMeta.chunkIndex,
+        TOTAL_CHUNKS: diagMeta.totalChunks,
+      }
+    : null;
 
-  while (true) {
-    throwIfAborted(signal);
-
-    let query = (supabase.from('inventories') as any)
-      .select('product_id, store_id, qty, min_qty')
-      .in('product_id', chunk)
-      .range(from, from + PAGE_SIZE - 1)
-      .abortSignal(signal);
-
-    if (!allStores) {
-      query = query.eq('store_id', storeId);
-    }
-
-    if (stockStatus === 'in_stock') {
-      query = query.gt('qty', 0);
-    } else if (stockStatus === 'out_of_stock') {
-      query = query.eq('qty', 0);
-    }
-
-    const { data, error } = await query;
-    throwIfAborted(signal);
-    if (error) throw error;
-
-    const rows = (data ?? []) as Array<{
-      product_id: string;
-      store_id: string;
-      qty: number;
-      min_qty: number | null;
-    }>;
-    if (rows.length === 0) break;
-    chunkRows.push(
-      ...rows.map((r) => ({
-        product_id: r.product_id,
-        store_id: r.store_id,
-        qty: r.qty,
-        min_qty: r.min_qty ?? 0,
-      }))
-    );
-    if (rows.length < PAGE_SIZE) break;
-    from += PAGE_SIZE;
+  if (baseFields) {
+    logInventoryLoadEvent('CHUNK_START', { ...baseFields, START: t0 });
+    diagInventoryRequestStart(baseFields);
   }
 
-  return chunkRows;
+  try {
+    while (true) {
+      throwIfAborted(signal);
+
+      let query = (supabase.from('inventories') as any)
+        .select('product_id, store_id, qty, min_qty')
+        .in('product_id', chunk)
+        .range(from, from + PAGE_SIZE - 1)
+        .abortSignal(signal);
+
+      if (!allStores) {
+        query = query.eq('store_id', storeId);
+      }
+
+      if (stockStatus === 'in_stock') {
+        query = query.gt('qty', 0);
+      } else if (stockStatus === 'out_of_stock') {
+        query = query.eq('qty', 0);
+      }
+
+      const { data, error } = await query;
+      throwIfAborted(signal);
+      if (error) throw error;
+
+      const rows = (data ?? []) as Array<{
+        product_id: string;
+        store_id: string;
+        qty: number;
+        min_qty: number | null;
+      }>;
+      if (rows.length === 0) break;
+      chunkRows.push(
+        ...rows.map((r) => ({
+          product_id: r.product_id,
+          store_id: r.store_id,
+          qty: r.qty,
+          min_qty: r.min_qty ?? 0,
+        }))
+      );
+      if (rows.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+
+    if (baseFields) {
+      logInventoryLoadEvent('CHUNK_END', {
+        ...baseFields,
+        END: Date.now(),
+        DURATION: Date.now() - t0,
+        STATUS: 'success',
+        ROW_COUNT: chunkRows.length,
+      });
+      diagInventoryRequestEnd({ ...baseFields, STATUS: 'success' });
+    }
+
+    return chunkRows;
+  } catch (err) {
+    if (baseFields) {
+      const status = isAbortError(err) ? 'aborted' : 'error';
+      logInventoryLoadEvent('CHUNK_END', {
+        ...baseFields,
+        END: Date.now(),
+        DURATION: Date.now() - t0,
+        STATUS: status,
+      });
+      diagInventoryRequestEnd({ ...baseFields, STATUS: status });
+    }
+    throw err;
+  }
 }
 
 async function loadInventoriesForProductIds(
   productIds: string[],
   storeId: string,
   stockStatus: StockPresence,
-  signal: AbortSignal
+  signal: AbortSignal,
+  diag?: InventoryLoadDiagContext
 ): Promise<InventoryRow[]> {
   const allStores = storeId === 'all';
   const chunks: string[][] = [];
@@ -375,7 +501,17 @@ async function loadInventoriesForProductIds(
   const perChunk = await mapWithConcurrencyLimit(
     chunks.length,
     INVENTORY_CHUNK_CONCURRENCY,
-    (index) => loadInventoryChunk(chunks[index], storeId, stockStatus, allStores, signal),
+    (index) =>
+      loadInventoryChunk(
+        chunks[index],
+        storeId,
+        stockStatus,
+        allStores,
+        signal,
+        diag
+          ? { ctx: diag, chunkIndex: index, totalChunks: chunks.length }
+          : undefined
+      ),
     signal
   );
 
@@ -390,7 +526,12 @@ async function loadInventoriesForProductIds(
 export async function fetchInventoriesForProductIds(
   productIds: string[],
   storeId: string,
-  options?: { bypassCache?: boolean; stockStatus?: StockPresence; signal?: AbortSignal }
+  options?: {
+    bypassCache?: boolean;
+    stockStatus?: StockPresence;
+    signal?: AbortSignal;
+    diag?: InventoryLoadDiagContext;
+  }
 ): Promise<Array<{ product_id: string; store_id: string; qty: number; min_qty: number }>> {
   const allStores = storeId === 'all';
   if (!allStores && !isConcreteStoreId(storeId)) {
@@ -403,37 +544,130 @@ export async function fetchInventoriesForProductIds(
   const productSetKey = [...productIds].sort().join(',');
   const cacheKey = `inv:${storeId}:${stockStatus}:${productSetKey}`;
   const signal = options?.signal;
+  const diag = options?.diag;
+  const t0 = Date.now();
+
+  if (diag && isInventoryLoadDiagEnabled()) {
+    logInventoryLoadEvent('INVENTORY_START', {
+      LOAD_ID: diag.loadId,
+      MODULE: diag.module,
+      STORE_ID: diag.storeId,
+      START: t0,
+      PRODUCT_COUNT: productIds.length,
+      EXPECTED_CHUNKS: Math.ceil(productIds.length / PRODUCT_ID_CHUNK),
+      CONCURRENCY: INVENTORY_CHUNK_CONCURRENCY,
+    });
+  }
 
   if (!options?.bypassCache) {
     const cached = getInventoryMem(cacheKey);
-    if (cached) return cached;
+    if (cached) {
+      diag?.observeInventorySource?.('INVENTORY_MEM');
+      if (diag && isInventoryLoadDiagEnabled()) {
+        logInventoryLoadEvent('INVENTORY_END', {
+          LOAD_ID: diag.loadId,
+          MODULE: diag.module,
+          STORE_ID: diag.storeId,
+          SOURCE: 'INVENTORY_MEM',
+          DURATION: Date.now() - t0,
+          STATUS: 'success',
+          ROW_COUNT: cached.length,
+        });
+      }
+      return cached;
+    }
   }
 
   if (options?.bypassCache) {
     const existing = inventoryInflight.get(cacheKey);
     if (existing) {
+      if (diag && isInventoryLoadDiagEnabled()) {
+        logInventoryLoadEvent('ABORT_REQUESTED', {
+          LOAD_ID: diag.loadId,
+          MODULE: diag.module,
+          STORE_ID: diag.storeId,
+          REASON: 'REFRESH',
+          TARGET: 'inventory_inflight_bypass',
+        });
+      }
       existing.controller.abort();
       inventoryInflight.delete(cacheKey);
     }
   }
 
-  const data = await joinInflight(
-    inventoryInflight,
-    cacheKey,
-    async (sharedSignal) => {
-      const rows = await loadInventoriesForProductIds(
-        productIds,
-        storeId,
-        stockStatus,
-        sharedSignal
-      );
-      setInventoryMem(cacheKey, rows);
-      return rows;
-    },
-    signal
-  );
+  const joiningExisting = inventoryInflight.has(cacheKey);
 
-  return data;
+  try {
+    const data = await joinInflight(
+      inventoryInflight,
+      cacheKey,
+      async (sharedSignal) => {
+        if (diag) diagSweepStart(diag);
+        let sweepStatus: 'success' | 'aborted' | 'error' = 'success';
+        try {
+          const rows = await loadInventoriesForProductIds(
+            productIds,
+            storeId,
+            stockStatus,
+            sharedSignal,
+            diag
+          );
+          setInventoryMem(cacheKey, rows);
+          return rows;
+        } catch (err) {
+          sweepStatus = isAbortError(err) ? 'aborted' : 'error';
+          throw err;
+        } finally {
+          if (diag) diagSweepEnd(diag, sweepStatus);
+        }
+      },
+      signal,
+      diag ? { ctx: diag, kind: 'inventory' } : undefined
+    );
+
+    const invSource = joiningExisting ? 'INFLIGHT_JOIN' : 'SERVER_FETCH';
+    diag?.observeInventorySource?.(invSource);
+    if (diag && isInventoryLoadDiagEnabled()) {
+      logInventoryLoadEvent('INVENTORY_END', {
+        LOAD_ID: diag.loadId,
+        MODULE: diag.module,
+        STORE_ID: diag.storeId,
+        SOURCE: invSource,
+        DURATION: Date.now() - t0,
+        STATUS: 'success',
+        ROW_COUNT: data.length,
+      });
+      logInventoryLoadEvent('SERVER_FETCH_END', {
+        LOAD_ID: diag.loadId,
+        MODULE: diag.module,
+        STORE_ID: diag.storeId,
+        AT: Date.now(),
+        SOURCE: invSource,
+      });
+    }
+
+    return data;
+  } catch (err) {
+    if (diag && isInventoryLoadDiagEnabled()) {
+      const status = isAbortError(err) ? 'aborted' : 'error';
+      if (status === 'aborted') {
+        logInventoryLoadEvent('ABORT_OBSERVED', {
+          LOAD_ID: diag.loadId,
+          MODULE: diag.module,
+          STORE_ID: diag.storeId,
+        });
+      }
+      logInventoryLoadEvent('INVENTORY_END', {
+        LOAD_ID: diag.loadId,
+        MODULE: diag.module,
+        STORE_ID: diag.storeId,
+        SOURCE: joiningExisting ? 'INFLIGHT_JOIN' : 'SERVER_FETCH',
+        DURATION: Date.now() - t0,
+        STATUS: status,
+      });
+    }
+    throw err;
+  }
 }
 
 export { isAbortError };
