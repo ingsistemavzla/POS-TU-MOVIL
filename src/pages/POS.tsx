@@ -58,6 +58,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { PosProductListSkeleton } from "@/components/inventory/InventoryLoadingSkeletons";
 import { useBcv } from "@/contexts/BcvContext";
 import { getCartPhoneImeiValidation, isValidImeiValue } from "@/utils/phoneImeiValidation";
+import { invalidateInventoryDerivedCaches } from "@/utils/invalidateInventoryDerivedCaches";
 // import { CashRegisterWidget } from "@/components/cash-register/CashRegisterWidget";
 
 interface CartItem {
@@ -1278,6 +1279,7 @@ export default function POS() {
 
         // ✅ El invoice_number ya viene generado por el backend en la respuesta del RPC
         // No necesitamos actualizarlo manualmente
+        invalidateInventoryDerivedCaches();
 
         queue.splice(i, 1);
         i--;
@@ -1946,6 +1948,7 @@ export default function POS() {
       // La venta fue procesada exitosamente. Declarar éxito INMEDIATAMENTE antes de
       // cualquier operación secundaria que pueda fallar.
       // ====================================================================================
+      invalidateInventoryDerivedCaches();
 
       // Guardar snapshot del carrito para el modal (antes de limpiar)
       const cartSnapshot = [...cart];

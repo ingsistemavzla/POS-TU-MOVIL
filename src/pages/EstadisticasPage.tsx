@@ -44,6 +44,7 @@ import {
   isAbortError,
 } from '@/utils/inventoryCatalogFetch';
 import {
+  inspectEstadisticasPageCache,
   readEstadisticasPageCache,
   writeEstadisticasPageCache,
 } from '@/utils/estadisticasPageCache';
@@ -724,6 +725,17 @@ export const EstadisticasPage: React.FC = () => {
 
   useEffect(() => {
     if (!userProfile?.company_id) return;
+
+    const catalogStoreId = activeStoreId ?? 'all';
+    const { status } = inspectEstadisticasPageCache(userProfile.company_id, catalogStoreId);
+    // FRESH exact-key: layout ya pintó; no relanzar catálogo. STALE/MISS: SWR o loader.
+    if (status === 'fresh') {
+      setLoading(false);
+      setIsRefreshing(false);
+      setFinanceEnabled(true);
+      hasLoadedOnceRef.current = true;
+      return;
+    }
 
     const hadCache = hasLoadedOnceRef.current;
     // Con cache: refresh en background. Sin cache: fetch (panel ya visible tras splash)

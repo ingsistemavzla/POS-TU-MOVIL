@@ -70,6 +70,7 @@ import { generateSalesReportPdf } from "@/lib/reports/salesReport";
 import type jsPDF from "jspdf";
 import { useStore } from "@/contexts/StoreContext";
 import { StoreFilterBar } from "@/components/inventory/StoreFilterBar";
+import { invalidateInventoryDerivedCaches } from "@/utils/invalidateInventoryDerivedCaches";
 import {
   Dialog,
   DialogContent,
@@ -1238,6 +1239,8 @@ export default function SalesPage() {
               description: response.message || `La venta ${saleToDelete.invoice_number} ha sido eliminada exitosamente. Se repuso el inventario.`,
               variant: "success",
             });
+
+            invalidateInventoryDerivedCaches();
             
             // Refresh the data to update the list
             refreshData();
@@ -1255,6 +1258,8 @@ export default function SalesPage() {
             description: `La venta ${saleToDelete.invoice_number} ha sido eliminada exitosamente. Se repuso el inventario.`,
             variant: "success",
           });
+
+          invalidateInventoryDerivedCaches();
           
           // Refresh the data to update the list
           refreshData();

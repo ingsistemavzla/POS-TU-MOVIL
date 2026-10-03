@@ -81,6 +81,29 @@ export function readEstadisticasPageCache(
   return slot;
 }
 
+/** Distingue FRESH (TTL) vs STALE usable vs MISS sin duplicar TTL en páginas. */
+export type EstadisticasPageCacheStatus = 'fresh' | 'stale' | 'miss';
+
+export function inspectEstadisticasPageCache(
+  companyId: string,
+  storeId: string
+): { status: EstadisticasPageCacheStatus; payload: EstadisticasCachePayload | null } {
+  if (typeof window === 'undefined' || !companyId || !storeId) {
+    return { status: 'miss', payload: null };
+  }
+  const dual = readDual(companyId);
+  if (!dual) return { status: 'miss', payload: null };
+  const slot = isAllStoreId(storeId) ? dual.all : dual.concrete;
+  if (!slot) return { status: 'miss', payload: null };
+  if (slot.companyId !== companyId || slot.storeId !== storeId) {
+    return { status: 'miss', payload: null };
+  }
+  const age = Date.now() - slot.timestamp;
+  if (age <= TTL_MS) return { status: 'fresh', payload: slot };
+  if (age <= STALE_TTL_MS) return { status: 'stale', payload: slot };
+  return { status: 'miss', payload: null };
+}
+
 export function writeEstadisticasPageCache(
   companyId: string,
   storeId: string,
@@ -98,5 +121,15 @@ export function writeEstadisticasPageCache(
     writeDual({ companyId, all: full, concrete: prev.concrete });
   } else {
     writeDual({ companyId, all: prev.all, concrete: full });
+  }
+}
+
+/** Invalida snapshots de página Estadísticas (ALL + concreta). No altera TTLs. */
+export function clearEstadisticasPageCache(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignore
   }
 }

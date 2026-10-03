@@ -70,6 +70,22 @@ import { cn } from '@/lib/utils';
 import { PriceListModal, PriceListParams } from '@/components/web/PriceListModal';
 import { downloadPriceListPDF, WebPricingSettings } from '@/utils/priceListPdfGenerator';
 import { getBcvRate } from '@/utils/bcvRate';
+import { invalidateInventoryDerivedCaches } from '@/utils/invalidateInventoryDerivedCaches';
+
+/** Tras sync_web_product_price exitoso: invalidar caches solo si cambió sale_price_usd. */
+function invalidateCachesIfWebSalePriceChanged(data: {
+  success?: boolean;
+  previous_price?: unknown;
+  new_price?: unknown;
+}): void {
+  if (!data?.success) return;
+  const prev = Number(data.previous_price);
+  const next = Number(data.new_price);
+  if (Number.isFinite(prev) && Number.isFinite(next) && prev === next) {
+    return;
+  }
+  invalidateInventoryDerivedCaches();
+}
 
 // ============================================================================
 // INTERFACES
@@ -728,6 +744,8 @@ export const GestionWebPage: React.FC = () => {
         throw new Error(data?.error || 'Error al actualizar precio');
       }
 
+      invalidateCachesIfWebSalePriceChanged(data);
+
       console.log('✅ Precio actualizado exitosamente:', {
         previous_price: data.previous_price,
         new_price: data.new_price,
@@ -852,6 +870,9 @@ export const GestionWebPage: React.FC = () => {
         console.error('❌ RPC retornó success=false:', data);
         throw new Error(data?.error || 'Error al actualizar visibilidad');
       }
+
+      // Visibilidad/imagen: mismo sale_price → no invalidar caches de inventario/estadísticas
+      invalidateCachesIfWebSalePriceChanged(data);
 
       console.log('✅ Visibilidad actualizada exitosamente en BD:', {
         visible_saved: data.visible_saved,
@@ -1002,6 +1023,8 @@ export const GestionWebPage: React.FC = () => {
         console.error('❌ RPC retornó success=false:', data);
         throw new Error(data?.error || 'Error al sincronizar producto');
       }
+
+      invalidateCachesIfWebSalePriceChanged(data);
 
       console.log('✅ Producto sincronizado exitosamente:', {
         productId: editingProduct.id,

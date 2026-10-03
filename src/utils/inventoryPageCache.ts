@@ -88,6 +88,37 @@ export function readInventoryPageCache(
   return slot;
 }
 
+/** Distingue FRESH (TTL) vs STALE usable vs MISS sin duplicar TTL en páginas. */
+export type InventoryPageCacheStatus = 'fresh' | 'stale' | 'miss';
+
+export function inspectInventoryPageCache(
+  companyId: string,
+  storeId: string,
+  category: string | null | undefined,
+  stockPresence: string
+): { status: InventoryPageCacheStatus; payload: InventoryPageCachePayload | null } {
+  if (typeof window === 'undefined' || !companyId || !storeId) {
+    return { status: 'miss', payload: null };
+  }
+  const dual = readDual(companyId);
+  if (!dual) return { status: 'miss', payload: null };
+  const slot = isAllStoreId(storeId) ? dual.all : dual.concrete;
+  if (!slot) return { status: 'miss', payload: null };
+  if (slot.companyId !== companyId || slot.storeId !== storeId) {
+    return { status: 'miss', payload: null };
+  }
+  if ((slot.categoryScope ?? 'all') !== scopeKey(category)) {
+    return { status: 'miss', payload: null };
+  }
+  if ((slot.stockPresence ?? 'all') !== (stockPresence || 'all')) {
+    return { status: 'miss', payload: null };
+  }
+  const age = Date.now() - slot.timestamp;
+  if (age <= TTL_MS) return { status: 'fresh', payload: slot };
+  if (age <= STALE_TTL_MS) return { status: 'stale', payload: slot };
+  return { status: 'miss', payload: null };
+}
+
 export function writeInventoryPageCache(
   companyId: string,
   storeId: string,

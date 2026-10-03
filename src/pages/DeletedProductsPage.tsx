@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getCategoryLabel } from '@/constants/categories';
+import { invalidateInventoryDerivedCaches } from '@/utils/invalidateInventoryDerivedCaches';
 
 interface DeletedProduct {
   id: string;
@@ -132,6 +133,8 @@ export const DeletedProductsPage: React.FC = () => {
           title: "Producto restaurado",
           description: data.message || "El producto ha sido restaurado exitosamente.",
         });
+
+        invalidateInventoryDerivedCaches();
         
         // Recargar lista
         await fetchDeletedProducts();

@@ -37,6 +37,7 @@ import { printInvoice } from "@/utils/printInvoice";
 import { generateInvoicePDF } from "@/utils/invoicePdfGenerator";
 import { useToast } from "@/hooks/use-toast";
 import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
+import { invalidateInventoryDerivedCaches } from "@/utils/invalidateInventoryDerivedCaches";
 
 interface SaleDetailModalProps {
   saleId: string | null;
@@ -524,6 +525,8 @@ export function SaleDetailModal({ saleId, open, onOpenChange, onSaleDeleted }: S
           description: `La venta ha sido eliminada exitosamente. Se repuso el inventario de ${(result as any).items_count} productos.`,
           variant: "success",
         });
+
+        invalidateInventoryDerivedCaches();
         
         // Close modals and refresh data
         setShowDeleteModal(false);

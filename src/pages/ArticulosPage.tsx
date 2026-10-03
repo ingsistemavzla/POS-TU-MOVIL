@@ -60,19 +60,19 @@ import { ProductCardSkeletonGrid, FilterToolbarSpinner } from '@/components/inve
 import { useClientPagination } from '@/hooks/useClientPagination';
 import { ListPaginationBar } from '@/components/ui/ListPaginationBar';
 import {
+  inspectInventoryPageCache,
   readInventoryPageCache,
   writeInventoryPageCache,
-  clearInventoryPageCache,
 } from '@/utils/inventoryPageCache';
 import {
   fetchAllActiveProducts,
   fetchInventoriesForProductIds,
   buildCatalogWithStock,
   productsForStockPresence,
-  invalidateInventoryCatalogMemory,
   isAbortError,
   type StockPresence,
 } from '@/utils/inventoryCatalogFetch';
+import { invalidateInventoryDerivedCaches } from '@/utils/invalidateInventoryDerivedCaches';
 
 interface Product {
   id: string;
@@ -305,6 +305,21 @@ export const ArticulosPage: React.FC = () => {
 
   useEffect(() => {
     if (!userProfile?.company_id) return;
+    const catalogStoreId = activeStoreId ?? 'all';
+    const catalogStockStatus: StockPresence = activeStoreId ? stockStatus : 'all';
+    const { status } = inspectInventoryPageCache(
+      userProfile.company_id,
+      catalogStoreId,
+      categoryFilter,
+      catalogStockStatus
+    );
+    // FRESH exact-key: layout ya pintó ese payload; no relanzar catálogo.
+    if (status === 'fresh') {
+      setLoading(false);
+      setIsRefetching(false);
+      return;
+    }
+
     const gen = ++fetchGenRef.current;
     const ac = new AbortController();
     fetchAbortRef.current?.abort();
@@ -382,10 +397,8 @@ export const ArticulosPage: React.FC = () => {
 
       setEditingPopover(null);
 
-      // Invalidar TODAS las caches (session + memoria compartida Almacén/Stats)
       productsCache.current = null;
-      clearInventoryPageCache();
-      invalidateInventoryCatalogMemory();
+      invalidateInventoryDerivedCaches();
 
       // Refresco en background (con cache limpia) sin bloquear la confirmación
       void fetchData();
@@ -468,10 +481,8 @@ export const ArticulosPage: React.FC = () => {
       });
       setTransferPopover(null);
 
-      // ✅ OPTIMIZACIÓN: Invalidar cache antes de recargar
       productsCache.current = null;
-      clearInventoryPageCache();
-      invalidateInventoryCatalogMemory();
+      invalidateInventoryDerivedCaches();
       await fetchData();
     } catch (error: any) {
       console.error('Error transferring:', error);
@@ -509,10 +520,8 @@ export const ArticulosPage: React.FC = () => {
         variant: "success",
       });
 
-      // ✅ OPTIMIZACIÓN: Invalidar cache antes de recargar
       productsCache.current = null;
-      clearInventoryPageCache();
-      invalidateInventoryCatalogMemory();
+      invalidateInventoryDerivedCaches();
       // Cerrar modal y recargar datos
       setDeletingProduct(null);
       await fetchData();
@@ -1055,8 +1064,7 @@ export const ArticulosPage: React.FC = () => {
           onSuccess={() => {
             // ✅ OPTIMIZACIÓN: Invalidar cache antes de recargar
             productsCache.current = null;
-            clearInventoryPageCache();
-            invalidateInventoryCatalogMemory();
+            invalidateInventoryDerivedCaches();
             fetchData();
             setShowForm(false);
             setEditingProduct(null);
