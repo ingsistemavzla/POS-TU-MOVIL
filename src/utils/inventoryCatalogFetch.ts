@@ -11,12 +11,19 @@ const INVENTORY_CHUNK_CONCURRENCY = 3;
 
 /** Cache en memoria corta: Almacén / Artículos / Estadísticas comparten catálogo. */
 const MEMORY_TTL_MS = 3 * 60 * 1000;
+/**
+ * Tope de keys de inventario en memoria.
+ * Operación típica: ~4 sucursales concretas + `all` (5) con stockStatus=all;
+ * margen para variantes stockStatus / crecimiento sin Map ilimitado.
+ */
+const INVENTORY_MEM_MAX_ENTRIES = 8;
 
 type ProductsMem = { at: number; key: string; data: CatalogProductRow[] };
-type InvMem = {
+type InventoryRow = { product_id: string; store_id: string; qty: number; min_qty: number };
+type InvMemEntry = {
   at: number;
-  key: string;
-  data: Array<{ product_id: string; store_id: string; qty: number; min_qty: number }>;
+  lastAccess: number;
+  data: InventoryRow[];
 };
 
 type InflightEntry<T> = {
@@ -26,12 +33,52 @@ type InflightEntry<T> = {
 };
 
 let productsMem: ProductsMem | null = null;
-let inventoryMem: InvMem | null = null;
+/** Multi-key acotado: varias cacheKeys frescas coexisten (Centro no evicta Zona). */
+const inventoryMem = new Map<string, InvMemEntry>();
 const productsInflight = new Map<string, InflightEntry<CatalogProductRow[]>>();
-const inventoryInflight = new Map<
-  string,
-  InflightEntry<Array<{ product_id: string; store_id: string; qty: number; min_qty: number }>>
->();
+const inventoryInflight = new Map<string, InflightEntry<InventoryRow[]>>();
+
+function pruneExpiredInventoryMem(now: number): void {
+  for (const [key, entry] of inventoryMem) {
+    if (now - entry.at >= MEMORY_TTL_MS) {
+      inventoryMem.delete(key);
+    }
+  }
+}
+
+function getInventoryMem(cacheKey: string): InventoryRow[] | null {
+  const entry = inventoryMem.get(cacheKey);
+  if (!entry) return null;
+  const now = Date.now();
+  if (now - entry.at >= MEMORY_TTL_MS) {
+    inventoryMem.delete(cacheKey);
+    return null;
+  }
+  entry.lastAccess = now;
+  return entry.data;
+}
+
+function setInventoryMem(cacheKey: string, data: InventoryRow[]): void {
+  const now = Date.now();
+  pruneExpiredInventoryMem(now);
+
+  if (!inventoryMem.has(cacheKey)) {
+    while (inventoryMem.size >= INVENTORY_MEM_MAX_ENTRIES) {
+      let lruKey: string | null = null;
+      let lruAccess = Infinity;
+      for (const [key, entry] of inventoryMem) {
+        if (entry.lastAccess < lruAccess) {
+          lruAccess = entry.lastAccess;
+          lruKey = key;
+        }
+      }
+      if (!lruKey) break;
+      inventoryMem.delete(lruKey);
+    }
+  }
+
+  inventoryMem.set(cacheKey, { at: now, lastAccess: now, data });
+}
 
 function isAbortError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
@@ -104,7 +151,7 @@ async function joinInflight<T>(
 /** Invalidar cache memoria tras mutar stock (evitar UI que “vuelve” al valor viejo). */
 export function invalidateInventoryCatalogMemory(): void {
   productsMem = null;
-  inventoryMem = null;
+  inventoryMem.clear();
   for (const entry of productsInflight.values()) {
     entry.controller.abort();
   }
@@ -230,8 +277,6 @@ export async function fetchAllActiveProducts(options?: {
 
   return data;
 }
-
-type InventoryRow = { product_id: string; store_id: string; qty: number; min_qty: number };
 
 /** Ejecuta tareas con tope de concurrencia; preserva orden de resultados por índice. */
 async function mapWithConcurrencyLimit<T>(
@@ -359,10 +404,9 @@ export async function fetchInventoriesForProductIds(
   const cacheKey = `inv:${storeId}:${stockStatus}:${productSetKey}`;
   const signal = options?.signal;
 
-  if (!options?.bypassCache && inventoryMem && inventoryMem.key === cacheKey) {
-    if (Date.now() - inventoryMem.at < MEMORY_TTL_MS) {
-      return inventoryMem.data;
-    }
+  if (!options?.bypassCache) {
+    const cached = getInventoryMem(cacheKey);
+    if (cached) return cached;
   }
 
   if (options?.bypassCache) {
@@ -383,7 +427,7 @@ export async function fetchInventoriesForProductIds(
         stockStatus,
         sharedSignal
       );
-      inventoryMem = { at: Date.now(), key: cacheKey, data: rows };
+      setInventoryMem(cacheKey, rows);
       return rows;
     },
     signal
