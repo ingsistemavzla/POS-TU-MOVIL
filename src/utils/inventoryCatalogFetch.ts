@@ -6,6 +6,8 @@ import { sanitizeInventoryData } from '@/utils/inventoryValidation';
 const PAGE_SIZE = 1000;
 /** Tamaño seguro para `.in('product_id', …)` por request. */
 const PRODUCT_ID_CHUNK = 150;
+/** Chunks de inventories en paralelo (lectura). No ilimitado. */
+const INVENTORY_CHUNK_CONCURRENCY = 3;
 
 /** Cache en memoria corta: Almacén / Artículos / Estadísticas comparten catálogo. */
 const MEMORY_TTL_MS = 3 * 60 * 1000;
@@ -229,64 +231,110 @@ export async function fetchAllActiveProducts(options?: {
   return data;
 }
 
+type InventoryRow = { product_id: string; store_id: string; qty: number; min_qty: number };
+
+/** Ejecuta tareas con tope de concurrencia; preserva orden de resultados por índice. */
+async function mapWithConcurrencyLimit<T>(
+  taskCount: number,
+  concurrency: number,
+  worker: (index: number) => Promise<T>,
+  signal: AbortSignal
+): Promise<T[]> {
+  const results: T[] = new Array(taskCount);
+  let nextIndex = 0;
+
+  async function runWorker(): Promise<void> {
+    while (true) {
+      throwIfAborted(signal);
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= taskCount) return;
+      results[index] = await worker(index);
+    }
+  }
+
+  const poolSize = Math.max(1, Math.min(concurrency, taskCount));
+  await Promise.all(Array.from({ length: poolSize }, () => runWorker()));
+  return results;
+}
+
+async function loadInventoryChunk(
+  chunk: string[],
+  storeId: string,
+  stockStatus: StockPresence,
+  allStores: boolean,
+  signal: AbortSignal
+): Promise<InventoryRow[]> {
+  const chunkRows: InventoryRow[] = [];
+  let from = 0;
+
+  while (true) {
+    throwIfAborted(signal);
+
+    let query = (supabase.from('inventories') as any)
+      .select('product_id, store_id, qty, min_qty')
+      .in('product_id', chunk)
+      .range(from, from + PAGE_SIZE - 1)
+      .abortSignal(signal);
+
+    if (!allStores) {
+      query = query.eq('store_id', storeId);
+    }
+
+    if (stockStatus === 'in_stock') {
+      query = query.gt('qty', 0);
+    } else if (stockStatus === 'out_of_stock') {
+      query = query.eq('qty', 0);
+    }
+
+    const { data, error } = await query;
+    throwIfAborted(signal);
+    if (error) throw error;
+
+    const rows = (data ?? []) as Array<{
+      product_id: string;
+      store_id: string;
+      qty: number;
+      min_qty: number | null;
+    }>;
+    if (rows.length === 0) break;
+    chunkRows.push(
+      ...rows.map((r) => ({
+        product_id: r.product_id,
+        store_id: r.store_id,
+        qty: r.qty,
+        min_qty: r.min_qty ?? 0,
+      }))
+    );
+    if (rows.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+
+  return chunkRows;
+}
+
 async function loadInventoriesForProductIds(
   productIds: string[],
   storeId: string,
   stockStatus: StockPresence,
   signal: AbortSignal
-): Promise<Array<{ product_id: string; store_id: string; qty: number; min_qty: number }>> {
+): Promise<InventoryRow[]> {
   const allStores = storeId === 'all';
-  const all: Array<{ product_id: string; store_id: string; qty: number; min_qty: number }> = [];
-
+  const chunks: string[][] = [];
   for (let i = 0; i < productIds.length; i += PRODUCT_ID_CHUNK) {
-    throwIfAborted(signal);
-    const chunk = productIds.slice(i, i + PRODUCT_ID_CHUNK);
-    let from = 0;
-
-    while (true) {
-      throwIfAborted(signal);
-
-      let query = (supabase.from('inventories') as any)
-        .select('product_id, store_id, qty, min_qty')
-        .in('product_id', chunk)
-        .range(from, from + PAGE_SIZE - 1)
-        .abortSignal(signal);
-
-      if (!allStores) {
-        query = query.eq('store_id', storeId);
-      }
-
-      if (stockStatus === 'in_stock') {
-        query = query.gt('qty', 0);
-      } else if (stockStatus === 'out_of_stock') {
-        query = query.eq('qty', 0);
-      }
-
-      const { data, error } = await query;
-      throwIfAborted(signal);
-      if (error) throw error;
-
-      const rows = (data ?? []) as Array<{
-        product_id: string;
-        store_id: string;
-        qty: number;
-        min_qty: number | null;
-      }>;
-      if (rows.length === 0) break;
-      all.push(
-        ...rows.map((r) => ({
-          product_id: r.product_id,
-          store_id: r.store_id,
-          qty: r.qty,
-          min_qty: r.min_qty ?? 0,
-        }))
-      );
-      if (rows.length < PAGE_SIZE) break;
-      from += PAGE_SIZE;
-    }
+    chunks.push(productIds.slice(i, i + PRODUCT_ID_CHUNK));
   }
 
-  return all;
+  // Misma secuencia de chunks que el for serial; hasta INVENTORY_CHUNK_CONCURRENCY en vuelo.
+  // Si un chunk falla, Promise.all rechaza y no se devuelve resultado parcial exitoso.
+  const perChunk = await mapWithConcurrencyLimit(
+    chunks.length,
+    INVENTORY_CHUNK_CONCURRENCY,
+    (index) => loadInventoryChunk(chunks[index], storeId, stockStatus, allStores, signal),
+    signal
+  );
+
+  return perChunk.flat();
 }
 
 /**
