@@ -1,3 +1,5 @@
+// L1-05J: antes de @supabase para que gotrue lea locks.debug si pos_inv_load_diag=1.
+import '@/utils/authDiagBootstrap';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 import { createDiagnosticFetch } from '@/utils/inventoryLoadDiagnostics';
