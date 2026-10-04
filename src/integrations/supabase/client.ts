@@ -35,3 +35,24 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     fetch: createDiagnosticFetch(),
   },
 });
+
+/**
+ * L1-05J.3 — Exposición diagnóstica del MISMO singleton (no un segundo client).
+ * Solo si pos_inv_load_diag=1 al cargar el módulo.
+ * Si el flag se quita con la SPA viva, la referencia permanece hasta reload
+ * (sin listeners/timers de limpieza).
+ */
+export const POS_SUPABASE_DIAG_GLOBAL_KEY = '__POS_SUPABASE_DIAG__' as const;
+
+try {
+  if (
+    typeof globalThis !== 'undefined' &&
+    typeof localStorage !== 'undefined' &&
+    localStorage.getItem('pos_inv_load_diag') === '1'
+  ) {
+    (globalThis as unknown as Record<string, unknown>)[POS_SUPABASE_DIAG_GLOBAL_KEY] =
+      supabase;
+  }
+} catch {
+  /* ignore storage access errors */
+}
