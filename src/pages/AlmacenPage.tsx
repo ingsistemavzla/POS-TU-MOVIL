@@ -1223,7 +1223,12 @@ export const AlmacenPage: React.FC = () => {
       {showForm && (
         <ProductForm
           product={editingProduct || undefined}
-          stores={stores}
+          // StoreContext (rol-acotado) es la fuente fiable; evita stores=[] tras short-circuit L1-05B.
+          stores={
+            availableStores.length > 0
+              ? availableStores.map((s) => ({ id: s.id, name: s.name }))
+              : stores
+          }
           onClose={() => {
             setShowForm(false);
             setEditingProduct(null);

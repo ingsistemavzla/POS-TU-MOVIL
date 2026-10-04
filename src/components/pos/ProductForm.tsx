@@ -61,16 +61,16 @@ export const ProductForm: React.FC<ProductFormProps> = ({
   onSuccess,
 }) => {
   const { userProfile } = useAuth();
-  const { activeStoreId, selectedStore } = useStore();
+  // availableStores ya viene acotado por rol en StoreContext (manager/cashier = asignada; admin = todas activas).
+  const { availableStores } = useStore();
+  /** Tiendas que el usuario puede administrar — no filtrar por activeStoreId (vista "Todas"). */
   const inventoryStores = useMemo(() => {
-    if (!activeStoreId) return [];
-    const fromProps = stores.filter((store) => store.id === activeStoreId);
-    if (fromProps.length > 0) return fromProps;
-    if (selectedStore?.id === activeStoreId) {
-      return [{ id: selectedStore.id, name: selectedStore.name }];
+    if (availableStores.length > 0) {
+      return availableStores.map((store) => ({ id: store.id, name: store.name }));
     }
-    return [];
-  }, [stores, activeStoreId, selectedStore]);
+    // Fallback si el contexto aún no cargó: props del padre (ya deberían ser permitidas).
+    return stores;
+  }, [availableStores, stores]);
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -129,7 +129,8 @@ export const ProductForm: React.FC<ProductFormProps> = ({
   }, [product, inventoryStores]);
 
   const fetchProductInventories = async (productId: string) => {
-    if (!activeStoreId) {
+    const permittedStoreIds = inventoryStores.map((store) => store.id);
+    if (permittedStoreIds.length === 0) {
       setStoreInventories([]);
       return;
     }
@@ -139,20 +140,20 @@ export const ProductForm: React.FC<ProductFormProps> = ({
         .from('inventories')
         .select('store_id, qty')
         .eq('product_id', productId)
-        .eq('store_id', activeStoreId);
+        .in('store_id', permittedStoreIds);
 
       if (error) {
         console.error('Error fetching inventories:', error);
         return;
       }
 
-      const inventoryMap = new Map(data.map(inv => [inv.store_id, inv]));
-      
+      const inventoryMap = new Map((data ?? []).map((inv) => [inv.store_id, inv]));
+
       // CRÍTICO: Corregir y detectar stock negativo al cargar
-      const inventoriesWithFix = inventoryStores.map(store => {
+      const inventoriesWithFix = inventoryStores.map((store) => {
         const inv = inventoryMap.get(store.id);
         const rawQty = inv?.qty || 0;
-        
+
         // Corregir si es negativo
         if (rawQty < 0) {
           const fix = fixNegativeStock(rawQty);
@@ -168,16 +169,16 @@ export const ProductForm: React.FC<ProductFormProps> = ({
             store_id: store.id,
             qty: fix.correctedQty,
             _wasNegative: true,
-            _originalQty: rawQty
+            _originalQty: rawQty,
           };
         }
-        
+
         return {
           store_id: store.id,
           qty: rawQty,
         };
       });
-      
+
       setStoreInventories(inventoriesWithFix);
     } catch (error) {
       console.error('Error in fetchProductInventories:', error);
@@ -535,7 +536,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
           </div>
 
           {/* Inventario por Tienda (grid horizontal) */}
-          {stores.length > 0 && (
+          {inventoryStores.length > 0 && (
             <Card>
               <CardHeader className="py-3">
                 <CardTitle className="text-base">Inventario por Tienda</CardTitle>
@@ -543,7 +544,9 @@ export const ProductForm: React.FC<ProductFormProps> = ({
               <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                   {storeInventories.map((inventory) => {
-                    const store = stores.find(s => s.id === inventory.store_id);
+                    const store =
+                      inventoryStores.find((s) => s.id === inventory.store_id) ||
+                      stores.find((s) => s.id === inventory.store_id);
                     if (!store) return null;
 
                     return (
@@ -632,7 +635,9 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                   <span className="text-white/60">Stock inicial:</span>
                   <ul className="mt-1 space-y-1">
                     {storeInventories.filter(inv => inv.qty > 0).map(inv => {
-                      const store = stores.find(s => s.id === inv.store_id);
+                      const store =
+                        inventoryStores.find((s) => s.id === inv.store_id) ||
+                        stores.find((s) => s.id === inv.store_id);
                       return store ? <li key={store.id} className="text-white">{store.name}: {inv.qty} und.</li> : null;
                     })}
                   </ul>
