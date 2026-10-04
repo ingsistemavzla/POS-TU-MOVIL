@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Printer, CheckCircle, Loader2, Download, LogOut, ShoppingCart } from 'lucide-react';
 import { useSystemSettings } from '@/hooks/useSystemSettings';
 import { useToast } from '@/hooks/use-toast';
 import { EmailService } from '@/services/emailService';
 import { generateInvoicePDF } from '@/utils/invoicePdfGenerator';
+import { createSaleAutoPrintScheduler } from '@/utils/saleAutoPrintScheduler';
 
 interface SaleData {
   invoice_number: string;
@@ -68,46 +69,75 @@ export const SaleCompletionModal: React.FC<SaleCompletionModalProps> = ({
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+  /** true = intento automático de impresión finalizado (no confirma impresión física). */
   const [printCompleted, setPrintCompleted] = useState(false);
   const [showActionButtons, setShowActionButtons] = useState(false);
 
-  // Ref para controlar si ya se ejecutó la impresión para esta venta
-  const printTriggeredRef = React.useRef<string | null>(null);
-
-  // Efecto para impresión automática - INMEDIATO al abrir el modal
+  const onPrintInvoiceRef = useRef(onPrintInvoice);
   useEffect(() => {
-    // Solo ejecutar si el modal está abierto, hay datos válidos, y no se ha impreso ya esta factura
-    if (isOpen && saleData && saleData.invoice_number && printTriggeredRef.current !== saleData.invoice_number) {
-      console.log('🎉 SaleCompletionModal - Modal abierto, iniciando secuencia para:', saleData.invoice_number);
-      
-      // Marcar esta factura como procesada para evitar bucles
-      printTriggeredRef.current = saleData.invoice_number;
-      
-      // Resetear estados INMEDIATAMENTE
-      setPrintCompleted(false);
-      setShowActionButtons(false);
-      setIsPrinting(true); // Mostrar "Imprimiendo" inmediatamente
-      
-      // Esperar 2 segundos y ejecutar la impresión
-      const printTimer = setTimeout(() => {
+    onPrintInvoiceRef.current = onPrintInvoice;
+  }, [onPrintInvoice]);
+
+  const invoiceNumber = saleData?.invoice_number ?? null;
+
+  const schedulerRef = useRef(
+    createSaleAutoPrintScheduler({
+      delayMs: 2000,
+      attemptPrint: () => {
         console.log('🖨️ SaleCompletionModal - Ejecutando impresión automática...');
-        onPrintInvoice();
+        onPrintInvoiceRef.current();
+      },
+      onSchedule: (invoice) => {
+        console.log('🎉 SaleCompletionModal - Auto-print programado para:', invoice);
+        setPrintCompleted(false);
+        setShowActionButtons(false);
+        setIsPrinting(true);
+      },
+      onAttemptFinished: () => {
+        // Liberación UI garantizada aunque printInvoice lance (venta ya persistida).
         setIsPrinting(false);
         setPrintCompleted(true);
-        setShowActionButtons(true); // Mostrar botones inmediatamente después de imprimir
-      }, 2000);
+        setShowActionButtons(true);
+      },
+    })
+  );
 
-      return () => clearTimeout(printTimer);
-    }
-    
-    // Si el modal se cierra, resetear el ref para la próxima venta
+  // Auto-print ligado a factura / apertura del modal — NO a identidad de onPrintInvoice.
+  useEffect(() => {
+    const scheduler = schedulerRef.current;
+
     if (!isOpen) {
-      printTriggeredRef.current = null;
+      scheduler.reset();
       setPrintCompleted(false);
       setIsPrinting(false);
       setShowActionButtons(false);
+      return;
     }
-  }, [isOpen, saleData, onPrintInvoice]);
+
+    if (!invoiceNumber) return;
+
+    // Si el intento ya terminó para esta factura (p.ej. Strict Mode remount), asegurar UI liberada.
+    if (scheduler.getCompletedInvoice() === invoiceNumber) {
+      setIsPrinting(false);
+      setPrintCompleted(true);
+      setShowActionButtons(true);
+      return;
+    }
+
+    scheduler.schedule(invoiceNumber);
+
+    return () => {
+      // Cancela pendiente sin marcar completed → se puede reprogramar al re-montar.
+      // No deja isPrinting=true de forma permanente: el siguiente schedule/onOpen rearma o libera.
+      scheduler.cancelPending();
+    };
+  }, [isOpen, invoiceNumber]);
+
+  useEffect(() => {
+    return () => {
+      schedulerRef.current.dispose();
+    };
+  }, []);
 
   // Función para salir del POS y redirigir a Dashboard
   const handleExitPOS = () => {

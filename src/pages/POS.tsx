@@ -2197,6 +2197,16 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
     }
   };
 
+  // Estable: evita que re-renders del POS cancelen el auto-print del modal de cierre.
+  const handlePrintCompletedSaleInvoice = useCallback(() => {
+    console.log('📄 POS - onPrintInvoice llamado, completedSaleData:', completedSaleData?.invoice_number);
+    if (completedSaleData) {
+      printInvoice(completedSaleData, getTaxRate(), getReceiptFooter());
+    } else {
+      console.warn('⚠️ POS - completedSaleData es null, no se puede imprimir');
+    }
+  }, [completedSaleData, getTaxRate, getReceiptFooter]);
+
   // Validar que cajeros tengan tienda asignada
   if (userProfile?.role === 'cashier' && !userProfile?.assigned_store_id) {
     return (
@@ -4164,14 +4174,7 @@ A financiar: $${saleData.krece_financed_amount.toFixed(2)}
           setCompletedSaleData(null);
         }}
         saleData={completedSaleData}
-        onPrintInvoice={() => {
-          console.log('📄 POS - onPrintInvoice llamado, completedSaleData:', completedSaleData?.invoice_number);
-          if (completedSaleData) {
-            printInvoice(completedSaleData, getTaxRate(), getReceiptFooter());
-          } else {
-            console.warn('⚠️ POS - completedSaleData es null, no se puede imprimir');
-          }
-        }}
+        onPrintInvoice={handlePrintCompletedSaleInvoice}
         onNewSale={() => {
           // Resetear todo el estado para una nueva venta
           setIsSaleConfirmedAndCompleted(false);
