@@ -64,6 +64,10 @@ import {
   toDiagContext,
   type InventoryLoadAbortReason,
 } from '@/utils/inventoryLoadDiagnostics';
+import {
+  canUseStoreContextForCatalog,
+  mapAvailableStoresToCatalog,
+} from '@/utils/resolveCatalogStores';
 
 /** Splash: mínimo breve; máximo 5s o hasta que haya datos (lo que ocurra primero). */
 const STATS_SPLASH_MIN_MS = 400;
@@ -146,7 +150,7 @@ const EMPTY_CATEGORY_CARDS: CategoryStats[] = [
 
 export const EstadisticasPage: React.FC = () => {
   const { userProfile } = useAuth();
-  const { activeStoreId } = useStore();
+  const { activeStoreId, availableStores } = useStore();
   // Diferir dashboard + RPC financiera: primero inventario; no saturan la red al abrir
   const [financeEnabled, setFinanceEnabled] = useState(false);
   const { data: dashboardData } = useDashboardData({ enabled: financeEnabled });
@@ -280,20 +284,11 @@ export const EstadisticasPage: React.FC = () => {
 
       console.time('📊 EstadisticasPage - fetchStatistics');
 
-      // Tiendas (misma lógica de roles)
-      let storesQuery = (supabase.from('stores') as any)
-        .select('id, name')
-        .eq('active', true)
-        .order('name');
-
-      if (!isMasterAdmin && userProfile?.company_id) {
-        storesQuery = storesQuery.eq('company_id', userProfile.company_id);
-      }
-
-      const isManager = userProfile?.role === 'manager';
-      if (isManager && userProfile?.assigned_store_id) {
-        storesQuery = storesQuery.eq('id', userProfile.assigned_store_id);
-      }
+      // L1-05H: preferir StoreContext; fallback de red solo si hace falta (master_admin / vacío).
+      const useStoreContextStores = canUseStoreContextForCatalog({
+        role: userProfile?.role,
+        availableStores,
+      });
 
       // Como Almacén: una sucursal o el catálogo de todas
       const bypassCache = !!opts?.forceRefresh;
@@ -301,19 +296,60 @@ export const EstadisticasPage: React.FC = () => {
       const phase1T0Mono = diagNow();
       const storesTimed = (async () => {
         const storesT0Mono = diagNow();
+        if (isInventoryLoadDiagEnabled()) {
+          logInventoryLoadEvent('STORES_START', {
+            LOAD_ID: diag.loadId,
+            MODULE: diag.module,
+            STORE_ID: diag.storeId,
+            SOURCE: useStoreContextStores ? 'STORE_CONTEXT' : 'SERVER_FETCH',
+          });
+        }
+
+        if (useStoreContextStores) {
+          const data = mapAvailableStoresToCatalog(availableStores);
+          const storesMs = roundDiagMs(diagNow() - storesT0Mono);
+          diag.storesMs = storesMs;
+          if (isInventoryLoadDiagEnabled()) {
+            logInventoryLoadEvent('STORES_END', {
+              LOAD_ID: diag.loadId,
+              MODULE: diag.module,
+              STORE_ID: diag.storeId,
+              SOURCE: 'STORE_CONTEXT',
+              DURATION_MS: storesMs,
+              STATUS: 'success',
+              STORE_COUNT: data.length,
+              STORES_AWAIT_MS: storesMs,
+              STORES_FETCH_START_GAP_MS: null,
+              STORES_HTTP_FETCH_MS: null,
+              STORES_POST_FETCH_GAP_MS: null,
+              REQUEST_IDS: null,
+            });
+          }
+          return { data, error: null };
+        }
+
+        // Fallback: mismos filtros de rol que antes + AbortSignal de esta generación.
+        let storesQuery = (supabase.from('stores') as any)
+          .select('id, name')
+          .eq('active', true)
+          .order('name')
+          .abortSignal(signal);
+
+        if (!isMasterAdmin && userProfile?.company_id) {
+          storesQuery = storesQuery.eq('company_id', userProfile.company_id);
+        }
+
+        const isManager = userProfile?.role === 'manager';
+        if (isManager && userProfile?.assigned_store_id) {
+          storesQuery = storesQuery.eq('id', userProfile.assigned_store_id);
+        }
+
         const storesNetOpId = beginDiagNetworkOp({
           loadId: diag.loadId,
           module: diag.module,
           storeId: diag.storeId,
           resource: 'stores',
         });
-        if (isInventoryLoadDiagEnabled()) {
-          logInventoryLoadEvent('STORES_START', {
-            LOAD_ID: diag.loadId,
-            MODULE: diag.module,
-            STORE_ID: diag.storeId,
-          });
-        }
         try {
           const result = await storesQuery;
           const storesMs = roundDiagMs(diagNow() - storesT0Mono);
@@ -325,6 +361,7 @@ export const EstadisticasPage: React.FC = () => {
               LOAD_ID: diag.loadId,
               MODULE: diag.module,
               STORE_ID: diag.storeId,
+              SOURCE: 'SERVER_FETCH',
               DURATION_MS: storesMs,
               STATUS: status,
               STORE_COUNT: result.error ? null : (result.data?.length ?? 0),
@@ -345,8 +382,9 @@ export const EstadisticasPage: React.FC = () => {
               LOAD_ID: diag.loadId,
               MODULE: diag.module,
               STORE_ID: diag.storeId,
+              SOURCE: 'SERVER_FETCH',
               DURATION_MS: storesMs,
-              STATUS: 'error',
+              STATUS: isAbortError(err) ? 'aborted' : 'error',
               STORE_COUNT: null,
               STORES_AWAIT_MS: net?.AWAIT_MS ?? storesMs,
               STORES_FETCH_START_GAP_MS: net?.FETCH_START_GAP_MS ?? null,

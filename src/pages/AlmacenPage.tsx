@@ -73,6 +73,10 @@ import {
   toDiagContext,
   type PageLoadDiagState,
 } from '@/utils/inventoryLoadDiagnostics';
+import {
+  canUseStoreContextForCatalog,
+  mapAvailableStoresToCatalog,
+} from '@/utils/resolveCatalogStores';
 
 interface Product {
   id: string;
@@ -189,19 +193,41 @@ export const AlmacenPage: React.FC = () => {
         }
       }
 
-      const storesQuery = (supabase.from('stores') as any)
-        .select('id, name')
-        .eq('active', true)
-        .order('name');
+      // L1-05H: preferir StoreContext (como Artículos); fallback abortable si vacío/master_admin.
+      const useStoreContextStores = canUseStoreContextForCatalog({
+        role: userProfile?.role,
+        availableStores,
+      });
 
       const productsT0 = Date.now();
+      const storesTimed = (async () => {
+        if (useStoreContextStores) {
+          return {
+            data: mapAvailableStoresToCatalog(availableStores),
+            error: null as null,
+            source: 'STORE_CONTEXT' as const,
+          };
+        }
+        const storesQuery = (supabase.from('stores') as any)
+          .select('id, name')
+          .eq('active', true)
+          .order('name')
+          .abortSignal(signal);
+        const result = await storesQuery;
+        return {
+          data: result.data as Array<{ id: string; name: string }> | null,
+          error: result.error,
+          source: 'SERVER_FETCH' as const,
+        };
+      })();
+
       const [productsData, storesResult] = await Promise.all([
         fetchAllActiveProducts({
           category: categoryFilter !== 'all' ? categoryFilter : null,
           signal,
           diag: diag ? toDiagContext(diag) : undefined,
         }),
-        storesQuery,
+        storesTimed,
       ]);
       if (diag) diag.productsMs = Date.now() - productsT0;
 
@@ -227,7 +253,7 @@ export const AlmacenPage: React.FC = () => {
           setStores([]);
         }
       } else if (isCurrent()) {
-        setStores(storesData || []);
+        setStores((storesData || []) as Store[]);
       }
 
       const productIds = productsData.map((p) => p.id);
