@@ -212,6 +212,27 @@ export function diagInventoryRequestEnd(fields: DiagFields): void {
   });
 }
 
+/**
+ * FETCH_TOTAL (L1-05G.3):
+ * - Si hay PHASE1_WALL_MS (Estadísticas): wall fase1 + inventory (no suma stores+products en paralelo).
+ * - Si no: compat G/G.1 → productsMs + inventoryMs (Almacén/Artículos aún miden wall de Promise.all en productsMs).
+ */
+export function computeFetchTotalMs(args: {
+  productsMs?: number | null;
+  storesMs?: number | null;
+  phase1WallMs?: number | null;
+  inventoryMs?: number | null;
+}): number | null {
+  const hasPhase1 = args.phase1WallMs != null;
+  const hasProducts = args.productsMs != null;
+  const hasInventory = args.inventoryMs != null;
+  if (!hasPhase1 && !hasProducts && !hasInventory) return null;
+  if (hasPhase1) {
+    return (args.phase1WallMs ?? 0) + (args.inventoryMs ?? 0);
+  }
+  return (args.productsMs ?? 0) + (args.inventoryMs ?? 0);
+}
+
 export function summarizeLoadTimings(args: {
   loadId: string;
   module: InventoryLoadModule;
@@ -219,6 +240,8 @@ export function summarizeLoadTimings(args: {
   source: InventoryLoadSource;
   t0: number;
   productsMs?: number | null;
+  storesMs?: number | null;
+  phase1WallMs?: number | null;
   inventoryMs?: number | null;
   postProcessMs?: number | null;
   cacheWriteMs?: number | null;
@@ -228,10 +251,12 @@ export function summarizeLoadTimings(args: {
 }): void {
   if (!isInventoryLoadDiagEnabled()) return;
   const end = Date.now();
-  const fetchTotal =
-    args.productsMs != null || args.inventoryMs != null
-      ? (args.productsMs ?? 0) + (args.inventoryMs ?? 0)
-      : null;
+  const fetchTotal = computeFetchTotalMs({
+    productsMs: args.productsMs,
+    storesMs: args.storesMs,
+    phase1WallMs: args.phase1WallMs,
+    inventoryMs: args.inventoryMs,
+  });
   const networkToUiGap =
     args.serverFetchEndAt != null && args.renderReadyAt != null
       ? Math.max(0, args.renderReadyAt - args.serverFetchEndAt)
@@ -247,6 +272,10 @@ export function summarizeLoadTimings(args: {
     DURATION: end - args.t0,
     STATUS: args.status,
     FETCH_TOTAL: fetchTotal,
+    PRODUCTS_MS: args.productsMs ?? null,
+    STORES_MS: args.storesMs ?? null,
+    PHASE1_WALL_MS: args.phase1WallMs ?? null,
+    INVENTORY_MS: args.inventoryMs ?? null,
     POST_PROCESS: args.postProcessMs ?? null,
     CACHE_WRITE: args.cacheWriteMs ?? null,
     TOTAL_LOAD: end - args.t0,
@@ -261,7 +290,12 @@ export type PageLoadDiagState = {
   storeId: string;
   t0: number;
   source: InventoryLoadSource;
+  /** Duración real de fetchAllActiveProducts (Estadísticas G.3); en otras páginas puede ser wall phase1. */
   productsMs: number | null;
+  /** Duración real de storesQuery (L1-05G.3). */
+  storesMs: number | null;
+  /** Wall del Promise.all(stores, products) (L1-05G.3). */
+  phase1WallMs: number | null;
   inventoryMs: number | null;
   postProcessMs: number | null;
   cacheWriteMs: number | null;
@@ -282,6 +316,8 @@ export function createPageLoadDiagState(
     t0: Date.now(),
     source,
     productsMs: null,
+    storesMs: null,
+    phase1WallMs: null,
     inventoryMs: null,
     postProcessMs: null,
     cacheWriteMs: null,
@@ -335,6 +371,8 @@ export function logLoadEnd(state: PageLoadDiagState, status: string): void {
     source: state.source,
     t0: state.t0,
     productsMs: state.productsMs,
+    storesMs: state.storesMs,
+    phase1WallMs: state.phase1WallMs,
     inventoryMs: state.inventoryMs,
     postProcessMs: state.postProcessMs,
     cacheWriteMs: state.cacheWriteMs,

@@ -51,12 +51,14 @@ import {
 import { StoreFilterBar } from '@/components/inventory/StoreFilterBar';
 import {
   createPageLoadDiagState,
+  diagNow,
   isInventoryLoadDiagEnabled,
   logAbortRequested,
   logInventoryLoadEvent,
   logLoadEnd,
   logLoadStart,
   logRenderReady,
+  roundDiagMs,
   toDiagContext,
   type InventoryLoadAbortReason,
 } from '@/utils/inventoryLoadDiagnostics';
@@ -293,16 +295,66 @@ export const EstadisticasPage: React.FC = () => {
 
       // Como Almacén: una sucursal o el catálogo de todas
       const bypassCache = !!opts?.forceRefresh;
-      const productsT0 = Date.now();
-      const [storesResult, productsData] = await Promise.all([
-        storesQuery,
-        fetchAllActiveProducts({
-          bypassCache,
-          signal,
-          diag: toDiagContext(diag),
-        }),
-      ]);
-      diag.productsMs = Date.now() - productsT0;
+      // L1-05G.3: medir stores y products por separado sin romper Promise.all.
+      const phase1T0Mono = diagNow();
+      const storesTimed = (async () => {
+        const storesT0Mono = diagNow();
+        if (isInventoryLoadDiagEnabled()) {
+          logInventoryLoadEvent('STORES_START', {
+            LOAD_ID: diag.loadId,
+            MODULE: diag.module,
+            STORE_ID: diag.storeId,
+          });
+        }
+        try {
+          const result = await storesQuery;
+          const storesMs = roundDiagMs(diagNow() - storesT0Mono);
+          diag.storesMs = storesMs;
+          if (isInventoryLoadDiagEnabled()) {
+            const status = result.error ? 'error' : 'success';
+            logInventoryLoadEvent('STORES_END', {
+              LOAD_ID: diag.loadId,
+              MODULE: diag.module,
+              STORE_ID: diag.storeId,
+              DURATION_MS: storesMs,
+              STATUS: status,
+              STORE_COUNT: result.error ? null : (result.data?.length ?? 0),
+            });
+          }
+          return result;
+        } catch (err) {
+          const storesMs = roundDiagMs(diagNow() - storesT0Mono);
+          diag.storesMs = storesMs;
+          if (isInventoryLoadDiagEnabled()) {
+            logInventoryLoadEvent('STORES_END', {
+              LOAD_ID: diag.loadId,
+              MODULE: diag.module,
+              STORE_ID: diag.storeId,
+              DURATION_MS: storesMs,
+              STATUS: 'error',
+              STORE_COUNT: null,
+            });
+          }
+          throw err;
+        }
+      })();
+      const productsTimed = (async () => {
+        const productsT0Mono = diagNow();
+        try {
+          const data = await fetchAllActiveProducts({
+            bypassCache,
+            signal,
+            diag: toDiagContext(diag),
+          });
+          diag.productsMs = roundDiagMs(diagNow() - productsT0Mono);
+          return data;
+        } catch (err) {
+          diag.productsMs = roundDiagMs(diagNow() - productsT0Mono);
+          throw err;
+        }
+      })();
+      const [storesResult, productsData] = await Promise.all([storesTimed, productsTimed]);
+      diag.phase1WallMs = roundDiagMs(diagNow() - phase1T0Mono);
 
       if (!isCurrent()) {
         logLoadEnd(diag, 'aborted');
