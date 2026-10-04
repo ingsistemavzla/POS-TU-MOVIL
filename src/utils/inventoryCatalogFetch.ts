@@ -4,10 +4,12 @@ import { sanitizeInventoryData } from '@/utils/inventoryValidation';
 import {
   diagInventoryRequestEnd,
   diagInventoryRequestStart,
+  diagNow,
   diagSweepEnd,
   diagSweepStart,
   isInventoryLoadDiagEnabled,
   logInventoryLoadEvent,
+  roundDiagMs,
   type InventoryLoadDiagContext,
 } from '@/utils/inventoryLoadDiagnostics';
 
@@ -284,6 +286,7 @@ export async function fetchAllActiveProducts(options?: {
   const signal = options?.signal;
   const diag = options?.diag;
   const t0 = Date.now();
+  const t0Mono = diagNow();
 
   if (diag && isInventoryLoadDiagEnabled()) {
     logInventoryLoadEvent('PRODUCTS_START', {
@@ -303,6 +306,7 @@ export async function fetchAllActiveProducts(options?: {
           STORE_ID: diag.storeId,
           SOURCE: 'PRODUCTS_MEM',
           DURATION: Date.now() - t0,
+          DURATION_MS: roundDiagMs(diagNow() - t0Mono),
           STATUS: 'success',
           PRODUCT_COUNT: productsMem.data.length,
         });
@@ -338,6 +342,7 @@ export async function fetchAllActiveProducts(options?: {
         MODULE: diag.module,
         STORE_ID: diag.storeId,
         DURATION: Date.now() - t0,
+        DURATION_MS: roundDiagMs(diagNow() - t0Mono),
         STATUS: 'success',
         PRODUCT_COUNT: data.length,
       });
@@ -351,6 +356,7 @@ export async function fetchAllActiveProducts(options?: {
         MODULE: diag.module,
         STORE_ID: diag.storeId,
         DURATION: Date.now() - t0,
+        DURATION_MS: roundDiagMs(diagNow() - t0Mono),
         STATUS: isAbortError(err) ? 'aborted' : 'error',
       });
     }

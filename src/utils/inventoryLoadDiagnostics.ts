@@ -1,6 +1,9 @@
 /**
- * L1-05G — Instrumentación diagnóstica DEV del ciclo de carga de inventario.
+ * L1-05G / L1-05G.1 — Instrumentación diagnóstica DEV del ciclo de carga de inventario.
  * Solo observabilidad. No controla caches, abort, concurrency ni queries.
+ *
+ * L1-05G.1: DURATION_MS monotónico (performance.now) en PRODUCTS / REQUEST / SWEEP
+ * + SLOWEST/FASTEST/AVG chunk en SWEEP_END.
  *
  * Activación:
  * - import.meta.env.DEV, o
@@ -37,6 +40,54 @@ const LOG_PREFIX = '[INV_LOAD_DIAG]';
 let activeInventoryRequests = 0;
 let activeSweeps = 0;
 let loadSeq = 0;
+
+/** Solo diag: inicio monotónico de sweep por LOAD_ID. */
+const sweepStartMonoByLoadId = new Map<string, number>();
+/** Solo diag: duraciones de chunks terminados dentro del sweep actual. */
+const sweepChunkDurationsByLoadId = new Map<string, number[]>();
+/** Solo diag: inicio monotónico de request por LOAD_ID:CHUNK_INDEX. */
+const inventoryRequestStartMono = new Map<string, number>();
+
+/** Reloj monotónico para duraciones de diagnóstico (L1-05G.1). */
+export function diagNow(): number {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now();
+  }
+  return Date.now();
+}
+
+export function roundDiagMs(ms: number): number {
+  return Math.round(ms);
+}
+
+/** Stats de chunks para SWEEP_END (puro; testeable). */
+export function computeChunkDurationStats(durationsMs: number[]): {
+  SLOWEST_CHUNK_MS: number | null;
+  FASTEST_CHUNK_MS: number | null;
+  AVG_CHUNK_MS: number | null;
+} {
+  if (durationsMs.length === 0) {
+    return { SLOWEST_CHUNK_MS: null, FASTEST_CHUNK_MS: null, AVG_CHUNK_MS: null };
+  }
+  let slowest = durationsMs[0];
+  let fastest = durationsMs[0];
+  let sum = 0;
+  for (const d of durationsMs) {
+    if (d > slowest) slowest = d;
+    if (d < fastest) fastest = d;
+    sum += d;
+  }
+  return {
+    SLOWEST_CHUNK_MS: roundDiagMs(slowest),
+    FASTEST_CHUNK_MS: roundDiagMs(fastest),
+    AVG_CHUNK_MS: roundDiagMs(sum / durationsMs.length),
+  };
+}
+
+function requestTimingKey(loadId: unknown, chunkIndex: unknown): string | null {
+  if (loadId == null || chunkIndex == null) return null;
+  return `${String(loadId)}:${String(chunkIndex)}`;
+}
 
 export function isInventoryLoadDiagEnabled(): boolean {
   if (typeof window === 'undefined') return false;
@@ -81,6 +132,8 @@ export function logInventoryLoadEvent(event: string, fields: DiagFields = {}): v
 export function diagSweepStart(ctx: InventoryLoadDiagContext): void {
   if (!isInventoryLoadDiagEnabled()) return;
   activeSweeps += 1;
+  sweepStartMonoByLoadId.set(ctx.loadId, diagNow());
+  sweepChunkDurationsByLoadId.set(ctx.loadId, []);
   logInventoryLoadEvent('SWEEP_START', {
     LOAD_ID: ctx.loadId,
     MODULE: ctx.module,
@@ -95,11 +148,24 @@ export function diagSweepEnd(
 ): void {
   if (!isInventoryLoadDiagEnabled()) return;
   activeSweeps = Math.max(0, activeSweeps - 1);
+  const startMono = sweepStartMonoByLoadId.get(ctx.loadId);
+  sweepStartMonoByLoadId.delete(ctx.loadId);
+  const chunkDurations = sweepChunkDurationsByLoadId.get(ctx.loadId) ?? [];
+  sweepChunkDurationsByLoadId.delete(ctx.loadId);
+  const durationMs =
+    startMono != null ? roundDiagMs(diagNow() - startMono) : null;
+  const chunkStats = computeChunkDurationStats(chunkDurations);
+
   logInventoryLoadEvent('SWEEP_END', {
     LOAD_ID: ctx.loadId,
     MODULE: ctx.module,
     STORE_ID: ctx.storeId,
     STATUS: status,
+    DURATION_MS: durationMs,
+    SLOWEST_CHUNK_MS: chunkStats.SLOWEST_CHUNK_MS,
+    FASTEST_CHUNK_MS: chunkStats.FASTEST_CHUNK_MS,
+    AVG_CHUNK_MS: chunkStats.AVG_CHUNK_MS,
+    CHUNK_SAMPLES: chunkDurations.length,
     ACTIVE_SWEEPS: activeSweeps,
   });
 }
@@ -107,6 +173,8 @@ export function diagSweepEnd(
 export function diagInventoryRequestStart(fields: DiagFields): void {
   if (!isInventoryLoadDiagEnabled()) return;
   activeInventoryRequests += 1;
+  const key = requestTimingKey(fields.LOAD_ID, fields.CHUNK_INDEX);
+  if (key) inventoryRequestStartMono.set(key, diagNow());
   logInventoryLoadEvent('INVENTORY_REQUEST_START', {
     ...fields,
     ACTIVE_INVENTORY_REQUESTS: activeInventoryRequests,
@@ -116,8 +184,30 @@ export function diagInventoryRequestStart(fields: DiagFields): void {
 export function diagInventoryRequestEnd(fields: DiagFields): void {
   if (!isInventoryLoadDiagEnabled()) return;
   activeInventoryRequests = Math.max(0, activeInventoryRequests - 1);
+  const key = requestTimingKey(fields.LOAD_ID, fields.CHUNK_INDEX);
+  let durationMs: number | null = null;
+  if (key) {
+    const startMono = inventoryRequestStartMono.get(key);
+    inventoryRequestStartMono.delete(key);
+    if (startMono != null) {
+      durationMs = roundDiagMs(diagNow() - startMono);
+      const loadId = fields.LOAD_ID != null ? String(fields.LOAD_ID) : null;
+      if (loadId != null) {
+        const bucket = sweepChunkDurationsByLoadId.get(loadId);
+        if (bucket) bucket.push(durationMs);
+      }
+    }
+  }
+
   logInventoryLoadEvent('INVENTORY_REQUEST_END', {
     ...fields,
+    LOAD_ID: fields.LOAD_ID ?? null,
+    MODULE: fields.MODULE ?? null,
+    STORE_ID: fields.STORE_ID ?? null,
+    CHUNK_INDEX: fields.CHUNK_INDEX ?? null,
+    TOTAL_CHUNKS: fields.TOTAL_CHUNKS ?? null,
+    STATUS: fields.STATUS ?? null,
+    DURATION_MS: durationMs,
     ACTIVE_INVENTORY_REQUESTS: activeInventoryRequests,
   });
 }
