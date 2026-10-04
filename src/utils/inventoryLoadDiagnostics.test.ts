@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
+  __resetDiagNetworkOpsForTests,
   computeChunkDurationStats,
   computeFetchTotalMs,
+  computeNetworkOpMetrics,
   roundDiagMs,
+  sanitizeSupabaseResource,
 } from '@/utils/inventoryLoadDiagnostics';
 
 describe('L1-05G.1 chunk duration stats', () => {
@@ -50,5 +53,52 @@ describe('L1-05G.3 fetch total attribution', () => {
         inventoryMs: 1000,
       })
     ).toBe(6000);
+  });
+});
+
+describe('L1-05G.6 fetch resource sanitize + network gaps', () => {
+  afterEach(() => {
+    __resetDiagNetworkOpsForTests();
+  });
+
+  it('sanitizes rest table name without query/secrets', () => {
+    expect(
+      sanitizeSupabaseResource(
+        'https://example.supabase.co/rest/v1/stores?select=id,name&active=eq.true'
+      )
+    ).toBe('stores');
+    expect(
+      sanitizeSupabaseResource('https://example.supabase.co/rest/v1/products?select=*')
+    ).toBe('products');
+    expect(sanitizeSupabaseResource('https://example.supabase.co/auth/v1/token')).toBe('auth');
+  });
+
+  it('computes pre-fetch gap vs http vs post-fetch gap', () => {
+    const metrics = computeNetworkOpMetrics(
+      {
+        opId: 'NOP_1',
+        loadId: 'L_test',
+        module: 'Estadisticas',
+        storeId: 'all',
+        resource: 'stores',
+        startMono: 1000,
+        fetches: [
+          {
+            requestId: 'REQ_1',
+            enterAt: 14000,
+            responseAt: 14400,
+            httpMs: 400,
+            status: 200,
+            aborted: false,
+          },
+        ],
+      },
+      14410
+    );
+
+    expect(metrics.AWAIT_MS).toBe(13410);
+    expect(metrics.FETCH_START_GAP_MS).toBe(13000);
+    expect(metrics.HTTP_FETCH_MS).toBe(400);
+    expect(metrics.POST_FETCH_GAP_MS).toBe(10);
   });
 });

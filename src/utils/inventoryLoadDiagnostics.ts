@@ -1,9 +1,11 @@
 /**
- * L1-05G / L1-05G.1 — Instrumentación diagnóstica DEV del ciclo de carga de inventario.
+ * L1-05G / L1-05G.1 / L1-05G.3 / L1-05G.6 — Instrumentación diagnóstica del ciclo de carga.
  * Solo observabilidad. No controla caches, abort, concurrency ni queries.
  *
- * L1-05G.1: DURATION_MS monotónico (performance.now) en PRODUCTS / REQUEST / SWEEP
- * + SLOWEST/FASTEST/AVG chunk en SWEEP_END.
+ * L1-05G.1: DURATION_MS monotónico en PRODUCTS / REQUEST / SWEEP + chunk stats.
+ * L1-05G.3: STORES_MS / PRODUCTS_MS / PHASE1_WALL_MS.
+ * L1-05G.6: wrapper fetch diagnóstico (FETCH_ENTER/RESPONSE, HTTP_FETCH_MS, gaps).
+ *           Correlación LOAD_ID in-memory (sin headers ni cambio de semántica HTTP).
  *
  * Activación:
  * - import.meta.env.DEV, o
@@ -407,4 +409,304 @@ export function toDiagContext(state: PageLoadDiagState): InventoryLoadDiagContex
       state.source = source;
     },
   };
+}
+
+/* =============================================================================
+ * L1-05G.6 — Fetch wrapper diagnóstico + correlación in-memory LOAD_ID
+ * ============================================================================= */
+
+export type DiagNetworkResource =
+  | 'stores'
+  | 'products'
+  | 'inventories'
+  | 'auth'
+  | 'rpc'
+  | 'function'
+  | 'other'
+  | 'unknown';
+
+type DiagNetworkFetchSample = {
+  requestId: string;
+  enterAt: number;
+  responseAt: number | null;
+  httpMs: number | null;
+  status: number | null;
+  aborted: boolean;
+};
+
+type DiagNetworkOp = {
+  opId: string;
+  loadId: string;
+  module: InventoryLoadModule;
+  storeId: string;
+  resource: DiagNetworkResource;
+  startMono: number;
+  fetches: DiagNetworkFetchSample[];
+  ended: boolean;
+};
+
+export type DiagNetworkOpMetrics = {
+  OP_ID: string;
+  LOAD_ID: string;
+  MODULE: InventoryLoadModule;
+  STORE_ID: string;
+  RESOURCE: DiagNetworkResource;
+  AWAIT_MS: number;
+  FETCH_START_GAP_MS: number | null;
+  HTTP_FETCH_MS: number | null;
+  HTTP_FETCH_SUM_MS: number | null;
+  POST_FETCH_GAP_MS: number | null;
+  FETCH_COUNT: number;
+  REQUEST_IDS: string;
+};
+
+let networkOpSeq = 0;
+let fetchReqSeq = 0;
+const openNetworkOps: DiagNetworkOp[] = [];
+const requestIdToOpId = new Map<string, string>();
+
+const nativeFetch: typeof fetch =
+  typeof globalThis.fetch === 'function'
+    ? globalThis.fetch.bind(globalThis)
+    : ((...args: Parameters<typeof fetch>) => fetch(...args));
+
+/** Recurso seguro desde URL Supabase (sin query/credenciales). */
+export function sanitizeSupabaseResource(input: RequestInfo | URL): DiagNetworkResource {
+  try {
+    const raw =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input as Request).url;
+    if (!raw) return 'unknown';
+    if (raw.includes('/auth/v1/')) return 'auth';
+    if (raw.includes('/functions/v1/')) return 'function';
+    const rpc = raw.match(/\/rest\/v1\/rpc\/([a-zA-Z0-9_]+)/);
+    if (rpc) return 'rpc';
+    const table = raw.match(/\/rest\/v1\/([a-zA-Z0-9_]+)/);
+    if (!table) return 'other';
+    const name = table[1];
+    if (name === 'stores' || name === 'products' || name === 'inventories') return name;
+    return 'other';
+  } catch {
+    return 'unknown';
+  }
+}
+
+export function computeNetworkOpMetrics(
+  op: {
+    opId: string;
+    loadId: string;
+    module: InventoryLoadModule;
+    storeId: string;
+    resource: DiagNetworkResource;
+    startMono: number;
+    fetches: DiagNetworkFetchSample[];
+  },
+  endMono: number
+): DiagNetworkOpMetrics {
+  const awaitMs = roundDiagMs(endMono - op.startMono);
+  const first = op.fetches[0];
+  const lastWithResponse = [...op.fetches].reverse().find((f) => f.responseAt != null);
+  const httpSum = op.fetches.reduce((acc, f) => acc + (f.httpMs ?? 0), 0);
+  const httpCount = op.fetches.filter((f) => f.httpMs != null).length;
+  return {
+    OP_ID: op.opId,
+    LOAD_ID: op.loadId,
+    MODULE: op.module,
+    STORE_ID: op.storeId,
+    RESOURCE: op.resource,
+    AWAIT_MS: awaitMs,
+    FETCH_START_GAP_MS:
+      first != null ? roundDiagMs(first.enterAt - op.startMono) : null,
+    HTTP_FETCH_MS: first?.httpMs ?? null,
+    HTTP_FETCH_SUM_MS: httpCount > 0 ? roundDiagMs(httpSum) : null,
+    POST_FETCH_GAP_MS:
+      lastWithResponse?.responseAt != null
+        ? roundDiagMs(endMono - lastWithResponse.responseAt)
+        : null,
+    FETCH_COUNT: op.fetches.length,
+    REQUEST_IDS: op.fetches.map((f) => f.requestId).join(',') || '',
+  };
+}
+
+function matchOpenNetworkOp(resource: DiagNetworkResource): DiagNetworkOp | null {
+  // Preferir op abierta del mismo resource que aún no tiene fetch (pre-gap limpio).
+  for (let i = openNetworkOps.length - 1; i >= 0; i -= 1) {
+    const op = openNetworkOps[i];
+    if (op.ended) continue;
+    if (op.resource !== resource) continue;
+    if (op.fetches.length === 0) return op;
+  }
+  // Products/inventories multipágina: asociar al op abierto más reciente del resource.
+  for (let i = openNetworkOps.length - 1; i >= 0; i -= 1) {
+    const op = openNetworkOps[i];
+    if (!op.ended && op.resource === resource) return op;
+  }
+  return null;
+}
+
+/** Marca inicio de await de red correlacionable (stores/products/inventories). */
+export function beginDiagNetworkOp(args: {
+  loadId: string;
+  module: InventoryLoadModule;
+  storeId: string;
+  resource: DiagNetworkResource;
+}): string | null {
+  if (!isInventoryLoadDiagEnabled()) return null;
+  networkOpSeq += 1;
+  const opId = `NOP_${Date.now().toString(36)}_${networkOpSeq}`;
+  openNetworkOps.push({
+    opId,
+    loadId: args.loadId,
+    module: args.module,
+    storeId: args.storeId,
+    resource: args.resource,
+    startMono: diagNow(),
+    fetches: [],
+    ended: false,
+  });
+  return opId;
+}
+
+/** Cierra op y devuelve métricas AWAIT / START_GAP / HTTP / POST_GAP. */
+export function endDiagNetworkOp(opId: string | null | undefined): DiagNetworkOpMetrics | null {
+  if (!opId || !isInventoryLoadDiagEnabled()) return null;
+  const idx = openNetworkOps.findIndex((o) => o.opId === opId);
+  if (idx < 0) return null;
+  const op = openNetworkOps[idx];
+  op.ended = true;
+  const endMono = diagNow();
+  const metrics = computeNetworkOpMetrics(op, endMono);
+  openNetworkOps.splice(idx, 1);
+  for (const f of op.fetches) {
+    requestIdToOpId.delete(f.requestId);
+  }
+  logInventoryLoadEvent('NETWORK_OP_SUMMARY', {
+    ...metrics,
+    STORES_AWAIT_MS: op.resource === 'stores' ? metrics.AWAIT_MS : null,
+    STORES_FETCH_START_GAP_MS: op.resource === 'stores' ? metrics.FETCH_START_GAP_MS : null,
+    STORES_HTTP_FETCH_MS: op.resource === 'stores' ? metrics.HTTP_FETCH_MS : null,
+    STORES_POST_FETCH_GAP_MS: op.resource === 'stores' ? metrics.POST_FETCH_GAP_MS : null,
+    PRODUCTS_AWAIT_MS: op.resource === 'products' ? metrics.AWAIT_MS : null,
+    PRODUCTS_FETCH_START_GAP_MS: op.resource === 'products' ? metrics.FETCH_START_GAP_MS : null,
+    PRODUCTS_HTTP_FETCH_MS: op.resource === 'products' ? metrics.HTTP_FETCH_MS : null,
+    PRODUCTS_POST_FETCH_GAP_MS: op.resource === 'products' ? metrics.POST_FETCH_GAP_MS : null,
+  });
+  return metrics;
+}
+
+function isAbortLikeError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const name = (err as { name?: string }).name;
+  return name === 'AbortError';
+}
+
+async function instrumentedFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response> {
+  fetchReqSeq += 1;
+  const requestId = `REQ_${Date.now().toString(36)}_${fetchReqSeq}`;
+  const resource = sanitizeSupabaseResource(input);
+  const enterAt = diagNow();
+  const matched = matchOpenNetworkOp(resource);
+  if (matched) {
+    matched.fetches.push({
+      requestId,
+      enterAt,
+      responseAt: null,
+      httpMs: null,
+      status: null,
+      aborted: false,
+    });
+    requestIdToOpId.set(requestId, matched.opId);
+  }
+
+  logInventoryLoadEvent('FETCH_ENTER', {
+    REQUEST_ID: requestId,
+    LOAD_ID: matched?.loadId ?? null,
+    MODULE: matched?.module ?? null,
+    STORE_ID: matched?.storeId ?? null,
+    RESOURCE: resource,
+    OP_ID: matched?.opId ?? null,
+    FETCH_ENTER_AT: roundDiagMs(enterAt),
+    FETCH_START_GAP_MS:
+      matched != null ? roundDiagMs(enterAt - matched.startMono) : null,
+  });
+
+  try {
+    const response = await nativeFetch(input, init);
+    const responseAt = diagNow();
+    const httpMs = roundDiagMs(responseAt - enterAt);
+    if (matched) {
+      const sample = matched.fetches.find((f) => f.requestId === requestId);
+      if (sample) {
+        sample.responseAt = responseAt;
+        sample.httpMs = httpMs;
+        sample.status = response.status;
+      }
+    }
+    logInventoryLoadEvent('FETCH_RESPONSE', {
+      REQUEST_ID: requestId,
+      LOAD_ID: matched?.loadId ?? null,
+      MODULE: matched?.module ?? null,
+      STORE_ID: matched?.storeId ?? null,
+      RESOURCE: resource,
+      OP_ID: matched?.opId ?? null,
+      FETCH_RESPONSE_AT: roundDiagMs(responseAt),
+      HTTP_FETCH_MS: httpMs,
+      STATUS: response.status,
+      ABORTED: false,
+    });
+    return response;
+  } catch (err) {
+    const responseAt = diagNow();
+    const httpMs = roundDiagMs(responseAt - enterAt);
+    const aborted = isAbortLikeError(err);
+    if (matched) {
+      const sample = matched.fetches.find((f) => f.requestId === requestId);
+      if (sample) {
+        sample.responseAt = responseAt;
+        sample.httpMs = httpMs;
+        sample.aborted = aborted;
+      }
+    }
+    logInventoryLoadEvent('FETCH_RESPONSE', {
+      REQUEST_ID: requestId,
+      LOAD_ID: matched?.loadId ?? null,
+      MODULE: matched?.module ?? null,
+      STORE_ID: matched?.storeId ?? null,
+      RESOURCE: resource,
+      OP_ID: matched?.opId ?? null,
+      FETCH_RESPONSE_AT: roundDiagMs(responseAt),
+      HTTP_FETCH_MS: httpMs,
+      STATUS: null,
+      ABORTED: aborted,
+    });
+    throw err;
+  }
+}
+
+/**
+ * Fetch para createClient. Con diag OFF: solo reenvía a fetch nativo (overhead mínimo).
+ * No altera headers, URL, body, retry ni abort.
+ */
+export function createDiagnosticFetch(): typeof fetch {
+  const wrapped: typeof fetch = (input, init) => {
+    if (!isInventoryLoadDiagEnabled()) {
+      return nativeFetch(input, init);
+    }
+    return instrumentedFetch(input, init);
+  };
+  return wrapped;
+}
+
+/** Solo tests. */
+export function __resetDiagNetworkOpsForTests(): void {
+  openNetworkOps.length = 0;
+  requestIdToOpId.clear();
+  networkOpSeq = 0;
+  fetchReqSeq = 0;
 }

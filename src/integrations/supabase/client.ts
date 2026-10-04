@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
+import { createDiagnosticFetch } from '@/utils/inventoryLoadDiagnostics';
 
 /** En Render/producción definir VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY */
 const SUPABASE_URL =
@@ -28,5 +29,7 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     headers: {
       'X-Client-Info': 'pos-system-v1',
     },
+    // L1-05G.6: fetch diagnóstico (passthrough si pos_inv_load_diag off / no DEV).
+    fetch: createDiagnosticFetch(),
   },
 });

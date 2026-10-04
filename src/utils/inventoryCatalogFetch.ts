@@ -2,11 +2,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { isConcreteStoreId } from '@/contexts/StoreContext';
 import { sanitizeInventoryData } from '@/utils/inventoryValidation';
 import {
+  beginDiagNetworkOp,
   diagInventoryRequestEnd,
   diagInventoryRequestStart,
   diagNow,
   diagSweepEnd,
   diagSweepStart,
+  endDiagNetworkOp,
   isInventoryLoadDiagEnabled,
   logInventoryLoadEvent,
   roundDiagMs,
@@ -287,6 +289,16 @@ export async function fetchAllActiveProducts(options?: {
   const diag = options?.diag;
   const t0 = Date.now();
   const t0Mono = diagNow();
+  // L1-05G.6: correlaciona FETCH_ENTER products con este LOAD_ID (in-memory).
+  const productsNetOpId =
+    diag != null
+      ? beginDiagNetworkOp({
+          loadId: diag.loadId,
+          module: diag.module,
+          storeId: diag.storeId,
+          resource: 'products',
+        })
+      : null;
 
   if (diag && isInventoryLoadDiagEnabled()) {
     logInventoryLoadEvent('PRODUCTS_START', {
@@ -299,6 +311,7 @@ export async function fetchAllActiveProducts(options?: {
 
   if (!options?.bypassCache && productsMem && productsMem.key === cacheKey) {
     if (Date.now() - productsMem.at < MEMORY_TTL_MS) {
+      const net = endDiagNetworkOp(productsNetOpId);
       if (diag && isInventoryLoadDiagEnabled()) {
         logInventoryLoadEvent('PRODUCTS_END', {
           LOAD_ID: diag.loadId,
@@ -309,6 +322,11 @@ export async function fetchAllActiveProducts(options?: {
           DURATION_MS: roundDiagMs(diagNow() - t0Mono),
           STATUS: 'success',
           PRODUCT_COUNT: productsMem.data.length,
+          PRODUCTS_AWAIT_MS: net?.AWAIT_MS ?? null,
+          PRODUCTS_FETCH_START_GAP_MS: net?.FETCH_START_GAP_MS ?? null,
+          PRODUCTS_HTTP_FETCH_MS: net?.HTTP_FETCH_MS ?? null,
+          PRODUCTS_POST_FETCH_GAP_MS: net?.POST_FETCH_GAP_MS ?? null,
+          REQUEST_IDS: net?.REQUEST_IDS || null,
         });
       }
       return productsMem.data;
@@ -336,6 +354,7 @@ export async function fetchAllActiveProducts(options?: {
       diag ? { ctx: diag, kind: 'products' } : undefined
     );
 
+    const net = endDiagNetworkOp(productsNetOpId);
     if (diag && isInventoryLoadDiagEnabled()) {
       logInventoryLoadEvent('PRODUCTS_END', {
         LOAD_ID: diag.loadId,
@@ -345,11 +364,18 @@ export async function fetchAllActiveProducts(options?: {
         DURATION_MS: roundDiagMs(diagNow() - t0Mono),
         STATUS: 'success',
         PRODUCT_COUNT: data.length,
+        PRODUCTS_AWAIT_MS: net?.AWAIT_MS ?? null,
+        PRODUCTS_FETCH_START_GAP_MS: net?.FETCH_START_GAP_MS ?? null,
+        PRODUCTS_HTTP_FETCH_MS: net?.HTTP_FETCH_MS ?? null,
+        PRODUCTS_HTTP_FETCH_SUM_MS: net?.HTTP_FETCH_SUM_MS ?? null,
+        PRODUCTS_POST_FETCH_GAP_MS: net?.POST_FETCH_GAP_MS ?? null,
+        REQUEST_IDS: net?.REQUEST_IDS || null,
       });
     }
 
     return data;
   } catch (err) {
+    const net = endDiagNetworkOp(productsNetOpId);
     if (diag && isInventoryLoadDiagEnabled()) {
       logInventoryLoadEvent('PRODUCTS_END', {
         LOAD_ID: diag.loadId,
@@ -358,6 +384,11 @@ export async function fetchAllActiveProducts(options?: {
         DURATION: Date.now() - t0,
         DURATION_MS: roundDiagMs(diagNow() - t0Mono),
         STATUS: isAbortError(err) ? 'aborted' : 'error',
+        PRODUCTS_AWAIT_MS: net?.AWAIT_MS ?? null,
+        PRODUCTS_FETCH_START_GAP_MS: net?.FETCH_START_GAP_MS ?? null,
+        PRODUCTS_HTTP_FETCH_MS: net?.HTTP_FETCH_MS ?? null,
+        PRODUCTS_POST_FETCH_GAP_MS: net?.POST_FETCH_GAP_MS ?? null,
+        REQUEST_IDS: net?.REQUEST_IDS || null,
       });
     }
     throw err;
@@ -414,6 +445,16 @@ async function loadInventoryChunk(
       }
     : null;
 
+  const invNetOpId =
+    diagMeta != null
+      ? beginDiagNetworkOp({
+          loadId: diagMeta.ctx.loadId,
+          module: diagMeta.ctx.module,
+          storeId: diagMeta.ctx.storeId,
+          resource: 'inventories',
+        })
+      : null;
+
   if (baseFields) {
     logInventoryLoadEvent('CHUNK_START', { ...baseFields, START: t0 });
     diagInventoryRequestStart(baseFields);
@@ -462,6 +503,7 @@ async function loadInventoryChunk(
       from += PAGE_SIZE;
     }
 
+    endDiagNetworkOp(invNetOpId);
     if (baseFields) {
       logInventoryLoadEvent('CHUNK_END', {
         ...baseFields,
@@ -475,6 +517,7 @@ async function loadInventoryChunk(
 
     return chunkRows;
   } catch (err) {
+    endDiagNetworkOp(invNetOpId);
     if (baseFields) {
       const status = isAbortError(err) ? 'aborted' : 'error';
       logInventoryLoadEvent('CHUNK_END', {

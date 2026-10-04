@@ -50,8 +50,10 @@ import {
 } from '@/utils/estadisticasPageCache';
 import { StoreFilterBar } from '@/components/inventory/StoreFilterBar';
 import {
+  beginDiagNetworkOp,
   createPageLoadDiagState,
   diagNow,
+  endDiagNetworkOp,
   isInventoryLoadDiagEnabled,
   logAbortRequested,
   logInventoryLoadEvent,
@@ -299,6 +301,12 @@ export const EstadisticasPage: React.FC = () => {
       const phase1T0Mono = diagNow();
       const storesTimed = (async () => {
         const storesT0Mono = diagNow();
+        const storesNetOpId = beginDiagNetworkOp({
+          loadId: diag.loadId,
+          module: diag.module,
+          storeId: diag.storeId,
+          resource: 'stores',
+        });
         if (isInventoryLoadDiagEnabled()) {
           logInventoryLoadEvent('STORES_START', {
             LOAD_ID: diag.loadId,
@@ -310,6 +318,7 @@ export const EstadisticasPage: React.FC = () => {
           const result = await storesQuery;
           const storesMs = roundDiagMs(diagNow() - storesT0Mono);
           diag.storesMs = storesMs;
+          const net = endDiagNetworkOp(storesNetOpId);
           if (isInventoryLoadDiagEnabled()) {
             const status = result.error ? 'error' : 'success';
             logInventoryLoadEvent('STORES_END', {
@@ -319,12 +328,18 @@ export const EstadisticasPage: React.FC = () => {
               DURATION_MS: storesMs,
               STATUS: status,
               STORE_COUNT: result.error ? null : (result.data?.length ?? 0),
+              STORES_AWAIT_MS: net?.AWAIT_MS ?? storesMs,
+              STORES_FETCH_START_GAP_MS: net?.FETCH_START_GAP_MS ?? null,
+              STORES_HTTP_FETCH_MS: net?.HTTP_FETCH_MS ?? null,
+              STORES_POST_FETCH_GAP_MS: net?.POST_FETCH_GAP_MS ?? null,
+              REQUEST_IDS: net?.REQUEST_IDS || null,
             });
           }
           return result;
         } catch (err) {
           const storesMs = roundDiagMs(diagNow() - storesT0Mono);
           diag.storesMs = storesMs;
+          const net = endDiagNetworkOp(storesNetOpId);
           if (isInventoryLoadDiagEnabled()) {
             logInventoryLoadEvent('STORES_END', {
               LOAD_ID: diag.loadId,
@@ -333,6 +348,11 @@ export const EstadisticasPage: React.FC = () => {
               DURATION_MS: storesMs,
               STATUS: 'error',
               STORE_COUNT: null,
+              STORES_AWAIT_MS: net?.AWAIT_MS ?? storesMs,
+              STORES_FETCH_START_GAP_MS: net?.FETCH_START_GAP_MS ?? null,
+              STORES_HTTP_FETCH_MS: net?.HTTP_FETCH_MS ?? null,
+              STORES_POST_FETCH_GAP_MS: net?.POST_FETCH_GAP_MS ?? null,
+              REQUEST_IDS: net?.REQUEST_IDS || null,
             });
           }
           throw err;
