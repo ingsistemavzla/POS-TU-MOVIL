@@ -48,6 +48,7 @@ import { downloadInventoryListPDF } from '@/utils/inventoryListPdfGenerator';
 import { AlmacenTableSkeleton } from '@/components/inventory/InventoryLoadingSkeletons';
 import { useClientPagination } from '@/hooks/useClientPagination';
 import { ListPaginationBar } from '@/components/ui/ListPaginationBar';
+import { useMinimumLoadingPresentation } from '@/hooks/useMinimumLoadingPresentation';
 import {
   inspectInventoryPageCache,
   readInventoryPageCache,
@@ -99,6 +100,11 @@ export const AlmacenPage: React.FC = () => {
   const { userProfile } = useAuth();
   const { activeStoreId, availableStores, selectedStore } = useStore();
   const { toast } = useToast();
+  const {
+    showPresentation: showLegacyPresentation,
+    beginPresentation,
+    markDataReady,
+  } = useMinimumLoadingPresentation();
   const [products, setProducts] = useState<Product[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(false);
@@ -126,12 +132,15 @@ export const AlmacenPage: React.FC = () => {
   const canSeeCosts = userProfile?.role === 'admin' || userProfile?.role === 'master_admin';
   const fetchGenRef = useRef(0);
   const fetchAbortRef = useRef<AbortController | null>(null);
+  const prevCatalogStoreRef = useRef<string | null>(null);
+  const isFirstPresentationRef = useRef(true);
 
   // Cargar productos e inventario (productos paginados + inventario solo de esos IDs)
   const fetchData = async (opts?: { signal?: AbortSignal; gen?: number }) => {
     const gen = opts?.gen ?? ++fetchGenRef.current;
     const signal = opts?.signal;
     const isCurrent = () => gen === fetchGenRef.current && !signal?.aborted;
+    let presentationOutcome: 'success' | 'error' | 'abort' | null = 'success';
 
     try {
       if (!userProfile?.company_id) {
@@ -140,6 +149,7 @@ export const AlmacenPage: React.FC = () => {
           setLoading(false);
           setIsRefetching(false);
         }
+        presentationOutcome = 'error';
         return;
       }
 
@@ -201,11 +211,15 @@ export const AlmacenPage: React.FC = () => {
         storesTimed,
       ]);
 
-      if (!isCurrent()) return;
+      if (!isCurrent()) {
+        presentationOutcome = null;
+        return;
+      }
 
       if (!productsData) {
         setProducts([]);
         setLoading(false);
+        presentationOutcome = 'error';
         return;
       }
 
@@ -234,6 +248,7 @@ export const AlmacenPage: React.FC = () => {
         });
       } catch (inventoryError: any) {
         if (isAbortError(inventoryError) || signal?.aborted) {
+          presentationOutcome = 'abort';
           return;
         }
         console.error('Error fetching inventory:', inventoryError);
@@ -246,7 +261,10 @@ export const AlmacenPage: React.FC = () => {
         }
       }
 
-      if (!isCurrent()) return;
+      if (!isCurrent()) {
+        presentationOutcome = null;
+        return;
+      }
 
       const activeStoreRow =
         availableStores.find((store) => store.id === activeStoreId) ??
@@ -260,7 +278,10 @@ export const AlmacenPage: React.FC = () => {
       const { products: productsWithStock, storeInventories: inventoriesByProduct } =
         buildCatalogWithStock(visibleProducts, inventoryData, catalogStores);
 
-      if (!isCurrent()) return;
+      if (!isCurrent()) {
+        presentationOutcome = null;
+        return;
+      }
 
       setProducts(productsWithStock as Product[]);
       setStoreInventories(inventoriesByProduct as Record<string, StoreInventory[]>);
@@ -275,9 +296,11 @@ export const AlmacenPage: React.FC = () => {
       );
     } catch (error) {
       if (isAbortError(error) || signal?.aborted) {
+        presentationOutcome = 'abort';
         return;
       }
       console.error('Error in fetchData:', error);
+      presentationOutcome = 'error';
       if (isCurrent()) {
         toast({
           title: 'Error',
@@ -289,6 +312,7 @@ export const AlmacenPage: React.FC = () => {
       if (isCurrent()) {
         setLoading(false);
         setIsRefetching(false);
+        if (presentationOutcome) markDataReady(presentationOutcome);
       }
     }
   };
@@ -311,6 +335,17 @@ export const AlmacenPage: React.FC = () => {
     const catalogStoreId = activeStoreId ?? 'all';
     const catalogStockStatus: StockPresence = activeStoreId ? stockStatus : 'all';
 
+    // L1-06F: entrada / cambio sucursal → gate LEGACY; filtros → no-op presentacional.
+    const reason =
+      !isFirstPresentationRef.current && prevCatalogStoreRef.current !== catalogStoreId
+        ? 'store_change'
+        : !isFirstPresentationRef.current && prevCatalogStoreRef.current === catalogStoreId
+          ? 'filter_change'
+          : 'initial_entry';
+    isFirstPresentationRef.current = false;
+    prevCatalogStoreRef.current = catalogStoreId;
+    beginPresentation(reason);
+
     const { status } = inspectInventoryPageCache(
       userProfile.company_id,
       catalogStoreId,
@@ -321,6 +356,7 @@ export const AlmacenPage: React.FC = () => {
     if (status === 'fresh') {
       setLoading(false);
       setIsRefetching(false);
+      markDataReady('success');
       return;
     }
 
@@ -694,7 +730,7 @@ export const AlmacenPage: React.FC = () => {
       />
 
       {/* Tabla de Productos */}
-      {loading && products.length === 0 ? (
+      {showLegacyPresentation || (loading && products.length === 0) ? (
         <AlmacenTableSkeleton rows={12} />
       ) : (
       <>

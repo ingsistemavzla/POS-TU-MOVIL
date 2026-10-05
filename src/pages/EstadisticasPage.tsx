@@ -53,6 +53,7 @@ import {
   canUseStoreContextForCatalog,
   mapAvailableStoresToCatalog,
 } from '@/utils/resolveCatalogStores';
+import { useMinimumLoadingPresentation } from '@/hooks/useMinimumLoadingPresentation';
 
 /** Splash: mínimo breve; máximo 5s o hasta que haya datos (lo que ocurra primero). */
 const STATS_SPLASH_MIN_MS = 400;
@@ -142,6 +143,11 @@ export const EstadisticasPage: React.FC = () => {
   const { data: financialSummary } = useInventoryFinancialSummary(activeStoreId, {
     enabled: financeEnabled,
   });
+  const {
+    showPresentation: showLegacyPresentation,
+    beginPresentation,
+    markDataReady,
+  } = useMinimumLoadingPresentation();
   const [showBriefSplash, setShowBriefSplash] = useState(true);
   const [splashMinDone, setSplashMinDone] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -149,6 +155,8 @@ export const EstadisticasPage: React.FC = () => {
   const hasLoadedOnceRef = React.useRef(false);
   const fetchGenRef = React.useRef(0);
   const fetchAbortRef = React.useRef<AbortController | null>(null);
+  const prevCatalogStoreRef = React.useRef<string | null>(null);
+  const isFirstPresentationRef = React.useRef(true);
   const [storeStats, setStoreStats] = useState<Record<string, StoreStats>>({});
   const [inventorySummary, setInventorySummary] = useState<InventorySummary>({
     totalValue: 0,
@@ -221,6 +229,8 @@ export const EstadisticasPage: React.FC = () => {
     fetchAbortRef.current = ac;
     const signal = ac.signal;
     const isCurrent = () => gen === fetchGenRef.current && !signal.aborted;
+    /** Solo presentación LEGACY; un solo mark en finally. */
+    let presentationOutcome: 'success' | 'error' | 'abort' | null = 'success';
 
     try {
       // MASTER_ADMIN puede ver todo sin company_id
@@ -229,7 +239,10 @@ export const EstadisticasPage: React.FC = () => {
       
       if (!isMasterAdmin && !userProfile?.company_id) {
         console.log('No company_id found for non-master user');
-        if (isCurrent()) setLoading(false);
+        if (isCurrent()) {
+          setLoading(false);
+        }
+        presentationOutcome = 'error';
         return;
       }
 
@@ -279,6 +292,7 @@ export const EstadisticasPage: React.FC = () => {
       const [storesResult, productsData] = await Promise.all([storesTimed, productsTimed]);
 
       if (!isCurrent()) {
+        presentationOutcome = null;
         return;
       }
 
@@ -288,6 +302,7 @@ export const EstadisticasPage: React.FC = () => {
           setLoading(false);
           setIsRefreshing(false);
         }
+        presentationOutcome = 'error';
         return;
       }
 
@@ -305,6 +320,7 @@ export const EstadisticasPage: React.FC = () => {
         });
       } catch (inventoryError) {
         if (isAbortError(inventoryError) || signal.aborted) {
+          presentationOutcome = 'abort';
           return;
         }
         console.error('Error fetching inventory:', inventoryError);
@@ -312,6 +328,7 @@ export const EstadisticasPage: React.FC = () => {
           setLoading(false);
           setIsRefreshing(false);
         }
+        presentationOutcome = 'error';
         return;
       }
 
@@ -741,9 +758,11 @@ export const EstadisticasPage: React.FC = () => {
 
     } catch (error) {
       if (isAbortError(error) || signal.aborted) {
+        presentationOutcome = 'abort';
         return;
       }
       console.error('Error fetching statistics:', error);
+      presentationOutcome = 'error';
     } finally {
       if (isCurrent()) {
         hasLoadedOnceRef.current = true;
@@ -751,6 +770,7 @@ export const EstadisticasPage: React.FC = () => {
         setIsRefreshing(false);
         // Cargar bloque de financiamiento en segundo plano (no bloquea UI)
         setFinanceEnabled(true);
+        if (presentationOutcome) markDataReady(presentationOutcome);
       }
     }
   };
@@ -760,6 +780,15 @@ export const EstadisticasPage: React.FC = () => {
 
     const catalogStoreId = activeStoreId ?? 'all';
 
+    // L1-06F: entrada deliberada / cambio de sucursal → gate presentacional (LEGACY only).
+    const reason =
+      !isFirstPresentationRef.current && prevCatalogStoreRef.current !== catalogStoreId
+        ? 'store_change'
+        : 'initial_entry';
+    isFirstPresentationRef.current = false;
+    prevCatalogStoreRef.current = catalogStoreId;
+    beginPresentation(reason);
+
     const { status } = inspectEstadisticasPageCache(userProfile.company_id, catalogStoreId);
     // FRESH exact-key: layout ya pintó; no relanzar catálogo. STALE/MISS: SWR o loader.
     if (status === 'fresh') {
@@ -767,6 +796,7 @@ export const EstadisticasPage: React.FC = () => {
       setIsRefreshing(false);
       setFinanceEnabled(true);
       hasLoadedOnceRef.current = true;
+      markDataReady('success');
       return;
     }
 
@@ -796,7 +826,8 @@ export const EstadisticasPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userProfile?.company_id, activeStoreId]);
 
-  if (showBriefSplash) {
+  // OPTIMIZED: splash actual. LEGACY_SIMULATION: compone gate mínimo presentacional.
+  if (showBriefSplash || showLegacyPresentation) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{
         background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%)'
