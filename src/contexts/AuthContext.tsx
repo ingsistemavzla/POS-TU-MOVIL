@@ -16,11 +16,6 @@ import {
 import { useMaintenanceMode } from '@/hooks/useMaintenanceMode';
 import { isPublicAppPath } from '@/lib/publicInformePaths';
 import {
-  beginAuthTimedOp,
-  endAuthTimedOp,
-  logAuthLoadEvent,
-} from '@/utils/authLoadDiagnostics';
-import {
   isAuthDeferredStillValid,
   planAuthStateSync,
   planLoadingForAuthSync,
@@ -106,17 +101,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         void evictSessionForMaintenance();
         return;
       }
-      const refreshT0 = beginAuthTimedOp('AUTH_REFRESH_EXPLICIT_START', {
-        SOURCE: 'AuthContext.keepAlive30m',
-      });
       try {
         const { data: { session: refreshedSession }, error } = await supabase.auth.refreshSession();
-        endAuthTimedOp('AUTH_REFRESH_EXPLICIT_END', refreshT0, {
-          SOURCE: 'AuthContext.keepAlive30m',
-          STATUS: error ? 'error' : 'success',
-          SESSION_PRESENT: !!refreshedSession,
-          USER_ID_PRESENT: !!refreshedSession?.user?.id,
-        });
         if (error) {
           console.warn('Session refresh failed:', error);
         } else if (refreshedSession) {
@@ -124,12 +110,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setSession(refreshedSession);
         }
       } catch (error) {
-        endAuthTimedOp('AUTH_REFRESH_EXPLICIT_END', refreshT0, {
-          SOURCE: 'AuthContext.keepAlive30m',
-          STATUS: 'error',
-          SESSION_PRESENT: false,
-          USER_ID_PRESENT: false,
-        });
         console.error('Error refreshing session:', error);
       }
     }, 30 * 60 * 1000); // Refresh every 30 minutes
@@ -170,20 +150,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     options?: { applyEffects?: boolean }
   ): Promise<ProfileFetchResult> => {
     const applyEffects = options?.applyEffects !== false;
-    const profileSource = isRetry ? 'fetchUserProfile.retry' : 'fetchUserProfile';
-    const profileT0 = beginAuthTimedOp('AUTH_PROFILE_FETCH_START', {
-      SOURCE: profileSource,
-      FORCE_REFRESH: forceRefresh,
-      USER_ID_PRESENT: !!userId,
-      APPLY_EFFECTS: applyEffects,
-    });
-    let profileStatus = 'unknown';
-    let profileDiagSource = profileSource;
     let resolvedCompany: Company | null = null;
-    try {
     if (isMaintenanceModeActive()) {
       console.warn('[Maintenance] Validación de perfil cancelada.');
-      profileStatus = 'maintenance';
       return { success: false, error: 'maintenance' };
     }
 
@@ -199,8 +168,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setLoading(false);
             setIsSlowNetwork(false);
           }
-          profileStatus = 'success';
-          profileDiagSource = 'fetchUserProfile.cache';
           return { success: true, profile: cached.profile, company: cached.company };
         }
       }
@@ -228,7 +195,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Timeout - NO es un error fatal, es un problema de red
           console.warn('Profile fetch timeout - conexión lenta detectada');
           if (applyEffects) setIsSlowNetwork(true);
-          profileStatus = 'timeout';
           return { success: false, isNetworkError: true, error: 'timeout' };
         }
         // Otro tipo de error
@@ -257,14 +223,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.log(`🔄 Reintentando después de error 403 (intento ${retryCount + 1}/${MAX_RETRY_ATTEMPTS})`);
             // Esperar 2 segundos antes de reintentar (dar tiempo a que RLS se sincronice)
             await new Promise(resolve => setTimeout(resolve, 2000));
-            profileStatus = 'retrying';
             return fetchUserProfile(userId, forceRefresh, true, { applyEffects });
           }
         }
         
         // Si ya se reintentó y sigue fallando, marcar como error de red (no cerrar sesión)
         if (applyEffects) setIsSlowNetwork(true);
-        profileStatus = 'rls_forbidden';
         return { 
           success: false, 
           isNetworkError: false, 
@@ -284,7 +248,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.log(`🔄 Reintentando después de null silencioso (intento ${retryCount + 1}/${MAX_RETRY_ATTEMPTS})`);
             // Esperar 2 segundos antes de reintentar
             await new Promise(resolve => setTimeout(resolve, 2000));
-            profileStatus = 'retrying';
             return fetchUserProfile(userId, forceRefresh, true, { applyEffects });
           }
         }
@@ -398,7 +361,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (queryError?.message?.includes('timeout') || queryError?.message?.includes('network')) {
           console.warn('Error de red al buscar perfil - manteniendo sesión activa');
           if (applyEffects) setIsSlowNetwork(true);
-          profileStatus = 'network_error';
           return { success: false, isNetworkError: true, error: 'network_error' };
         }
 
@@ -410,7 +372,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.log(`🔄 Reintentando fetchUserProfile (intento ${retryCount + 1}/${MAX_RETRY_ATTEMPTS})`);
             // Esperar 2 segundos antes de reintentar
             await new Promise(resolve => setTimeout(resolve, 2000));
-            profileStatus = 'retrying';
             return fetchUserProfile(userId, forceRefresh, true, { applyEffects });
           }
         }
@@ -437,7 +398,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setIsSlowNetwork(true);
               setLoading(false);
             }
-            profileStatus = 'rls_forbidden';
             return { 
               success: false, 
               isNetworkError: false, 
@@ -463,7 +423,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 console.error('Error signing out:', err);
               });
             }
-            profileStatus = 'profile_not_found';
             return { success: false, isNetworkError: false, error: 'profile_not_found' };
           }
 
@@ -472,7 +431,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.warn('⚠️ Verificación RLS encontró perfil pero no se pudo leer completamente. Reintentando...');
             // Reintentar una vez más con delay adicional
             await new Promise(resolve => setTimeout(resolve, 3000));
-            profileStatus = 'retrying';
             return fetchUserProfile(userId, true, false, { applyEffects });
           }
         } catch (finalCheckError: any) {
@@ -486,7 +444,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setIsSlowNetwork(true);
               setLoading(false);
             }
-            profileStatus = 'network_error';
             return { success: false, isNetworkError: true, error: 'network_error' };
           }
 
@@ -496,7 +453,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setIsSlowNetwork(true);
             setLoading(false);
           }
-          profileStatus = 'rls_forbidden';
           return { 
             success: false, 
             isNetworkError: false, 
@@ -511,7 +467,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setIsSlowNetwork(true);
           setLoading(false);
         }
-        profileStatus = 'unexpected_state';
         return { 
           success: false, 
           isNetworkError: false, 
@@ -591,7 +546,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      profileStatus = 'success';
       return { success: true, profile: effectiveProfile, company: resolvedCompany };
     } catch (error: any) {
       console.error('Error in fetchUserProfile:', error);
@@ -614,11 +568,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (retryCount < MAX_RETRY_ATTEMPTS) {
             retryAttemptsRef.current.set(userId, retryCount + 1);
             await new Promise(resolve => setTimeout(resolve, 2000));
-            profileStatus = 'retrying';
             return fetchUserProfile(userId, forceRefresh, true, { applyEffects });
           }
         }
-        profileStatus = 'rls_forbidden';
         return { success: false, isNetworkError: false, error: 'rls_forbidden' };
       }
 
@@ -626,7 +578,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Error de red - NO cerrar sesión, permitir reintento
         console.warn('Error de red detectado - manteniendo sesión activa para reintento');
         if (applyEffects) setIsSlowNetwork(true);
-        profileStatus = 'network_error';
         return { success: false, isNetworkError: true, error: 'network_error' };
       }
 
@@ -645,15 +596,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.error('Error signing out:', err);
         });
       }
-      profileStatus = 'real_error';
       return { success: false, isNetworkError: false, error: 'real_error' };
-    }
-    } finally {
-      endAuthTimedOp('AUTH_PROFILE_FETCH_END', profileT0, {
-        SOURCE: profileDiagSource,
-        STATUS: profileStatus,
-        USER_ID_PRESENT: !!userId,
-      });
     }
   };
 
@@ -1229,26 +1172,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
     const handleAuthStateDeferred = async (snapshot: AuthDeferredSnapshot) => {
-      const deferredT0 = beginAuthTimedOp('AUTH_DEFERRED_START', {
-        AUTH_EVENT: snapshot.event,
-        SOURCE: snapshot.kind,
-        EPOCH: snapshot.epoch,
-        USER_ID_PRESENT: !!snapshot.userId,
-      });
-
-      const cancel = (reason: string) => {
-        logAuthLoadEvent('AUTH_DEFERRED_CANCELLED', {
-          AUTH_EVENT: snapshot.event,
-          SOURCE: snapshot.kind,
-          EPOCH: snapshot.epoch,
-          STATUS: reason,
-        });
-        endAuthTimedOp('AUTH_DEFERRED_END', deferredT0, {
-          AUTH_EVENT: snapshot.event,
-          SOURCE: snapshot.kind,
-          EPOCH: snapshot.epoch,
-          STATUS: 'cancelled',
-        });
+      const cancel = (_reason: string) => {
+        /* stale epoch/user — early return only */
       };
 
       try {
@@ -1259,12 +1184,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
           console.warn('[Maintenance] Sesión detectada con mantenimiento activo — cerrando.');
           await evictSessionForMaintenance();
-          endAuthTimedOp('AUTH_DEFERRED_END', deferredT0, {
-            AUTH_EVENT: snapshot.event,
-            SOURCE: snapshot.kind,
-            EPOCH: snapshot.epoch,
-            STATUS: 'maintenance_done',
-          });
           return;
         }
 
@@ -1289,12 +1208,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Solo epoch vigente puede tocar loading/network flags.
           setIsSlowNetwork(true);
           setLoading(false);
-          endAuthTimedOp('AUTH_DEFERRED_END', deferredT0, {
-            AUTH_EVENT: snapshot.event,
-            SOURCE: snapshot.kind,
-            EPOCH: snapshot.epoch,
-            STATUS: 'fetch_error',
-          });
           return;
         }
 
@@ -1348,12 +1261,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (profileResult.error === 'profile_not_found' || profileResult.error === 'real_error') {
           if (applyStatus === 'signed_out') {
-            endAuthTimedOp('AUTH_DEFERRED_END', deferredT0, {
-              AUTH_EVENT: snapshot.event,
-              SOURCE: snapshot.kind,
-              EPOCH: snapshot.epoch,
-              STATUS: 'profile_not_found_signout',
-            });
             return;
           }
         }
@@ -1362,39 +1269,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.error('[Auth] Profile fetch failed:', profileResult.error);
         }
 
-        endAuthTimedOp('AUTH_DEFERRED_END', deferredT0, {
-          AUTH_EVENT: snapshot.event,
-          SOURCE: snapshot.kind,
-          EPOCH: snapshot.epoch,
-          STATUS: applyStatus,
-        });
       } catch (error) {
         console.error('[Auth] Deferred auth handler error:', error);
-        endAuthTimedOp('AUTH_DEFERRED_END', deferredT0, {
-          AUTH_EVENT: snapshot.event,
-          SOURCE: snapshot.kind,
-          EPOCH: snapshot.epoch,
-          STATUS: 'error',
-        });
       }
     };
 
     // L1-05M: callback síncrono — sin await/red; diferir con setTimeout(0).
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      const cbT0 = beginAuthTimedOp('AUTH_STATE_CALLBACK_START', {
-        AUTH_EVENT: event,
-        SESSION_PRESENT: !!session,
-        USER_ID_PRESENT: !!session?.user?.id,
-        SOURCE: 'AuthContext.onAuthStateChange',
-      });
-      logAuthLoadEvent('AUTH_EVENT', {
-        AUTH_EVENT: event,
-        SESSION_PRESENT: !!session,
-        USER_ID_PRESENT: !!session?.user?.id,
-        SOURCE: 'AuthContext.onAuthStateChange',
-      });
-
-      try {
         if (!mounted) return;
 
         const epoch = ++authEpochRef.current;
@@ -1495,14 +1376,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
           scheduleAuthDeferredWork(() => handleAuthStateDeferred(snapshot));
         }
-      } finally {
-        endAuthTimedOp('AUTH_STATE_CALLBACK_END', cbT0, {
-          AUTH_EVENT: event,
-          SESSION_PRESENT: !!session,
-          USER_ID_PRESENT: !!session?.user?.id,
-          SOURCE: 'AuthContext.onAuthStateChange',
-        });
-      }
     });
 
     return () => {

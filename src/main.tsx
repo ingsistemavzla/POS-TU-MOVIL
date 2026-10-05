@@ -1,5 +1,3 @@
-// L1-05J: primer import — habilita gotrue locks.debug si pos_inv_load_diag=1.
-import '@/utils/authDiagBootstrap'
 import { createRoot } from 'react-dom/client'
 import {
   enableMaintenanceMode,

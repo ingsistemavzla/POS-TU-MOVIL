@@ -50,21 +50,6 @@ import {
 } from '@/utils/estadisticasPageCache';
 import { StoreFilterBar } from '@/components/inventory/StoreFilterBar';
 import {
-  beginDiagNetworkOp,
-  createPageLoadDiagState,
-  diagNow,
-  endDiagNetworkOp,
-  isInventoryLoadDiagEnabled,
-  logAbortRequested,
-  logInventoryLoadEvent,
-  logLoadEnd,
-  logLoadStart,
-  logRenderReady,
-  roundDiagMs,
-  toDiagContext,
-  type InventoryLoadAbortReason,
-} from '@/utils/inventoryLoadDiagnostics';
-import {
   canUseStoreContextForCatalog,
   mapAvailableStoresToCatalog,
 } from '@/utils/resolveCatalogStores';
@@ -164,16 +149,6 @@ export const EstadisticasPage: React.FC = () => {
   const hasLoadedOnceRef = React.useRef(false);
   const fetchGenRef = React.useRef(0);
   const fetchAbortRef = React.useRef<AbortController | null>(null);
-  const activeLoadIdRef = React.useRef<string | null>(null);
-  const prevStoreForDiagRef = React.useRef<string | null | undefined>(undefined);
-  const pageMountedRef = React.useRef(true);
-
-  useEffect(() => {
-    pageMountedRef.current = true;
-    return () => {
-      pageMountedRef.current = false;
-    };
-  }, []);
   const [storeStats, setStoreStats] = useState<Record<string, StoreStats>>({});
   const [inventorySummary, setInventorySummary] = useState<InventorySummary>({
     totalValue: 0,
@@ -235,29 +210,11 @@ export const EstadisticasPage: React.FC = () => {
     setFinanceEnabled(true);
   }, [userProfile?.company_id, activeStoreId]);
 
-  const fetchStatistics = async (opts?: {
-    background?: boolean;
-    forceRefresh?: boolean;
-    abortReason?: InventoryLoadAbortReason;
-  }) => {
+  const fetchStatistics = async (opts?: { background?: boolean; forceRefresh?: boolean }) => {
     const catalogStoreId = activeStoreId ?? 'all';
-    const prevLoadId = activeLoadIdRef.current;
-    const diag = createPageLoadDiagState('Estadisticas', catalogStoreId, 'SERVER_FETCH');
-    activeLoadIdRef.current = diag.loadId;
-    logLoadStart(diag, {
-      prevLoadId,
-      abortReason: opts?.abortReason ?? null,
-    });
 
     const gen = ++fetchGenRef.current;
     if (fetchAbortRef.current) {
-      logAbortRequested(
-        prevLoadId,
-        'Estadisticas',
-        catalogStoreId,
-        opts?.abortReason ?? 'NEW_GENERATION',
-        prevLoadId
-      );
       fetchAbortRef.current.abort();
     }
     const ac = new AbortController();
@@ -273,7 +230,6 @@ export const EstadisticasPage: React.FC = () => {
       if (!isMasterAdmin && !userProfile?.company_id) {
         console.log('No company_id found for non-master user');
         if (isCurrent()) setLoading(false);
-        logLoadEnd(diag, 'no_company');
         return;
       }
 
@@ -292,39 +248,9 @@ export const EstadisticasPage: React.FC = () => {
 
       // Como Almacén: una sucursal o el catálogo de todas
       const bypassCache = !!opts?.forceRefresh;
-      // L1-05G.3: medir stores y products por separado sin romper Promise.all.
-      const phase1T0Mono = diagNow();
       const storesTimed = (async () => {
-        const storesT0Mono = diagNow();
-        if (isInventoryLoadDiagEnabled()) {
-          logInventoryLoadEvent('STORES_START', {
-            LOAD_ID: diag.loadId,
-            MODULE: diag.module,
-            STORE_ID: diag.storeId,
-            SOURCE: useStoreContextStores ? 'STORE_CONTEXT' : 'SERVER_FETCH',
-          });
-        }
-
         if (useStoreContextStores) {
           const data = mapAvailableStoresToCatalog(availableStores);
-          const storesMs = roundDiagMs(diagNow() - storesT0Mono);
-          diag.storesMs = storesMs;
-          if (isInventoryLoadDiagEnabled()) {
-            logInventoryLoadEvent('STORES_END', {
-              LOAD_ID: diag.loadId,
-              MODULE: diag.module,
-              STORE_ID: diag.storeId,
-              SOURCE: 'STORE_CONTEXT',
-              DURATION_MS: storesMs,
-              STATUS: 'success',
-              STORE_COUNT: data.length,
-              STORES_AWAIT_MS: storesMs,
-              STORES_FETCH_START_GAP_MS: null,
-              STORES_HTTP_FETCH_MS: null,
-              STORES_POST_FETCH_GAP_MS: null,
-              REQUEST_IDS: null,
-            });
-          }
           return { data, error: null };
         }
 
@@ -344,78 +270,15 @@ export const EstadisticasPage: React.FC = () => {
           storesQuery = storesQuery.eq('id', userProfile.assigned_store_id);
         }
 
-        const storesNetOpId = beginDiagNetworkOp({
-          loadId: diag.loadId,
-          module: diag.module,
-          storeId: diag.storeId,
-          resource: 'stores',
-        });
-        try {
-          const result = await storesQuery;
-          const storesMs = roundDiagMs(diagNow() - storesT0Mono);
-          diag.storesMs = storesMs;
-          const net = endDiagNetworkOp(storesNetOpId);
-          if (isInventoryLoadDiagEnabled()) {
-            const status = result.error ? 'error' : 'success';
-            logInventoryLoadEvent('STORES_END', {
-              LOAD_ID: diag.loadId,
-              MODULE: diag.module,
-              STORE_ID: diag.storeId,
-              SOURCE: 'SERVER_FETCH',
-              DURATION_MS: storesMs,
-              STATUS: status,
-              STORE_COUNT: result.error ? null : (result.data?.length ?? 0),
-              STORES_AWAIT_MS: net?.AWAIT_MS ?? storesMs,
-              STORES_FETCH_START_GAP_MS: net?.FETCH_START_GAP_MS ?? null,
-              STORES_HTTP_FETCH_MS: net?.HTTP_FETCH_MS ?? null,
-              STORES_POST_FETCH_GAP_MS: net?.POST_FETCH_GAP_MS ?? null,
-              REQUEST_IDS: net?.REQUEST_IDS || null,
-            });
-          }
-          return result;
-        } catch (err) {
-          const storesMs = roundDiagMs(diagNow() - storesT0Mono);
-          diag.storesMs = storesMs;
-          const net = endDiagNetworkOp(storesNetOpId);
-          if (isInventoryLoadDiagEnabled()) {
-            logInventoryLoadEvent('STORES_END', {
-              LOAD_ID: diag.loadId,
-              MODULE: diag.module,
-              STORE_ID: diag.storeId,
-              SOURCE: 'SERVER_FETCH',
-              DURATION_MS: storesMs,
-              STATUS: isAbortError(err) ? 'aborted' : 'error',
-              STORE_COUNT: null,
-              STORES_AWAIT_MS: net?.AWAIT_MS ?? storesMs,
-              STORES_FETCH_START_GAP_MS: net?.FETCH_START_GAP_MS ?? null,
-              STORES_HTTP_FETCH_MS: net?.HTTP_FETCH_MS ?? null,
-              STORES_POST_FETCH_GAP_MS: net?.POST_FETCH_GAP_MS ?? null,
-              REQUEST_IDS: net?.REQUEST_IDS || null,
-            });
-          }
-          throw err;
-        }
+        return storesQuery;
       })();
-      const productsTimed = (async () => {
-        const productsT0Mono = diagNow();
-        try {
-          const data = await fetchAllActiveProducts({
-            bypassCache,
-            signal,
-            diag: toDiagContext(diag),
-          });
-          diag.productsMs = roundDiagMs(diagNow() - productsT0Mono);
-          return data;
-        } catch (err) {
-          diag.productsMs = roundDiagMs(diagNow() - productsT0Mono);
-          throw err;
-        }
-      })();
+      const productsTimed = fetchAllActiveProducts({
+        bypassCache,
+        signal,
+      });
       const [storesResult, productsData] = await Promise.all([storesTimed, productsTimed]);
-      diag.phase1WallMs = roundDiagMs(diagNow() - phase1T0Mono);
 
       if (!isCurrent()) {
-        logLoadEnd(diag, 'aborted');
         return;
       }
 
@@ -425,7 +288,6 @@ export const EstadisticasPage: React.FC = () => {
           setLoading(false);
           setIsRefreshing(false);
         }
-        logLoadEnd(diag, 'stores_error');
         return;
       }
 
@@ -437,17 +299,12 @@ export const EstadisticasPage: React.FC = () => {
         min_qty: number;
       }> = [];
       try {
-        const invT0 = Date.now();
         inventoryRows = await fetchInventoriesForProductIds(productIds, catalogStoreId, {
           bypassCache,
           signal,
-          diag: toDiagContext(diag),
         });
-        diag.inventoryMs = Date.now() - invT0;
-        diag.serverFetchEndAt = Date.now();
       } catch (inventoryError) {
         if (isAbortError(inventoryError) || signal.aborted) {
-          logLoadEnd(diag, 'aborted');
           return;
         }
         console.error('Error fetching inventory:', inventoryError);
@@ -455,25 +312,14 @@ export const EstadisticasPage: React.FC = () => {
           setLoading(false);
           setIsRefreshing(false);
         }
-        logLoadEnd(diag, 'inventory_error');
         return;
       }
 
       if (!isCurrent()) {
-        logLoadEnd(diag, 'aborted');
         return;
       }
 
       console.timeLog('📊 EstadisticasPage - fetchStatistics', 'Consultas completadas');
-
-      const postT0 = Date.now();
-      if (isInventoryLoadDiagEnabled()) {
-        logInventoryLoadEvent('POST_PROCESS_START', {
-          LOAD_ID: diag.loadId,
-          MODULE: diag.module,
-          STORE_ID: diag.storeId,
-        });
-      }
 
       const stores = activeStoreId
         ? (storesResult.data || []).filter((store: { id: string }) => store.id === activeStoreId)
@@ -682,7 +528,6 @@ export const EstadisticasPage: React.FC = () => {
       });
 
       if (!isCurrent()) {
-        logLoadEnd(diag, 'aborted');
         return;
       }
 
@@ -862,25 +707,7 @@ export const EstadisticasPage: React.FC = () => {
 
       setCategoryStats(categoryStatsArray);
 
-      diag.postProcessMs = Date.now() - postT0;
-      if (isInventoryLoadDiagEnabled()) {
-        logInventoryLoadEvent('POST_PROCESS_END', {
-          LOAD_ID: diag.loadId,
-          MODULE: diag.module,
-          STORE_ID: diag.storeId,
-          DURATION: diag.postProcessMs,
-        });
-      }
-
       if (userProfile?.company_id && isCurrent()) {
-        const cacheT0 = Date.now();
-        if (isInventoryLoadDiagEnabled()) {
-          logInventoryLoadEvent('PAGE_CACHE_WRITE_START', {
-            LOAD_ID: diag.loadId,
-            MODULE: diag.module,
-            STORE_ID: diag.storeId,
-          });
-        }
         writeEstadisticasPageCache(userProfile.company_id, catalogStoreId, {
           storeStats: statsByStore,
           inventorySummary: {
@@ -899,15 +726,6 @@ export const EstadisticasPage: React.FC = () => {
           uncategorizedProducts: uncategorizedRows,
           globalCategoryTotals: finalGlobalTotals,
         });
-        diag.cacheWriteMs = Date.now() - cacheT0;
-        if (isInventoryLoadDiagEnabled()) {
-          logInventoryLoadEvent('PAGE_CACHE_WRITE_END', {
-            LOAD_ID: diag.loadId,
-            MODULE: diag.module,
-            STORE_ID: diag.storeId,
-            DURATION: diag.cacheWriteMs,
-          });
-        }
       }
 
       console.timeEnd('📊 EstadisticasPage - fetchStatistics');
@@ -921,18 +739,11 @@ export const EstadisticasPage: React.FC = () => {
         totalServicioTecnico: finalGlobalTotals.technical_service
       });
 
-      if (isCurrent()) {
-        logRenderReady(diag);
-        logLoadEnd(diag, 'success');
-      }
-
     } catch (error) {
       if (isAbortError(error) || signal.aborted) {
-        logLoadEnd(diag, 'aborted');
         return;
       }
       console.error('Error fetching statistics:', error);
-      logLoadEnd(diag, 'error');
     } finally {
       if (isCurrent()) {
         hasLoadedOnceRef.current = true;
@@ -948,48 +759,21 @@ export const EstadisticasPage: React.FC = () => {
     if (!userProfile?.company_id) return;
 
     const catalogStoreId = activeStoreId ?? 'all';
-    const prevLoadId = activeLoadIdRef.current;
-    const storeChanged =
-      prevStoreForDiagRef.current !== undefined &&
-      prevStoreForDiagRef.current !== catalogStoreId;
-    prevStoreForDiagRef.current = catalogStoreId;
 
     const { status } = inspectEstadisticasPageCache(userProfile.company_id, catalogStoreId);
     // FRESH exact-key: layout ya pintó; no relanzar catálogo. STALE/MISS: SWR o loader.
     if (status === 'fresh') {
-      const diag = createPageLoadDiagState('Estadisticas', catalogStoreId, 'PAGE_CACHE');
-      activeLoadIdRef.current = diag.loadId;
-      logLoadStart(diag, { prevLoadId });
       setLoading(false);
       setIsRefreshing(false);
       setFinanceEnabled(true);
       hasLoadedOnceRef.current = true;
-      logRenderReady(diag);
-      logLoadEnd(diag, 'success_page_cache');
       return;
     }
 
     const hadCache = hasLoadedOnceRef.current;
     // Con cache: refresh en background. Sin cache: fetch (panel ya visible tras splash)
-    void fetchStatistics({
-      background: hadCache,
-      abortReason: storeChanged ? 'STORE_CHANGE' : 'NEW_GENERATION',
-    });
+    void fetchStatistics({ background: hadCache });
     return () => {
-      const reason = !pageMountedRef.current
-        ? 'UNMOUNT'
-        : storeChanged
-          ? 'STORE_CHANGE'
-          : 'NEW_GENERATION';
-      logAbortRequested(activeLoadIdRef.current, 'Estadisticas', catalogStoreId, reason, prevLoadId);
-      if (!pageMountedRef.current && isInventoryLoadDiagEnabled()) {
-        logInventoryLoadEvent('UNMOUNT', {
-          LOAD_ID: activeLoadIdRef.current,
-          MODULE: 'Estadisticas',
-          STORE_ID: catalogStoreId,
-          REASON: 'UNMOUNT',
-        });
-      }
       fetchGenRef.current += 1;
       fetchAbortRef.current?.abort();
     };
@@ -1002,7 +786,7 @@ export const EstadisticasPage: React.FC = () => {
 
     const interval = setInterval(() => {
       if (document.visibilityState !== 'visible') return;
-      void fetchStatistics({ background: true, abortReason: 'REFRESH' });
+      void fetchStatistics({ background: true });
     }, 180000);
 
     return () => {
@@ -1090,7 +874,7 @@ export const EstadisticasPage: React.FC = () => {
           </Button>
           <Button 
             onClick={() =>
-              fetchStatistics({ background: true, forceRefresh: true, abortReason: 'REFRESH' })
+              fetchStatistics({ background: true, forceRefresh: true })
             } 
             variant="outline"
             disabled={loading || isRefreshing}
