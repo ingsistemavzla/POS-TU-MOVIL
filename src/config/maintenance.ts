@@ -2,16 +2,17 @@
  * =============================================================================
  * PROTOCOLO DE MANTENIMIENTO (solo frontend) — APAGADO por defecto
  * =============================================================================
- * ACTIVAR (bote sesiones + bloquea login):
+ * ACTIVAR (bote sesiones + bloquea login + cero datos en UI):
  *   MAINTENANCE_PROTOCOL_ENABLED = true
  *   MAINTENANCE_FORCED_FROM_BUILD = true
- *   → commit + push (AppRouterShell ya está cableado de forma permanente)
+ *   → commit + push (AppRouterShell + AppDataShell + gate Supabase)
  *
  * DESACTIVAR (login e interfaz vuelven a la normalidad):
  *   MAINTENANCE_PROTOCOL_ENABLED = false
  *   MAINTENANCE_FORCED_FROM_BUILD = false
  *   → commit + push
- *   Al arrancar con protocolo OFF se limpia localStorage y no queda bloqueo.
+ *   Al arrancar con protocolo OFF se limpia localStorage y no queda bloqueo
+ *   (gate Supabase y AppDataShell quedan inertes).
  *
  * Ver **`ACTIVAR_MANTENIMIENTO.md`**, **`DESACTIVAR_MANTENIMIENTO.md`**
  * y el archivo maestro **`docs/ARCHIVO_PROTOCOLO_MANTENIMIENTO.md`**.

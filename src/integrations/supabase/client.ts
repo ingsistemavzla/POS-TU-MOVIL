@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { isMaintenanceModeActive } from '@/config/maintenance';
 import type { Database } from './types';
 
 /** En Render/producción definir VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY */
@@ -7,6 +8,39 @@ const SUPABASE_URL =
 const SUPABASE_PUBLISHABLE_KEY =
   import.meta.env.VITE_SUPABASE_ANON_KEY ??
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN3c3Ftc2J5aWt6bmFscnZ5ZG55Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQwMTYxODYsImV4cCI6MjA3OTU5MjE4Nn0.fMBkdy28G5ebXYI0BKvIe9AL7N4d7q_zj5tZoF5m_yU';
+
+/**
+ * Con mantenimiento ON: no hay lecturas/escrituras de datos.
+ * Solo se deja pasar logout para expulsar sesión. Al apagar el protocolo, este
+ * fetch vuelve a ser transparente (cero residuos).
+ */
+function maintenanceAwareFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  if (!isMaintenanceModeActive()) {
+    return fetch(input, init);
+  }
+
+  const url =
+    typeof input === 'string'
+      ? input
+      : input instanceof URL
+        ? input.href
+        : input.url;
+
+  if (/\/auth\/v1\/logout\b/i.test(url)) {
+    return fetch(input, init);
+  }
+
+  return Promise.resolve(
+    new Response(JSON.stringify({ message: 'Service Unavailable', code: 'MAINTENANCE' }), {
+      status: 503,
+      statusText: 'Service Unavailable',
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  );
+}
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
@@ -25,6 +59,7 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
   },
   // Global settings
   global: {
+    fetch: maintenanceAwareFetch,
     headers: {
       'X-Client-Info': 'pos-system-v1',
     },

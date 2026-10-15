@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef } from "react";
+import { Suspense, lazy, useEffect, useRef, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -547,20 +547,43 @@ const AppRouterShell = () => {
   );
 };
 
+/**
+ * Con mantenimiento ON: no monta Store/BCV (cero carga de datos de paneles)
+ * y limpia React Query. Al apagar el protocolo, vuelve el árbol normal.
+ */
+const AppDataShell = ({ children }: { children: ReactNode }) => {
+  const { active } = useMaintenanceMode();
+  const blocked = active || isMaintenanceModeActive();
+
+  useEffect(() => {
+    if (!blocked) return;
+    void queryClient.cancelQueries();
+    queryClient.clear();
+  }, [blocked]);
+
+  if (blocked) {
+    return <>{children}</>;
+  }
+
+  return (
+    <StoreProvider>
+      <BcvProvider>{children}</BcvProvider>
+    </StoreProvider>
+  );
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
-      <StoreProvider>
-        <BcvProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Sonner />
-            {/* DeployReloadWatchdog desactivado: /build-id.txt caía en rewrite SPA y provocaba recargas. */}
-            <MaintenanceSessionWatchdog />
-            <AppRouterShell />
-          </TooltipProvider>
-        </BcvProvider>
-      </StoreProvider>
+      <AppDataShell>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          {/* DeployReloadWatchdog desactivado: /build-id.txt caía en rewrite SPA y provocaba recargas. */}
+          <MaintenanceSessionWatchdog />
+          <AppRouterShell />
+        </TooltipProvider>
+      </AppDataShell>
     </AuthProvider>
   </QueryClientProvider>
 );
