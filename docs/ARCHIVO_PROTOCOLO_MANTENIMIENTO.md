@@ -2,8 +2,8 @@
 
 Documento único de archivo operativo. Consolida activación, desactivación, bugs corregidos y estado del código.
 
-**Estado (ciclo oct 2026):** mantenimiento **ENCENDIDO** en prod hasta orden de restaurar.  
-**Restaurar exacto:** `docs/RESTAURAR_POST_MANTENIMIENTO_CICLO_2026-10.md` (solo flags `false` + push; no revertir blindaje).
+**Estado (ciclo oct 2026):** mantenimiento **APAGADO** → sistema en **normalidad**.  
+Registro del ciclo: `docs/RESTAURAR_POST_MANTENIMIENTO_CICLO_2026-10.md`.
 
 ---
 

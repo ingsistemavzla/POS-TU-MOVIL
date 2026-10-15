@@ -25,16 +25,16 @@ Ver archivo maestro consolidado: **`docs/ARCHIVO_PROTOCOLO_MANTENIMIENTO.md`**
 
 ---
 
-## Ciclo oct 2026 — en curso (ON)
+## Ciclo oct 2026 — cerrado (OFF)
 
 | Fase | Acción | Estado |
 |------|--------|--------|
 | ON | Flags `true`/`true` | `a4a214f` |
 | Blindaje datos | AppDataShell + gate Supabase | `4423a2a` |
 | Hard refresh deploy | Remontar DeployReloadWatchdog | `c89a733` |
-| Restaurar | Esperando orden del operador | Ver `docs/RESTAURAR_POST_MANTENIMIENTO_CICLO_2026-10.md` |
+| Restaurar | Flags `false`/`false` + push | Hecho — normalidad |
 
-**Al desactivar:** solo flags `false`/`false` + push. No revertir `4423a2a`/`c89a733`.
+Blindaje permanece inerte (no revertido).
 
 ---
 

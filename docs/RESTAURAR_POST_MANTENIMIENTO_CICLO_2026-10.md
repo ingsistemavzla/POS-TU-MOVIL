@@ -1,7 +1,7 @@
 # Restaurar post-mantenimiento — ciclo oct 2026
 
-**Estado al registrar:** mantenimiento **ENCENDIDO** en prod.  
-**Acción pendiente:** cuando el operador diga **desactivar / restaurar**, ejecutar §2. No adelantar.
+**Estado:** mantenimiento **APAGADO** — restaurado a normalidad (orden operador).  
+Flags `false`/`false` + deploy; blindaje (`4423a2a`/`c89a733`) permanece inerte.
 
 ---
 
