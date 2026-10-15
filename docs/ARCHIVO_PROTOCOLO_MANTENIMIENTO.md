@@ -2,7 +2,8 @@
 
 Documento único de archivo operativo. Consolida activación, desactivación, bugs corregidos y estado del código.
 
-**Estado al cerrar este ciclo:** mantenimiento **APAGADO** → sistema en **normalidad**.
+**Estado (ciclo oct 2026):** mantenimiento **ENCENDIDO** en prod hasta orden de restaurar.  
+**Restaurar exacto:** `docs/RESTAURAR_POST_MANTENIMIENTO_CICLO_2026-10.md` (solo flags `false` + push; no revertir blindaje).
 
 ---
 
@@ -95,7 +96,9 @@ Protocolo detallado: `PROTOCOLO_SEGURO_RESTAURAR_MANTENIMIENTO.md`
 | `src/components/auth/MaintenanceBanner.tsx` | UI error | |
 | `src/components/auth/GlassLoginForm.tsx` | Muestra Failed to fetch | |
 | `src/hooks/useMaintenanceMode.ts` | Hook React | |
-| `src/components/system/DeployReloadWatchdog.tsx` | Auto-reload por build-id | **NO montado** (ver §5) |
+| `src/components/system/DeployReloadWatchdog.tsx` | Hard refresh por build-id | **Montado** (`c89a733`); `/build-id.txt` OK en prod |
+| `src/integrations/supabase/client.ts` | Gate fetch 503 si mantenimiento | Inerte con protocolo OFF (`4423a2a`) |
+| `AppDataShell` en `src/App.tsx` | No monta Store/BCV si ON | Inerte con protocolo OFF |
 | `vite.config.ts` | Genera `VITE_BUILD_ID` / `build-id.txt` | Listo si se reactiva watchdog |
 | `public/_redirects` | Incluye `/build-id.txt` | Evitar rewrite SPA |
 

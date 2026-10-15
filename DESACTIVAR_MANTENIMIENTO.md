@@ -1,26 +1,40 @@
-# Mantenimiento — estado actual: APAGADO (normalidad)
+# Desactivar protocolo de mantenimiento — restaurar normalidad
 
-Sistema restaurado. Login y POS deben operar normal.
+## Ciclo actual (oct 2026)
 
-## Archivo maestro
+Registro operativo completo:
 
-**`docs/ARCHIVO_PROTOCOLO_MANTENIMIENTO.md`**
+**`docs/RESTAURAR_POST_MANTENIMIENTO_CICLO_2026-10.md`**
 
-## Flags
+Archivo maestro: **`docs/ARCHIVO_PROTOCOLO_MANTENIMIENTO.md`**
+
+## 1. Flags en `src/config/maintenance.ts`
 
 ```ts
 export const MAINTENANCE_PROTOCOL_ENABLED = false;
 export const MAINTENANCE_FORCED_FROM_BUILD = false;
 ```
 
-## Si un navegador quedó raro
+## 2. Deploy
+
+```bash
+git add src/config/maintenance.ts
+git commit -m "chore: desactivar protocolo mantenimiento — restaurar login y POS"
+git push origin main
+```
+
+Efecto: login y POS vuelven; gate de datos y shells de mantenimiento quedan inertes.  
+`DeployReloadWatchdog` **sigue** (solo hard refresh en deploys; no es mantenimiento).
+
+## 3. Si un navegador quedó raro
 
 ```javascript
 localStorage.removeItem('pos_maintenance_mode')
-sessionStorage.clear()
+sessionStorage.removeItem('pos_deploy_reload_once')
+sessionStorage.removeItem('pos_client_build_id')
 location.href = '/'
 ```
 
-## Activar de nuevo
+## 4. Activar de nuevo
 
 Ver `ACTIVAR_MANTENIMIENTO.md`.
