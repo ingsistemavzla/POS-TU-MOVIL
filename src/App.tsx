@@ -8,7 +8,7 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { MaintenanceEnforcer } from "@/components/auth/MaintenanceEnforcer";
 import { MaintenanceLoginShell } from "@/components/auth/MaintenanceLoginShell";
 import { MaintenanceSessionWatchdog } from "@/components/auth/MaintenanceSessionWatchdog";
-// DeployReloadWatchdog: no montar hasta que /build-id.txt se sirva sin rewrite SPA
+import { DeployReloadWatchdog } from "@/components/system/DeployReloadWatchdog";
 import { useMaintenanceMode } from "@/hooks/useMaintenanceMode";
 import { isMaintenanceModeActive } from "@/config/maintenance";
 import { StoreProvider } from "@/contexts/StoreContext";
@@ -574,12 +574,13 @@ const AppDataShell = ({ children }: { children: ReactNode }) => {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
+    {/* Hard refresh en cada deploy → sin residuos de JS/funcionalidad antigua */}
+    <DeployReloadWatchdog />
     <AuthProvider>
       <AppDataShell>
         <TooltipProvider>
           <Toaster />
           <Sonner />
-          {/* DeployReloadWatchdog desactivado: /build-id.txt caía en rewrite SPA y provocaba recargas. */}
           <MaintenanceSessionWatchdog />
           <AppRouterShell />
         </TooltipProvider>

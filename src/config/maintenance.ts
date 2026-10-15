@@ -5,7 +5,8 @@
  * ACTIVAR (bote sesiones + bloquea login + cero datos en UI):
  *   MAINTENANCE_PROTOCOL_ENABLED = true
  *   MAINTENANCE_FORCED_FROM_BUILD = true
- *   → commit + push (AppRouterShell + AppDataShell + gate Supabase)
+ *   → commit + push (AppRouterShell + AppDataShell + gate Supabase
+ *     + DeployReloadWatchdog fuerza hard refresh en clientes que ya lo tengan)
  *
  * DESACTIVAR (login e interfaz vuelven a la normalidad):
  *   MAINTENANCE_PROTOCOL_ENABLED = false

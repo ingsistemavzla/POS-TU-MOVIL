@@ -6,7 +6,7 @@ export const CLIENT_BUILD_ID =
     ? import.meta.env.VITE_BUILD_ID
     : 'dev';
 
-const POLL_MS = 30_000;
+const POLL_MS = 20_000;
 const STORAGE_KEY = 'pos_client_build_id';
 const RELOAD_GUARD_KEY = 'pos_deploy_reload_once';
 
@@ -18,10 +18,21 @@ function isValidBuildId(value: string): boolean {
   return /^[a-zA-Z0-9._-]+$/.test(v);
 }
 
+function hardReloadForDeploy(remoteBuildId: string): void {
+  try {
+    sessionStorage.setItem(RELOAD_GUARD_KEY, remoteBuildId);
+  } catch {
+    /* ignore */
+  }
+  // Navegación completa: descarta JS/estado en memoria (sin residuos del bundle anterior).
+  const url = new URL(window.location.href);
+  url.searchParams.set('_b', remoteBuildId);
+  window.location.replace(url.toString());
+}
+
 /**
- * Detecta un nuevo deploy y recarga la pestaña UNA vez.
- * No montar en App hasta confirmar que /build-id.txt se sirve como texto estático
- * (si el hosting reescribe a index.html, provoca parpadeo).
+ * Detecta un nuevo deploy y fuerza hard refresh UNA vez.
+ * Requiere que `/build-id.txt` se sirva como texto estático (no HTML del SPA).
  */
 export function DeployReloadWatchdog() {
   const reloadingRef = useRef(false);
@@ -35,13 +46,6 @@ export function DeployReloadWatchdog() {
 
     const check = async () => {
       if (reloadingRef.current) return;
-      try {
-        if (sessionStorage.getItem(RELOAD_GUARD_KEY) === CLIENT_BUILD_ID) {
-          return;
-        }
-      } catch {
-        /* ignore */
-      }
 
       try {
         const res = await fetch(`/build-id.txt?t=${Date.now()}`, {
@@ -53,19 +57,34 @@ export function DeployReloadWatchdog() {
 
         const remote = (await res.text()).trim();
         if (!isValidBuildId(remote)) return;
-        if (remote === CLIENT_BUILD_ID) return;
 
-        reloadingRef.current = true;
+        // Ya alineados con el deploy publicado: limpia marcador de hard refresh.
+        if (remote === CLIENT_BUILD_ID) {
+          try {
+            const url = new URL(window.location.href);
+            if (url.searchParams.has('_b')) {
+              url.searchParams.delete('_b');
+              window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+            }
+          } catch {
+            /* ignore */
+          }
+          return;
+        }
+
+        // Evita bucle si ya intentamos cargar este remote y el id local aún no coincide.
         try {
-          sessionStorage.setItem(RELOAD_GUARD_KEY, CLIENT_BUILD_ID);
+          if (sessionStorage.getItem(RELOAD_GUARD_KEY) === remote) return;
         } catch {
           /* ignore */
         }
-        console.warn('[Deploy] Nuevo build detectado — recargando pestaña una vez.', {
+
+        reloadingRef.current = true;
+        console.warn('[Deploy] Nuevo build detectado — hard refresh.', {
           local: CLIENT_BUILD_ID,
           remote,
         });
-        window.location.reload();
+        hardReloadForDeploy(remote);
       } catch {
         /* red / offline */
       }
