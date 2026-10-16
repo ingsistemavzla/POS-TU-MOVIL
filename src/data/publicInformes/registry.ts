@@ -14,6 +14,7 @@ import { ALL_HISTORIAL_AROAX_644_INFORMES } from './historialInventarioCableAroa
 import { ALL_VEREDICTO_HISTORICO_AROAX_644_INFORMES } from './veredictoHistoricoCableAroax644Sku8620220106003';
 import { ALL_AUDITORIA_HISTORICA_MR30G_INFORMES } from './auditoriaHistoricaRouterMercusysMr30gSku2259';
 import { ALL_VEREDICTO_HISTORICO_MR30G_INFORMES } from './veredictoHistoricoRouterMercusysMr30gSku2259';
+import { ALL_HISTORIA_CRONOLOGICA_MR30G_INFORMES } from './historiaCronologicaInventarioRouterMercusysMr30gSku2259';
 
 const ALL_PUBLIC_INFORMES: PublicInforme[] = [
   ...MARINO_INFORMES,
@@ -31,6 +32,7 @@ const ALL_PUBLIC_INFORMES: PublicInforme[] = [
   ...ALL_VEREDICTO_HISTORICO_AROAX_644_INFORMES,
   ...ALL_AUDITORIA_HISTORICA_MR30G_INFORMES,
   ...ALL_VEREDICTO_HISTORICO_MR30G_INFORMES,
+  ...ALL_HISTORIA_CRONOLOGICA_MR30G_INFORMES,
 ];
 
 const bySlug = new Map<string, PublicInforme>();
