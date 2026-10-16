@@ -10,6 +10,8 @@ import { ALL_A16_VENTAS_25JUN_16JUL_INFORMES } from './a16Ventas25jun16jul2026';
 import { ALL_INVESTIGACION_CIERRES_INFORMES } from './investigacionCierresEstadisticas2026';
 import { ALL_PUBLIC_INFORMES as MARINO_INFORMES } from './operacionSucursalMarino2026';
 import { informeRespuestaGerenteGalaxyA16CeroCarga } from './respuestaGerenteGalaxyA16CeroCarga2026';
+import { ALL_HISTORIAL_AROAX_644_INFORMES } from './historialInventarioCableAroax644Sku8620220106003';
+import { ALL_VEREDICTO_HISTORICO_AROAX_644_INFORMES } from './veredictoHistoricoCableAroax644Sku8620220106003';
 
 const ALL_PUBLIC_INFORMES: PublicInforme[] = [
   ...MARINO_INFORMES,
@@ -23,6 +25,8 @@ const ALL_PUBLIC_INFORMES: PublicInforme[] = [
   ...ALL_A16_VENTAS_25JUN_16JUL_INFORMES,
   ...ALL_CIERRES_ESTADISTICAS_INFORMES,
   ...ALL_INVESTIGACION_CIERRES_INFORMES,
+  ...ALL_HISTORIAL_AROAX_644_INFORMES,
+  ...ALL_VEREDICTO_HISTORICO_AROAX_644_INFORMES,
 ];
 
 const bySlug = new Map<string, PublicInforme>();
