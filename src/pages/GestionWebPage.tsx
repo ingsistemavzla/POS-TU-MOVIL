@@ -113,6 +113,10 @@ interface EditingProduct extends WebProduct {
   temp_visible: boolean;
 }
 
+function hasWebImage(product: Pick<WebProduct, 'web_image_url'>): boolean {
+  return Boolean(product.web_image_url && product.web_image_url.trim());
+}
+
 // ============================================================================
 // COMPONENTE PRINCIPAL
 // ============================================================================
@@ -127,6 +131,10 @@ export const GestionWebPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [visibilityFilter, setVisibilityFilter] = useState<string>('all'); // all, visible, hidden
+  /** all | with_stock | without_stock | lt5 | gt5 | gt10 */
+  const [stockFilter, setStockFilter] = useState<string>('all');
+  /** all | with_image | without_image */
+  const [imageFilter, setImageFilter] = useState<string>('all');
   const [editingProduct, setEditingProduct] = useState<EditingProduct | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -633,29 +641,95 @@ export const GestionWebPage: React.FC = () => {
   };
 
   // ============================================================================
-  // FILTROS
+  // INDICADORES + FILTROS
   // ============================================================================
 
+  /**
+   * Conteos = ARTÍCULOS (productos activos del catálogo web), no unidades.
+   * Rangos de stock exclusivos para que sumen el total.
+   * totalUnits ≈ suma de qty (comparable en orden de magnitud con Estadísticas).
+   */
+  const catalogStats = useMemo(() => {
+    const total = products.length;
+    let withoutStock = 0;
+    let stock1to4 = 0; // 1–4 (stock bajo, con existencia)
+    let stock5to10 = 0; // 5–10
+    let stockGt10 = 0; // > 10
+    let withImage = 0;
+    let withoutImage = 0;
+    let withStock = 0;
+    let totalUnits = 0;
+
+    for (const p of products) {
+      const qty = Math.max(0, Number(p.total_stock) || 0);
+      totalUnits += qty;
+      if (qty === 0) withoutStock += 1;
+      else withStock += 1;
+      if (qty >= 1 && qty <= 4) stock1to4 += 1;
+      else if (qty >= 5 && qty <= 10) stock5to10 += 1;
+      else if (qty > 10) stockGt10 += 1;
+      if (hasWebImage(p)) withImage += 1;
+      else withoutImage += 1;
+    }
+
+    return {
+      total,
+      withoutStock,
+      withStock,
+      stock1to4,
+      stock5to10,
+      stockGt10,
+      withImage,
+      withoutImage,
+      totalUnits,
+    };
+  }, [products]);
+
   const filteredProducts = useMemo(() => {
-    return products.filter(product => {
-      // Filtro de búsqueda
-      const matchesSearch = 
+    const filtered = products.filter((product) => {
+      const matchesSearch =
         product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         product.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (product.barcode && product.barcode.toLowerCase().includes(searchTerm.toLowerCase()));
 
-      // Filtro de categoría
       const matchesCategory = categoryFilter === 'all' || product.category === categoryFilter;
 
-      // Filtro de visibilidad
-      const matchesVisibility = 
+      const matchesVisibility =
         visibilityFilter === 'all' ||
         (visibilityFilter === 'visible' && product.web_visible) ||
         (visibilityFilter === 'hidden' && !product.web_visible);
 
-      return matchesSearch && matchesCategory && matchesVisibility;
+      const qty = Number(product.total_stock) || 0;
+      const matchesStock =
+        stockFilter === 'all' ||
+        (stockFilter === 'with_stock' && qty > 0) ||
+        (stockFilter === 'without_stock' && qty === 0) ||
+        (stockFilter === 'stock_1_4' && qty >= 1 && qty <= 4) ||
+        (stockFilter === 'stock_5_10' && qty >= 5 && qty <= 10) ||
+        (stockFilter === 'gt10' && qty > 10);
+
+      const hasImg = hasWebImage(product);
+      const matchesImage =
+        imageFilter === 'all' ||
+        (imageFilter === 'with_image' && hasImg) ||
+        (imageFilter === 'without_image' && !hasImg);
+
+      return (
+        matchesSearch &&
+        matchesCategory &&
+        matchesVisibility &&
+        matchesStock &&
+        matchesImage
+      );
     });
-  }, [products, searchTerm, categoryFilter, visibilityFilter]);
+
+    // Prioridad operativa: más stock primero (cargar imágenes primero a quien más vende potencial).
+    return filtered.sort((a, b) => {
+      const stockDiff = (Number(b.total_stock) || 0) - (Number(a.total_stock) || 0);
+      if (stockDiff !== 0) return stockDiff;
+      return a.name.localeCompare(b.name, 'es');
+    });
+  }, [products, searchTerm, categoryFilter, visibilityFilter, stockFilter, imageFilter]);
 
   // ============================================================================
   // EDICIÓN DE PRODUCTO
@@ -1401,11 +1475,103 @@ export const GestionWebPage: React.FC = () => {
         </CardContent>
       </Card>
 
+      {/* Indicadores = cantidad de ARTÍCULOS (no unidades). Rangos exclusivos. */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        {[
+          {
+            key: 'without_stock',
+            label: 'Artículos sin stock',
+            count: catalogStats.withoutStock,
+            total: catalogStats.total,
+            active: stockFilter === 'without_stock',
+            onClick: () =>
+              setStockFilter((prev) => (prev === 'without_stock' ? 'all' : 'without_stock')),
+            accent: 'text-red-300 border-red-500/40 bg-red-500/10',
+          },
+          {
+            key: 'stock_1_4',
+            label: 'Artículos stock 1–4',
+            count: catalogStats.stock1to4,
+            total: catalogStats.total,
+            active: stockFilter === 'stock_1_4',
+            onClick: () =>
+              setStockFilter((prev) => (prev === 'stock_1_4' ? 'all' : 'stock_1_4')),
+            accent: 'text-amber-300 border-amber-500/40 bg-amber-500/10',
+          },
+          {
+            key: 'stock_5_10',
+            label: 'Artículos stock 5–10',
+            count: catalogStats.stock5to10,
+            total: catalogStats.total,
+            active: stockFilter === 'stock_5_10',
+            onClick: () =>
+              setStockFilter((prev) => (prev === 'stock_5_10' ? 'all' : 'stock_5_10')),
+            accent: 'text-sky-300 border-sky-500/40 bg-sky-500/10',
+          },
+          {
+            key: 'gt10',
+            label: 'Artículos stock > 10',
+            count: catalogStats.stockGt10,
+            total: catalogStats.total,
+            active: stockFilter === 'gt10',
+            onClick: () => setStockFilter((prev) => (prev === 'gt10' ? 'all' : 'gt10')),
+            accent: 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10',
+          },
+          {
+            key: 'with_image',
+            label: 'Con imagen',
+            count: catalogStats.withImage,
+            total: catalogStats.total,
+            active: imageFilter === 'with_image',
+            onClick: () =>
+              setImageFilter((prev) => (prev === 'with_image' ? 'all' : 'with_image')),
+            accent: 'text-violet-300 border-violet-500/40 bg-violet-500/10',
+          },
+          {
+            key: 'without_image',
+            label: 'Sin imagen',
+            count: catalogStats.withoutImage,
+            total: catalogStats.total,
+            active: imageFilter === 'without_image',
+            onClick: () =>
+              setImageFilter((prev) => (prev === 'without_image' ? 'all' : 'without_image')),
+            accent: 'text-orange-300 border-orange-500/40 bg-orange-500/10',
+          },
+        ].map((stat) => (
+          <button
+            key={stat.key}
+            type="button"
+            onClick={stat.onClick}
+            className={cn(
+              'rounded-lg border p-3 text-left transition-all hover:brightness-110',
+              stat.accent,
+              stat.active && 'ring-2 ring-white/60',
+            )}
+            title="Clic para filtrar / quitar filtro"
+          >
+            <div className="text-xs opacity-80 mb-1">{stat.label}</div>
+            <div className="text-lg font-bold tabular-nums">
+              {stat.count}
+              <span className="text-sm font-normal opacity-70"> de {stat.total}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <p className="text-xs text-white/55 -mt-2">
+        Estos números son <strong className="text-white/70">artículos (SKU)</strong>, no
+        unidades. Estadísticas suma <strong className="text-white/70">unidades</strong> por
+        sucursal/categoría (p. ej. 5.886 accesorios). Aquí: {catalogStats.total} artículos
+        activos · {catalogStats.withStock} con stock ·{' '}
+        {catalogStats.totalUnits.toLocaleString('es-VE')} unidades en total · lista por stock
+        mayor→menor. Mostrando {filteredProducts.length}.
+      </p>
+
       {/* Filtros */}
       <Card>
         <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
+          <div className="flex flex-col md:flex-row gap-4 flex-wrap">
+            <div className="flex-1 min-w-[200px]">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/90 w-4 h-4" />
                 <Input
@@ -1417,7 +1583,7 @@ export const GestionWebPage: React.FC = () => {
               </div>
             </div>
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-full md:w-[200px] glass-input">
+              <SelectTrigger className="w-full md:w-[180px] glass-input">
                 <SelectValue placeholder="Categoría" />
               </SelectTrigger>
               <SelectContent>
@@ -1430,13 +1596,36 @@ export const GestionWebPage: React.FC = () => {
               </SelectContent>
             </Select>
             <Select value={visibilityFilter} onValueChange={setVisibilityFilter}>
-              <SelectTrigger className="w-full md:w-[200px] glass-input">
+              <SelectTrigger className="w-full md:w-[160px] glass-input">
                 <SelectValue placeholder="Visibilidad" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todas</SelectItem>
                 <SelectItem value="visible">Visibles</SelectItem>
                 <SelectItem value="hidden">Ocultas</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={stockFilter} onValueChange={setStockFilter}>
+              <SelectTrigger className="w-full md:w-[180px] glass-input">
+                <SelectValue placeholder="Stock" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todo el stock</SelectItem>
+                <SelectItem value="with_stock">Con stock</SelectItem>
+                <SelectItem value="without_stock">Sin stock</SelectItem>
+                <SelectItem value="stock_1_4">Stock 1–4</SelectItem>
+                <SelectItem value="stock_5_10">Stock 5–10</SelectItem>
+                <SelectItem value="gt10">Stock {'>'} 10</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={imageFilter} onValueChange={setImageFilter}>
+              <SelectTrigger className="w-full md:w-[180px] glass-input">
+                <SelectValue placeholder="Imagen" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas las imágenes</SelectItem>
+                <SelectItem value="with_image">Con imagen</SelectItem>
+                <SelectItem value="without_image">Sin imagen</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -1542,9 +1731,18 @@ export const GestionWebPage: React.FC = () => {
                       {/* Stock */}
                       <TableCell>
                         <div className="text-right">
-                          <span className={`font-semibold ${
-                            product.total_stock === 0 ? 'text-red-400' : 'text-blue-400'
-                          }`}>
+                          <span
+                            className={cn(
+                              'font-semibold',
+                              product.total_stock === 0
+                                ? 'text-red-400'
+                                : product.total_stock < 5
+                                  ? 'text-amber-400'
+                                  : product.total_stock > 10
+                                    ? 'text-emerald-400'
+                                    : 'text-sky-400',
+                            )}
+                          >
                             {product.total_stock}
                           </span>
                         </div>
