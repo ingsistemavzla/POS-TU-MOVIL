@@ -17,6 +17,8 @@ import { ALL_VEREDICTO_HISTORICO_MR30G_INFORMES } from './veredictoHistoricoRout
 import { ALL_HISTORIA_CRONOLOGICA_MR30G_INFORMES } from './historiaCronologicaInventarioRouterMercusysMr30gSku2259';
 import { ALL_AUDITORIA_MOVIMIENTOS_A17_INFORMES } from './auditoriaMovimientosGalaxyA17Rfgya08tslyRf8y81160qr2026';
 import { ALL_TRAZABILIDAD_FAC_07881_A17_INFORMES } from './trazabilidadFac2026101007881A17Rf8y81160qr2026';
+import { ALL_PREVIEW_VENTAS_IMEI_A17_6PLUS6_INFORMES } from './previewVentasImeiGalaxyA176Plus6Rfgya08tsly2026';
+import { ALL_PREVIEW_VENTAS_IMEI_A17_4PLUS4_INFORMES } from './previewVentasImeiGalaxyA174Plus4Rf8y81160qr2026';
 
 const ALL_PUBLIC_INFORMES: PublicInforme[] = [
   ...MARINO_INFORMES,
@@ -37,6 +39,8 @@ const ALL_PUBLIC_INFORMES: PublicInforme[] = [
   ...ALL_HISTORIA_CRONOLOGICA_MR30G_INFORMES,
   ...ALL_AUDITORIA_MOVIMIENTOS_A17_INFORMES,
   ...ALL_TRAZABILIDAD_FAC_07881_A17_INFORMES,
+  ...ALL_PREVIEW_VENTAS_IMEI_A17_6PLUS6_INFORMES,
+  ...ALL_PREVIEW_VENTAS_IMEI_A17_4PLUS4_INFORMES,
 ];
 
 const bySlug = new Map<string, PublicInforme>();
