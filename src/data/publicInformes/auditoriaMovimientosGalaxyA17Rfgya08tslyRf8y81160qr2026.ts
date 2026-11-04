@@ -56,7 +56,6 @@ export const informeAuditoriaMovimientosGalaxyA17: PublicInforme = {
         '38 OUT · 37 facturas completed · stocks verificados 15 (6+6) y 3 (4+4)',
       detalle: [
         'Validación comercial: los movimientos OUT de la ventana están respaldados por facturas en estado **completed** (SELECT en Supabase).',
-        'Esto **no** sustituye una **conciliación histórica integral** del inventario: el stock inicial del período **no está certificado** (no hay snapshot independiente de apertura).',
         'Stocks globales **15** y **3** corresponden a una verificación previa documentada; este informe es un **snapshot** y no consulta existencias en vivo al abrirse.',
       ].join('\n\n'),
       ok: true,
