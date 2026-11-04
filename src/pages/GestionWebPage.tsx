@@ -133,6 +133,12 @@ export const GestionWebPage: React.FC = () => {
   const [visibilityFilter, setVisibilityFilter] = useState<string>('all'); // all, visible, hidden
   /** all | with_stock | without_stock | lt5 | gt5 | gt10 */
   const [stockFilter, setStockFilter] = useState<string>('all');
+  /**
+   * Condición adicional (independiente de stockFilter).
+   * false (default, verde) → ocultar total_stock <= 0.
+   * true (rojo) → mostrar también sin stock / negativo.
+   */
+  const [showOutOfStock, setShowOutOfStock] = useState(false);
   /** all | with_image | without_image */
   const [imageFilter, setImageFilter] = useState<string>('all');
   const [editingProduct, setEditingProduct] = useState<EditingProduct | null>(null);
@@ -700,6 +706,7 @@ export const GestionWebPage: React.FC = () => {
         (visibilityFilter === 'hidden' && !product.web_visible);
 
       const qty = Number(product.total_stock) || 0;
+      const matchesShowOutOfStock = showOutOfStock || qty > 0;
       const matchesStock =
         stockFilter === 'all' ||
         (stockFilter === 'with_stock' && qty > 0) ||
@@ -718,6 +725,7 @@ export const GestionWebPage: React.FC = () => {
         matchesSearch &&
         matchesCategory &&
         matchesVisibility &&
+        matchesShowOutOfStock &&
         matchesStock &&
         matchesImage
       );
@@ -729,7 +737,7 @@ export const GestionWebPage: React.FC = () => {
       if (stockDiff !== 0) return stockDiff;
       return a.name.localeCompare(b.name, 'es');
     });
-  }, [products, searchTerm, categoryFilter, visibilityFilter, stockFilter, imageFilter]);
+  }, [products, searchTerm, categoryFilter, visibilityFilter, showOutOfStock, stockFilter, imageFilter]);
 
   // ============================================================================
   // EDICIÓN DE PRODUCTO
@@ -1628,6 +1636,44 @@ export const GestionWebPage: React.FC = () => {
                 <SelectItem value="without_image">Sin imagen</SelectItem>
               </SelectContent>
             </Select>
+            <div
+              className={cn(
+                'flex items-center gap-2 rounded-md border px-3 py-2',
+                showOutOfStock
+                  ? 'border-red-500/40 bg-red-500/10'
+                  : 'border-emerald-500/40 bg-emerald-500/10'
+              )}
+            >
+              <Switch
+                id="show-out-of-stock"
+                isSelected={showOutOfStock}
+                onChange={setShowOutOfStock}
+                aria-label={
+                  showOutOfStock
+                    ? 'Mostrar artículos con stock'
+                    : 'Mostrar artículos sin stock'
+                }
+                className={cn(
+                  // Track atado a showOutOfStock (misma fuente de verdad que el filtro).
+                  // Selectores locales: no afectan otros Switch del sistema.
+                  '[&>div>div:first-child>div]:!bg-white',
+                  showOutOfStock
+                    ? '[&>div>div:first-child]:!bg-red-600'
+                    : '[&>div>div:first-child]:!bg-emerald-600'
+                )}
+              />
+              <Label
+                htmlFor="show-out-of-stock"
+                className={cn(
+                  'text-sm cursor-pointer whitespace-nowrap',
+                  showOutOfStock ? 'text-red-300' : 'text-emerald-300'
+                )}
+              >
+                {showOutOfStock
+                  ? 'Mostrar artículos con stock'
+                  : 'Mostrar artículos sin stock'}
+              </Label>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -1654,6 +1700,13 @@ export const GestionWebPage: React.FC = () => {
           <CardContent className="p-8 text-center">
             <Package className="w-12 h-12 mx-auto mb-4 opacity-50" />
             <p className="text-muted-foreground">No se encontraron productos</p>
+            {!showOutOfStock && stockFilter === 'without_stock' && (
+              <p className="mt-2 text-xs text-white/50">
+                El switch está en verde (solo con stock) y el filtro es «Sin stock»: no hay
+                coincidencias. Pulsa el switch para «Mostrar artículos sin stock» o cambia el
+                filtro.
+              </p>
+            )}
           </CardContent>
         </Card>
       ) : (
