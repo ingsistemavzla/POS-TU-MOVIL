@@ -15,6 +15,8 @@ import { ALL_VEREDICTO_HISTORICO_AROAX_644_INFORMES } from './veredictoHistorico
 import { ALL_AUDITORIA_HISTORICA_MR30G_INFORMES } from './auditoriaHistoricaRouterMercusysMr30gSku2259';
 import { ALL_VEREDICTO_HISTORICO_MR30G_INFORMES } from './veredictoHistoricoRouterMercusysMr30gSku2259';
 import { ALL_HISTORIA_CRONOLOGICA_MR30G_INFORMES } from './historiaCronologicaInventarioRouterMercusysMr30gSku2259';
+import { ALL_AUDITORIA_MOVIMIENTOS_A17_INFORMES } from './auditoriaMovimientosGalaxyA17Rfgya08tslyRf8y81160qr2026';
+import { ALL_TRAZABILIDAD_FAC_07881_A17_INFORMES } from './trazabilidadFac2026101007881A17Rf8y81160qr2026';
 
 const ALL_PUBLIC_INFORMES: PublicInforme[] = [
   ...MARINO_INFORMES,
@@ -33,6 +35,8 @@ const ALL_PUBLIC_INFORMES: PublicInforme[] = [
   ...ALL_AUDITORIA_HISTORICA_MR30G_INFORMES,
   ...ALL_VEREDICTO_HISTORICO_MR30G_INFORMES,
   ...ALL_HISTORIA_CRONOLOGICA_MR30G_INFORMES,
+  ...ALL_AUDITORIA_MOVIMIENTOS_A17_INFORMES,
+  ...ALL_TRAZABILIDAD_FAC_07881_A17_INFORMES,
 ];
 
 const bySlug = new Map<string, PublicInforme>();
