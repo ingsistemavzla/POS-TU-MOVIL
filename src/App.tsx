@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { MaintenanceEnforcer } from "@/components/auth/MaintenanceEnforcer";
 import { MaintenanceLoginShell } from "@/components/auth/MaintenanceLoginShell";
 import { MaintenanceSessionWatchdog } from "@/components/auth/MaintenanceSessionWatchdog";
+import { CtrlF5SignOutShortcut } from "@/components/auth/CtrlF5SignOutShortcut";
 import { DeployReloadWatchdog } from "@/components/system/DeployReloadWatchdog";
 import { useMaintenanceMode } from "@/hooks/useMaintenanceMode";
 import { isMaintenanceModeActive } from "@/config/maintenance";
@@ -582,6 +583,7 @@ const App = () => (
           <Toaster />
           <Sonner />
           <MaintenanceSessionWatchdog />
+          <CtrlF5SignOutShortcut />
           <AppRouterShell />
         </TooltipProvider>
       </AppDataShell>

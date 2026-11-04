@@ -1394,13 +1394,18 @@ export default function SalesPage() {
     setFilters(newFilters);
   }, [selectedStoreId, selectedCategoryFilter, dateRangeStart, dateRangeEnd, setFilters]);
 
-  // ✅ NUEVO: Atajo de teclado para actualizar (Ctrl+R o F5)
+  // Actualizar lista: Ctrl+R / Cmd+R (sin Shift) / F5 solo.
+  // Ctrl+Shift+R y Ctrl+F5 son logout global (CtrlF5SignOutShortcut).
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        !e.shiftKey &&
+        (e.key === 'r' || e.key === 'R')
+      ) {
         e.preventDefault();
         refreshData();
-      } else if (e.key === 'F5') {
+      } else if (e.key === 'F5' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         refreshData();
       }
