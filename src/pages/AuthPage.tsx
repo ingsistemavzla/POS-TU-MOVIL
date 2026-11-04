@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { GlassLoginForm } from '@/components/auth/GlassLoginForm';
 import { GlassRegisterForm } from '@/components/auth/GlassRegisterForm';
 import { PhoneMockup3D } from '@/components/auth/PhoneMockup3D';
-import { clearAuthCache } from '@/utils/clearCache';
 import { INVENTORY_SYSTEM_NAME } from '@/constants/inventorySystemBranding';
 import { Menu, Zap, Shield, BarChart3, Package, Server, Wifi, Boxes } from 'lucide-react';
 
@@ -13,9 +12,7 @@ const AuthPage: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
   const particlesRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    clearAuthCache();
-  }, []);
+  // No limpiar tokens al montar: destruía sesiones válidas tras refresh / navegación a /.
 
   useEffect(() => {
     if (!particlesRef.current) return;

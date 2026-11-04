@@ -931,26 +931,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
 
-        // ✅ DETECCIÓN DE HARD REFRESH DESHABILITADA: Causaba loop infinito
-        // La detección automática de hard refresh causaba problemas de recarga constante
-        // Se manejará solo cuando no hay sesión válida después de cargar
-
-        // Limpiar cache de autenticación al inicio si es la primera vez en esta sesión
-        const cacheCleared = sessionStorage.getItem('auth_cache_cleared');
-        if (!cacheCleared) {
-          console.log('Limpiando cache de autenticación al inicio...');
-          clearAuthCache();
-          sessionStorage.setItem('auth_cache_cleared', 'true');
-        }
-        
-        // ✅ CORRECCIÓN #3: Verificar sesión UNA vez al inicio, decidir rápidamente
-        // 1. Obtener Sesión PRIMERO (antes de establecer timeout)
+        // Recuperar sesión persistida SIN wipe preventivo de storage.
+        // (Un clear de auth cache antes de getSession destruía tokens válidos.)
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (!mounted) {
           return;
         }
         
+        // Error temporal de recuperación: no borrar tokens; dejar que onAuthStateChange
+        // o un reintento resuelva. Solo bajar loading para no bloquear la UI.
         if (sessionError) {
           console.error('Error getting session:', sessionError);
           setLoading(false);
@@ -965,19 +955,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
         
-        // ✅ CORRECCIÓN #2: Si NO hay sesión, establecer loading = false INMEDIATAMENTE
+        // Sin sesión persistida: estado limpio en memoria (no wipe de storage aquí).
         if (!session) {
-          // ✅ No hay sesión después de refresh - forzar logout y limpiar estado
-          console.log('[Auth] No hay sesión después de refresh. Limpiando estado y redirigiendo al login INMEDIATAMENTE.');
+          console.log('[Auth] No hay sesión persistida. Mostrando login.');
           setUser(null);
           setUserProfile(null);
           setCompany(null);
           setSession(null);
-          setLoading(false); // ✅ QUITAR loading INMEDIATAMENTE
+          setLoading(false);
           sessionKeepAlive.stop();
           profileCacheRef.current.clear();
           isInitialized = true;
-          // ✅ NO establecer timeout si no hay sesión
           return;
         }
         
