@@ -71,6 +71,15 @@ import { PriceListModal, PriceListParams } from '@/components/web/PriceListModal
 import { downloadPriceListPDF, WebPricingSettings } from '@/utils/priceListPdfGenerator';
 import { getBcvRate } from '@/utils/bcvRate';
 import { invalidateInventoryDerivedCaches } from '@/utils/invalidateInventoryDerivedCaches';
+import {
+  optimizeProductImage,
+  toCanonicalProductImageUrl,
+} from '@/utils/optimizeProductImage';
+import {
+  productImageStorage,
+  selectDeletableSessionUploads,
+  type StoredObjectRef,
+} from '@/utils/productImageStorage';
 
 /** Tras sync_web_product_price exitoso: invalidar caches solo si cambió sale_price_usd. */
 function invalidateCachesIfWebSalePriceChanged(data: {
@@ -145,6 +154,9 @@ export const GestionWebPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  /** Objetos subidos en la sesión del modal (aún no confirmados en BD). */
+  const sessionUploadsRef = useRef<StoredObjectRef[]>([]);
+  const uploadGenerationRef = useRef(0);
   
   // ✅ Estado para edición inline de precio
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
@@ -426,18 +438,38 @@ export const GestionWebPage: React.FC = () => {
   }, [userProfile?.role]);
 
   // ============================================================================
-  // CARGA DE IMAGEN A SUPABASE STORAGE
+  // CARGA DE IMAGEN (vía productImageStorage)
   // ============================================================================
+
+  /** Solo borra uploads de sesión demostrablemente no persistidos. */
+  const discardSessionUploads = async (
+    protectedUrls: Array<string | null | undefined> = []
+  ) => {
+    const pending = [...sessionUploadsRef.current];
+    sessionUploadsRef.current = [];
+    const persisted = [
+      ...protectedUrls,
+      editingProduct?.web_image_url,
+    ];
+    const deletable = selectDeletableSessionUploads(pending, persisted);
+    for (const ref of deletable) {
+      await productImageStorage.deleteObject(ref);
+    }
+  };
 
   const handleImageUpload = async (file: File) => {
     if (!editingProduct || !userProfile?.company_id) {
       return;
     }
+    // Evitar uploads duplicados por doble clic / reentrada
+    if (uploadingImage) {
+      return;
+    }
 
+    const generation = ++uploadGenerationRef.current;
     setUploadingImage(true);
 
     try {
-      // ✅ Validar tipo de archivo
       const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
       if (!validTypes.includes(file.type)) {
         toast({
@@ -448,181 +480,95 @@ export const GestionWebPage: React.FC = () => {
         return;
       }
 
-      // ✅ Validar tamaño (máximo 5MB)
-      const maxSize = 5 * 1024 * 1024; // 5MB
-      if (file.size > maxSize) {
+      const maxInputSize = 10 * 1024 * 1024; // 10MB
+      if (file.size > maxInputSize) {
         toast({
           title: "Archivo muy grande",
-          description: "La imagen no debe superar los 5MB",
+          description: "La imagen no debe superar los 10MB",
           variant: "destructive",
         });
         return;
       }
 
-      // ✅ Generar nombre único para el archivo (mismo nombre siempre para el mismo producto)
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${editingProduct.id}.${fileExt}`; // ✅ Mismo nombre siempre (se sobrescribe)
-      const folderPath = `${userProfile.company_id}/`;
-      const filePath = `${folderPath}${fileName}`; // ✅ Path relativo al bucket: company_id/product_id.ext
-
-      console.log('📤 Iniciando subida de imagen:', {
-        fileName,
-        folderPath,
-        filePath,
-        productId: editingProduct.id,
-        companyId: userProfile.company_id
-      });
-
-      // ✅ PASO 1: BORRAR TODAS las imágenes anteriores de este producto (limpieza completa)
+      let optimized;
       try {
-        const productIdStr = editingProduct.id;
-        const allFilesToDelete: string[] = [];
-        
-        // ✅ 1.1: Extraer path de la imagen vieja desde la URL almacenada en BD (si existe)
-        if (editingProduct.web_image_url && editingProduct.web_image_url.trim()) {
-          const oldUrl = editingProduct.web_image_url;
-          console.log('🔍 Analizando URL de imagen vieja:', oldUrl);
-          
-          // Intentar extraer el path desde diferentes formatos de URL
-          let oldPath: string | null = null;
-          
-          // Formato: https://[project].supabase.co/storage/v1/object/public/product-images/[path]
-          if (oldUrl.includes('/storage/v1/object/public/product-images/')) {
-            const urlParts = oldUrl.split('/storage/v1/object/public/product-images/');
-            if (urlParts.length > 1) {
-              oldPath = urlParts[1].split('?')[0]; // Remover query params si existen
-              console.log('📂 Path extraído desde URL (dentro de product-images):', oldPath);
-            }
-          }
-          // Formato: https://[project].supabase.co/storage/v1/object/public/[path] (fuera del bucket)
-          else if (oldUrl.includes('/storage/v1/object/public/')) {
-            const urlParts = oldUrl.split('/storage/v1/object/public/');
-            if (urlParts.length > 1) {
-              const fullPath = urlParts[1].split('?')[0];
-              // Si el path empieza con company_id, es una imagen fuera del bucket
-              if (fullPath.startsWith(userProfile.company_id)) {
-                oldPath = fullPath;
-                console.log('📂 Path extraído desde URL (fuera de product-images):', oldPath);
-              }
-            }
-          }
-          
-          // Si encontramos un path, intentar borrarlo
-          if (oldPath) {
-            // Intentar borrar desde product-images (ubicación correcta)
-            allFilesToDelete.push(oldPath);
-            console.log('🗑️ Agregado a lista de borrado (desde URL vieja):', oldPath);
-          }
-        }
-        
-        // ✅ 1.2: Buscar en la carpeta correcta dentro del bucket (company_id/)
-        console.log('🔍 Buscando archivos en carpeta correcta:', folderPath);
-        const { data: files1, error: listError1 } = await supabase.storage
-          .from('product-images')
-          .list(folderPath, {
-            limit: 100,
-            offset: 0,
-            sortBy: { column: 'name', order: 'asc' }
-          });
-        
-        if (listError1) {
-          console.warn('⚠️ Error al listar archivos en carpeta correcta:', listError1);
-        } else if (files1) {
-          console.log('📁 Archivos encontrados en carpeta correcta:', files1.map(f => f.name));
-          const filesInFolder = files1
-            .filter(file => file.name.startsWith(productIdStr))
-            .map(file => `${folderPath}${file.name}`);
-          allFilesToDelete.push(...filesInFolder);
-          console.log('🗑️ Archivos a borrar de carpeta correcta:', filesInFolder);
-        }
-        
-        // ✅ 1.3: Eliminar duplicados y borrar todos los archivos encontrados
-        const uniqueFilesToDelete = [...new Set(allFilesToDelete)];
-        
-        if (uniqueFilesToDelete.length > 0) {
-          console.log('🗑️ Intentando borrar archivos (sin duplicados):', uniqueFilesToDelete);
-          const { error: bulkDeleteError } = await supabase.storage
-            .from('product-images')
-            .remove(uniqueFilesToDelete);
-          
-          if (bulkDeleteError) {
-            console.warn('⚠️ No se pudieron borrar imágenes anteriores (continuando subida). Causa:', bulkDeleteError);
-          } else {
-            console.log(`✅ ${uniqueFilesToDelete.length} archivo(s) anterior(es) borrado(s):`, uniqueFilesToDelete);
-          }
-        } else {
-          console.log('ℹ️ No se encontraron archivos anteriores para borrar');
-        }
-      } catch (deleteError) {
-        // Si falla al borrar, continuar de todas formas (no crítico)
-        console.warn('⚠️ Error al limpiar imágenes anteriores (continuando subida). Causa:', deleteError);
-      }
-
-      // ✅ PASO 2: Subir nueva imagen (siempre con upsert para sobrescribir si existe)
-      console.log('⬆️ Subiendo archivo a:', filePath);
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('product-images')
-        .upload(filePath, file, {
-          cacheControl: '0', // ✅ No cache / max-age=0 para reflejo inmediato en WEB
-          upsert: true, // ✅ Siempre sobrescribir si existe
+        optimized = await optimizeProductImage(file);
+      } catch (optErr: any) {
+        toast({
+          title: "No se pudo optimizar la imagen",
+          description:
+            optErr?.message ||
+            "Reduce el tamaño o prueba otro formato. No se subió el archivo original.",
+          variant: "destructive",
         });
-
-      if (uploadError) {
-        console.error('❌ Error al subir archivo:', uploadError);
-        console.error('❌ Detalles del error:', {
-          message: uploadError.message,
-          statusCode: uploadError.statusCode,
-          error: uploadError.error
-        });
-        throw uploadError;
+        return;
       }
 
-      if (!uploadData) {
-        console.error('❌ uploadData es null o undefined');
-        throw new Error('No se recibió respuesta del servidor al subir la imagen');
+      if (generation !== uploadGenerationRef.current) {
+        return;
       }
 
-      console.log('✅ Archivo subido exitosamente:', uploadData);
-      console.log('✅ Detalles del upload:', {
-        path: uploadData.path,
-        fullPath: uploadData.fullPath,
-        id: uploadData.id
+      const ext = optimized.file.name.split('.').pop() || 'webp';
+      const stored = await productImageStorage.uploadProductImage({
+        companyId: userProfile.company_id,
+        productId: editingProduct.id,
+        file: optimized.file,
+        ext,
       });
 
-      // ✅ Obtener URL pública de la imagen
-      const { data: { publicUrl } } = supabase.storage
-        .from('product-images')
-        .getPublicUrl(filePath);
+      if (generation !== uploadGenerationRef.current) {
+        // Upload obsoleto (modal cerrado / nueva selección): nunca llegó a persistirse
+        const deletable = selectDeletableSessionUploads(
+          [stored],
+          [editingProduct.web_image_url]
+        );
+        for (const ref of deletable) {
+          await productImageStorage.deleteObject(ref);
+        }
+        return;
+      }
 
-      // ✅ Agregar timestamp para evitar cache del navegador
-      const publicUrlWithCache = `${publicUrl}?t=${Date.now()}`;
+      // Reemplazo en la misma sesión: liberar solo uploads previos no persistidos
+      const previousSession = [...sessionUploadsRef.current];
+      sessionUploadsRef.current = [stored];
+      const stale = selectDeletableSessionUploads(previousSession, [
+        editingProduct.web_image_url,
+        stored.publicUrl,
+      ]);
+      for (const old of stale) {
+        if (old.path !== stored.path) {
+          await productImageStorage.deleteObject(old);
+        }
+      }
 
-      console.log('🔗 URL pública generada:', publicUrl);
-      console.log('🔗 URL con cache busting:', publicUrlWithCache);
-
-      // ✅ Actualizar estado local con la nueva URL (con cache busting)
-      setEditingProduct(prev => {
-        const updated = {
-          ...prev,
-          temp_image_url: publicUrlWithCache,
-          temp_visible: true, // ✅ Auto-activar visibilidad cuando se sube imagen
-        };
-        console.log('✅ Estado actualizado después de subir imagen:', {
-          temp_image_url: updated.temp_image_url,
-          temp_visible: updated.temp_visible,
-          productId: updated.id,
-          switch_habilitado: true,
-          switch_activado: true
-        });
-        return updated;
+      console.log('📤 Subida imagen optimizada:', {
+        provider: stored.provider,
+        path: stored.path,
+        productId: editingProduct.id,
+        originalBytes: optimized.originalBytes,
+        optimizedBytes: optimized.optimizedBytes,
+        passes: optimized.passes,
+        dimensions: `${optimized.width}x${optimized.height}`,
       });
 
+      setEditingProduct((prev) =>
+        prev
+          ? {
+              ...prev,
+              temp_image_url: stored.publicUrl,
+              temp_visible: true,
+            }
+          : prev
+      );
+
+      const kbIn = (optimized.originalBytes / 1024).toFixed(0);
+      const kbOut = (optimized.optimizedBytes / 1024).toFixed(0);
+      const passNote = optimized.passes > 1 ? ' (2ª pasada)' : '';
       toast({
-        title: "Imagen subida exitosamente",
-        description: "La imagen se guardará al guardar los cambios. El producto se mostrará como visible automáticamente.",
+        title: "Imagen optimizada y subida",
+        description: `${kbIn} KB → ${kbOut} KB${passNote}. Se guardará al confirmar los cambios.`,
         variant: "success",
       });
-
     } catch (error: any) {
       console.error('Error uploading image:', error);
       toast({
@@ -631,18 +577,19 @@ export const GestionWebPage: React.FC = () => {
         variant: "destructive",
       });
     } finally {
-      setUploadingImage(false);
+      if (generation === uploadGenerationRef.current) {
+        setUploadingImage(false);
+      }
     }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      handleImageUpload(file);
-    }
-    // Limpiar input para permitir seleccionar el mismo archivo de nuevo
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+    if (file && !uploadingImage) {
+      void handleImageUpload(file);
     }
   };
 
@@ -757,6 +704,8 @@ export const GestionWebPage: React.FC = () => {
       safeVisible: safeVisible
     });
     
+    sessionUploadsRef.current = [];
+    uploadGenerationRef.current += 1;
     setEditingProduct({
       ...product,
       temp_sale_price_usd: product.sale_price_usd,
@@ -765,8 +714,18 @@ export const GestionWebPage: React.FC = () => {
     });
   };
 
-  const closeEditDialog = () => {
+  const closeEditDialog = (options?: { discardPendingUploads?: boolean }) => {
+    const discardPending = options?.discardPendingUploads !== false;
+    uploadGenerationRef.current += 1;
+    if (discardPending) {
+      // Cancelar / cerrar sin guardar: solo objetos de esta sesión
+      void discardSessionUploads();
+    } else {
+      // Tras guardar exitoso: los uploads de sesión ya están referenciados en BD
+      sessionUploadsRef.current = [];
+    }
     setEditingProduct(null);
+    setUploadingImage(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -793,10 +752,7 @@ export const GestionWebPage: React.FC = () => {
         throw new Error('Producto no encontrado');
       }
 
-      // Limpiar cache busting de la URL si existe
-      const cleanImageUrl = currentProduct.web_image_url 
-        ? currentProduct.web_image_url.split('?')[0].trim() 
-        : null;
+      const cleanImageUrl = toCanonicalProductImageUrl(currentProduct.web_image_url);
 
       console.log('💰 Actualizando precio inline:', {
         productId: productId,
@@ -883,9 +839,8 @@ export const GestionWebPage: React.FC = () => {
     currentPrice: number,
     newVisible: boolean
   ) => {
-    // ✅ REGLA 1: Normalizar y validar imagen
-    // Limpiar cache busting si existe
-    const cleanImageUrl = currentImageUrl ? currentImageUrl.split('?')[0].trim() : null;
+    // ✅ REGLA 1: Normalizar y validar imagen (canónica Storage; no tocar queries externas)
+    const cleanImageUrl = toCanonicalProductImageUrl(currentImageUrl);
     const hasImage = cleanImageUrl && cleanImageUrl.length > 0;
     
     console.log('🔍 Validación de imagen en handleToggleVisibility:', {
@@ -1020,54 +975,17 @@ export const GestionWebPage: React.FC = () => {
       ? editingProduct.temp_visible 
       : false;
 
-    // ✅ LIMPIEZA: Si el usuario borró la URL manualmente, borrar imagen del Storage
-    const hadImageBefore = editingProduct.web_image_url && editingProduct.web_image_url.trim();
-    const hasImageNow = editingProduct.temp_image_url && editingProduct.temp_image_url.trim();
-    
-    if (hadImageBefore && !hasImageNow) {
-      // Usuario borró la URL, intentar borrar la imagen del Storage
-      try {
-        const oldUrl = editingProduct.web_image_url;
-        if (oldUrl?.includes('supabase.co/storage/v1/object/public/product-images/')) {
-          const urlParts = oldUrl.split('product-images/');
-          if (urlParts.length > 1) {
-            // ✅ Path relativo al bucket: company_id/product_id.ext (sin product-images/ ni ?t=)
-            const oldFilePath = urlParts[1].split('?')[0].trim();
-            if (oldFilePath) {
-              await supabase.storage
-                .from('product-images')
-                .remove([oldFilePath]);
-              console.log('✅ Imagen anterior borrada del Storage');
-            }
-          }
-        }
-      } catch (deleteError) {
-        // Si falla al borrar, continuar de todas formas (no crítico para el flujo)
-        console.warn('⚠️ No se pudo borrar la imagen anterior del Storage (continuando). Causa:', deleteError);
-      }
-    }
-
     setSaving(true);
 
     try {
-      // ✅ URL base sin query params (para almacenar path canónico)
-      const rawImageUrl = editingProduct.temp_image_url?.trim() || '';
-      const baseImageUrl = rawImageUrl 
-        ? rawImageUrl.split('?')[0].trim()
-        : null;
-      
-      // ✅ Cache buster: añadir ?t=timestamp para que la WEB/navegador interprete la URL como nueva
-      // Cada guardado genera URL única → evita caché de imagen anterior tras subir reemplazo
-      const finalImageUrl = baseImageUrl && baseImageUrl.length > 0 
-        ? `${baseImageUrl}?t=${Date.now()}`
-        : null;
+      // URL canónica estable (sin ?t=). Reemplazo = path versionado en Storage.
+      // No se borra la imagen anterior tras RPC (puede estar referenciada en otro lado).
+      const finalImageUrl = toCanonicalProductImageUrl(editingProduct.temp_image_url);
 
       console.log('💾 Guardando cambios:', {
         productId: editingProduct.id,
         price: editingProduct.temp_sale_price_usd,
-        rawImageUrl: rawImageUrl,
-        baseImageUrl: baseImageUrl,
-        finalImageUrl: finalImageUrl,
+        finalImageUrl,
         imageUrlLength: finalImageUrl?.length || 0,
         visible: finalVisible,
         temp_image_url_original: editingProduct.temp_image_url
@@ -1080,7 +998,7 @@ export const GestionWebPage: React.FC = () => {
       const rpcParams = {
         p_product_id: editingProduct.id,
         p_sale_price_usd: editingProduct.temp_sale_price_usd,
-        p_web_image_url: finalImageUrl, // ✅ URL con cache buster (?t=timestamp) para reflejo inmediato en WEB
+        p_web_image_url: finalImageUrl,
         p_web_visible: finalVisible,
       };
       
@@ -1136,9 +1054,11 @@ export const GestionWebPage: React.FC = () => {
       console.log('🔄 Recargando lista de productos...');
       await fetchProducts();
       console.log('✅ Lista de productos recargada');
-      
-      closeEditDialog();
+
+      // Éxito: los uploads de sesión quedan referenciados → no borrar nada
+      closeEditDialog({ discardPendingUploads: false });
     } catch (error: any) {
+      // Fallo RPC: conservar archivos de sesión (pueden reintentarse / no están confirmados como basura)
       console.error('Error saving product:', error);
       toast({
         title: "Error",
@@ -1737,7 +1657,7 @@ export const GestionWebPage: React.FC = () => {
                           <div className="relative w-12 h-12 rounded overflow-hidden border border-white/10 bg-muted flex-shrink-0">
                             <img
                               key={product.web_image_url}
-                              src={`${product.web_image_url}${product.web_image_url.includes('?') ? '&' : '?'}t=${new Date(product.updated_at).getTime()}`}
+                              src={product.web_image_url}
                               alt={product.name}
                               width={48}
                               height={48}
@@ -1745,11 +1665,7 @@ export const GestionWebPage: React.FC = () => {
                               decoding="async"
                               className="w-full h-full object-cover"
                               onError={(e) => {
-                                console.error('❌ Error al cargar imagen en miniatura:', product.web_image_url);
                                 (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect width="100" height="100" fill="%23333"/%3E%3Ctext x="50" y="50" text-anchor="middle" dy=".3em" fill="%23999" font-size="12"%3ESin imagen%3C/text%3E%3C/svg%3E';
-                              }}
-                              onLoad={() => {
-                                console.log('✅ Imagen cargada en miniatura:', product.web_image_url);
                               }}
                             />
                           </div>
@@ -1976,7 +1892,12 @@ export const GestionWebPage: React.FC = () => {
 
       {/* Modal de Edición */}
       {editingProduct && (
-        <Dialog open={!!editingProduct} onOpenChange={closeEditDialog}>
+        <Dialog
+          open={!!editingProduct}
+          onOpenChange={(open) => {
+            if (!open) closeEditDialog();
+          }}
+        >
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-xl">
@@ -2068,16 +1989,18 @@ export const GestionWebPage: React.FC = () => {
                         onChange={(e) => {
                           const url = e.target.value;
                           const hasImage = url.trim().length > 0;
+                          const canonical = toCanonicalProductImageUrl(url);
+                          const matchesSession = sessionUploadsRef.current.some(
+                            (ref) => ref.publicUrl === canonical
+                          );
+                          if (!matchesSession && sessionUploadsRef.current.length > 0) {
+                            void discardSessionUploads();
+                          }
                           setEditingProduct({
                             ...editingProduct,
                             temp_image_url: url,
                             // ✅ REGLA: Si se elimina la imagen, forzar visible = false y deshabilitar switch
                             temp_visible: hasImage ? (editingProduct.temp_visible || true) : false,
-                          });
-                          console.log('📝 URL de imagen cambiada:', {
-                            url: url,
-                            hasImage: hasImage,
-                            temp_visible_updated: hasImage ? (editingProduct.temp_visible || true) : false
                           });
                         }}
                         placeholder="https://ejemplo.com/imagen.jpg"
@@ -2089,11 +2012,10 @@ export const GestionWebPage: React.FC = () => {
                           variant="outline"
                           size="icon"
                           onClick={() => {
-                            console.log('🗑️ Borrando imagen manualmente');
+                            void discardSessionUploads();
                             setEditingProduct({
                               ...editingProduct,
                               temp_image_url: '',
-                              // ✅ REGLA: Al borrar imagen, forzar visible = false
                               temp_visible: false,
                             });
                             toast({
@@ -2257,7 +2179,7 @@ export const GestionWebPage: React.FC = () => {
             <DialogFooter>
               <Button
                 variant="outline"
-                onClick={closeEditDialog}
+                onClick={() => closeEditDialog()}
                 disabled={saving || uploadingImage}
               >
                 <X className="w-4 h-4 mr-2" />
