@@ -45,6 +45,7 @@ import { BranchStockMatrix } from '@/components/inventory/BranchStockMatrix';
 import { InventoryDashboardHeader } from '@/components/inventory/InventoryDashboardHeader';
 import { StoreFilterBar } from '@/components/inventory/StoreFilterBar';
 import { downloadInventoryListPDF } from '@/utils/inventoryListPdfGenerator';
+import { sortInventoryListForPdf } from '@/utils/inventoryListPdfSort';
 import { AlmacenTableSkeleton } from '@/components/inventory/InventoryLoadingSkeletons';
 import { useClientPagination } from '@/hooks/useClientPagination';
 import { ListPaginationBar } from '@/components/ui/ListPaginationBar';
@@ -1122,11 +1123,13 @@ export const AlmacenPage: React.FC = () => {
               onClick={async () => {
                 setGeneratingInventoryList(true);
                 try {
-                  const items = products
-                    .filter((p) => inventoryListCategory === 'all' || p.category === inventoryListCategory)
-                    .slice()
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map((p) => ({
+                  const filtered = products.filter(
+                    (p) => inventoryListCategory === 'all' || p.category === inventoryListCategory
+                  );
+                  // Orden PDF por categoría (ST / phones / accessories / all).
+                  // No altera listados ni búsquedas de la pantalla Almacén.
+                  const ordered = sortInventoryListForPdf(inventoryListCategory, filtered);
+                  const items = ordered.map((p) => ({
                       name: p.name,
                       category: p.category ?? null,
                       total_stock: p.total_stock || 0,
